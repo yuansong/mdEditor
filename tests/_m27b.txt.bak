@@ -1,0 +1,10 @@
+PASS | __tblOp('mergeLeft') 可调用（不再报错） | called
+PASS | __tblOp('mergeRight') 可调用（不再报错） | called
+PASS | __tblOp('mergeUp') 可调用（不再报错） | called
+PASS | __tblOp('mergeDown') 可调用（不再报错） | called
+PASS | 四个方向合并均为空操作（raw 不变） | | 甲 | 乙 | 丙 | 丁 |
+| --- | --- | --- | --- |
+| 1 | 2 | 3 | 4 |
+| 5 | 6 | 7 | 8 |
+PASS | 单选格操作条无任何方向合并按钮 | ["向左插入列","向右插入列","向上插入行","向下插入行","左对齐","居中","右对齐"]
+DONE

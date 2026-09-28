@@ -1,0 +1,6 @@
+PASS | 合法图表渲染为 svg | {"svg":true,"err":false}
+PASS | 合法图表无 .mmd-err | {"svg":true,"err":false}
+PASS | 非法图表显示 .mmd-err（重试后仍失败才报错） | {"err":true,"txt":"图表渲染失败：Parse error on line 4:\nflowchart TD  A--\n------------"}
+PASS | 快速连续重建 8 次 → 最终块渲染 svg | {"n":1,"svg":true,"err":false}
+PASS | 快速连续重建后无 .mmd-err | {"n":1,"svg":true,"err":false}
+DONE

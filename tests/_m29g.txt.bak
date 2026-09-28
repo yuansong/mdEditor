@@ -1,0 +1,7 @@
+NOTE | openBlockMenu | slash
+NOTE | after open | {"sm":true,"sub":true,"ts":false,"act":"H标题二级菜单","raw":""}
+NOTE | after Esc | {"sm":true,"sub":false,"ts":false,"act":"H标题二级菜单","raw":""}
+NOTE | after Down1 | {"sm":true,"sub":false,"ts":false,"act":"•列表二级菜单","raw":""}
+NOTE | after Down2 | {"sm":true,"sub":false,"ts":false,"act":"▦表格选择行列","raw":""}
+NOTE | after Enter | {"sm":false,"sub":false,"ts":true,"act":"▦表格选择行列","raw":""}
+DONE

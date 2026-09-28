@@ -1,0 +1,20 @@
+PASS | 点击表格块留白 → 保持渲染态（不切源码） | {'editIdx': -1, 'rawEdit': False}
+PASS | 点击 <table> 本身 → 保持渲染态 | {'editIdx': -1}
+PASS | 1 格：插行 / 插列 / 删除 / 对齐可用 | ['en', 'en', 'en', 'en', 'en', 'en']
+PASS | 1 格：拆分可用（v3.29c）/ 合并与还原不显示（v3.30.2 过滤） | ['none', 'en', 'none']
+PASS | 菜单顺序：插入行列 → 删除行列 → 合并/拆分/还原（可见项相对顺序） | ['向上插入行', '向下插入行', '删除行', '向左插入列', '向右插入列', '删除列', '拆分单元格（选择行 × 列）', '下移该行', '左移该列', '右移该列', '左对齐', '居中', '右对齐', '清空内容', '表格标注（上方 / 下方）']
+PASS | 整列：合并 / 删除列 / 插行可用 | ['en', 'en', 'en', 'en']
+PASS | 整列：拆分 / 还原不显示（v3.30.2 过滤） | ['none', 'none']
+PASS | 整行：合并 / 删除行 / 插列可用 | ['en', 'en', 'en']
+PASS | 整行：删除列不显示（须保留 ≥1 列，v3.30.2 过滤） | none
+PASS | 多行多列：合并可用 / 删除列不显示 / 对齐与标注常驻 | ['en', 'none', 'en', 'en', 'en']
+PASS | 前置：列宽拖拉后 colgroup 已有固定宽度 |   <colgroup><col style="width:318px"><col style="width:258px"><col style="width:258px"></c
+PASS | 整表缩小后 table style 仍记录宽度 | <table class="md-tbl" style="width: 686px; table-layout: fixed; height: 134px;">
+PASS | 整表缩小 → 列宽等比缩放写入 colgroup（不再被固定列宽托住） |   <colgroup><col style="width:262px"><col style="width:212px"><col style="width:212px"></colgroup>
+PASS | 表格右键块菜单：删除在最前 | ['del', 'resetsize', 'dup', 'up', 'down']
+PASS | 表格块菜单 = 删除/还原尺寸/复制块/上移/下移 | ['del', 'resetsize', 'dup', 'up', 'down']
+PASS | 块菜单「还原尺寸」→ 清空表格尺寸与列宽（colgroup 移除） | <table class="md-tbl">
+PASS | 代码块菜单 = 复制块/上移/下移/删除块（无「转为」组） | ['ok', ['dup', 'up', 'down', 'del']]
+PASS | Ctrl+Shift+F → 查找对话框且范围为「全局搜索」 | 0
+PASS | Ctrl+H 入口（show_replace）→ 显示替换行（同页合一不再切换范围） | True
+PASS | 可切回「全局搜索」入口状态 | 0

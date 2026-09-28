@@ -1,0 +1,6 @@
+step1: ok
+sel: {"kind":"img","idx":0}
+scroll diag: {"fired":1,"sel":null,"errs":[],"imgSel":false}
+sel after: 
+after Escape: {"sel":null,"errs":[]}
+DONE

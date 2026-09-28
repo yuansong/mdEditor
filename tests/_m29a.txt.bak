@@ -1,0 +1,46 @@
+PASS | 点「表格标注」→ 弹层打开且标题为表格标注 | {'show': True, 'title': '表格标注'}
+PASS | 上方标注 → caption class=md-tblcap top 写入源码 | <table class="md-tbl">
+  <caption class="md-tblcap top">表一：测试</caption>
+  <thead>
+    <tr><th>甲</th><th>乙</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td>2</td></tr>
+  </tbody>
+</table>
+PASS | 上方标注 → 渲染出 caption 且 caption-side=top | {'n': 1, 'txt': '表一：测试', 'side': 'top'}
+PASS | 切换到下方 → caption class=md-tblcap bottom | <table class="md-tbl">
+  <caption class="md-tblcap bottom">表一：测试</caption>
+  <thead>
+    <tr><th>甲</th><th>乙</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td>2</td></tr>
+  </tbody>
+</table>
+PASS | 清空文字 → caption 移除 | <table class="md-tbl">
+  <thead>
+    <tr><th>甲</th><th>乙</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td>2</td></tr>
+  </tbody>
+</table>
+PASS | 编辑单元格后标注不丢 | <table class="md-tbl">
+  <caption class="md-tblcap top">表二</caption>
+  <thead>
+    <tr><th>甲</th><th>乙</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>991</td><td>2</td></tr>
+  </tbody>
+</table>
+PASS | 整表缩放后标注不丢 | <table class="md-tbl" style="width: 816px; table-layout: fixed;">
+  <caption class="md-tblcap top">表二</caption>
+  <colgroup><col style="width:408px"><col style="width:408px"></colgroup>
+  <thead>
+    
+PASS | getMarkdown 含 caption | <table class="md-tbl" style="width: 816px; table-layout: fixed;">
+  <caption class="md-tblcap top">表二</caption>
+  <colgr
+DONE

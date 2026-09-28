@@ -1,0 +1,10 @@
+PASS | click chart selects (source box shown, not focused) | {'ta': True, 'focused': False, 'val': 'flowchart TD\n  A-->B'}
+PASS | source box shows chart code without fences | {'ta': True, 'focused': False, 'val': 'flowchart TD\n  A-->B'}
+PASS | DEL deletes whole chart block | {'mmd': False, 'ta': False, 'md': ''}
+PASS | slash menu inserts chart (cursor in empty para below) | {'mmd': True, 'raw': '{"raw":["```mermaid\\nflowchart TD\\n  A[开始] --> B{是否继续?}\\n  B -->|是| C[处理任务]\\n  B -->|否| D[结束]\\n  C --> D\\n```",""],"editIdx":1}'}
+PASS | DEL below chart opens source box, cursor at start, chart kept | {'ta': True, 'focused': True, 'pos': 0, 'mmd': True}
+PASS | Backspace below chart opens source box (no raw merge) | {'ta': True, 'focused': True, 'raw': '{"raw":["```mermaid\\nflowchart TD\\n  A[开始] --> B{是否继续?}\\n  B -->|是| C[处理任务]\\n  B -->|否| D[结束]\\n  C --> D\\n```",""],"editIdx":-1}'}
+PASS | double-click table cell keeps rendered mode (no source) | {'src': False, 'sel': True, 'tbl': True}
+PASS | click codeblock padding stays rendered (no source) | {'src': False, 'cb': True}
+PASS | ArrowDown into table selects first cell (rendered, no source) | {'src': False, 'sel': True}
+PASS | ArrowDown into codeblock focuses code area (rendered, no source) | {'src': False, 'focus': True}

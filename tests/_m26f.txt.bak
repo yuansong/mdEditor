@@ -1,0 +1,21 @@
+### L1 stacked vertical+horizontal DOM
+TH[c1,r1]甲 | TH[c1,r1]乙 | TH[c1,r1]丙 | TH[c1,r1]丁
+TD[c1,r2]1 5 | TD[c1,r1]2 | TD[c1,r1]3 | TD[c1,r1]4
+TD[c2,r1]6 7 | TD[c1,r1]8
+### L2 raw
+{"raw":["<table class=\"md-tbl\">\n  <thead>\n    <tr><th>甲</th><th>乙</th><th>丙</th><th>丁</th></tr>\n  </thead>\n  <tbody>\n    <tr><td rowspan=\"2\">1 5</td><td>2</td><td>3</td><td>4</td></tr>\n    <tr><td colspan=\"2\">6 7</td><td>8</td></tr>\n  </tbody>\n</table>"],"editIdx":-1}
+### M1 crossing merge ret (expect false/ok?)
+ok
+### M2 DOM after crossing merge
+TH[c1,r1]甲 | TH[c1,r1]乙 | TH[c1,r1]丙 | TH[c1,r1]丁
+TD[c1,r1]1 | TD[c2,r1]2 3 | TD[c1,r1]4
+TD[c1,r1]5 | TD[c1,r1]6 | TD[c1,r1]7 | TD[c1,r1]8
+### M3 raw
+{"raw":["<table class=\"md-tbl\">\n  <thead>\n    <tr><th>甲</th><th>乙</th><th>丙</th><th>丁</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td colspan=\"2\">2 3</td><td>4</td></tr>\n    <tr><td>5</td><td>6</td><td>7</td><td>8</td></tr>\n  </tbody>\n</table>"],"editIdx":-1}
+### N1 2x3 center merge DOM
+TH[c1,r1]甲 | TH[c1,r1]乙 | TH[c1,r1]丙 | TH[c1,r1]丁 | TH[c1,r1]戊
+TD[c1,r1]1 | TD[c3,r2]2 3 4 7 8 9 | TD[c1,r1]5
+TD[c1,r1]6 | TD[c1,r1]10
+TD[c1,r1]11 | TD[c1,r1]12 | TD[c1,r1]13 | TD[c1,r1]14 | TD[c1,r1]15
+### N2 raw
+{"raw":["<table class=\"md-tbl\">\n  <thead>\n    <tr><th>甲</th><th>乙</th><th>丙</th><th>丁</th><th>戊</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td colspan=\"3\" rowspan=\"2\">2 3 4 7 8 9</td><td>5</td></tr>\n    <tr><td>6</td><td>10</td></tr>\n    <tr><td>11</td><td>12</td><td>13</td><td>14</td><td>15</td></tr>\n  </tbody>\n</table>"],"editIdx":-1}

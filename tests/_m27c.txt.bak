@@ -1,0 +1,9 @@
+=== after setMarkdown ===
+{"tbl":true,"nColgroup":0,"colgroup":[],"rows":["THx1r1:甲|THx1r1:乙|THx1r1:丙|THx1r1:丁","TDx1r1:1|TDx1r1:2|TDx1r1:3|TDx1r1:4","TDx1r1:5|TDx1r1:6|TDx1r1:7|TDx1r1:8"]}
+=== after merge (1x2 rect) ===
+{"tbl":true,"nColgroup":0,"colgroup":[],"rows":["THx1r1:甲|THx1r1:乙|THx1r1:丙|THx1r1:丁","TDx1r1:1|TDx2r1:2 3|TDx1r1:4","TDx1r1:5|TDx1r1:6|TDx1r1:7|TDx1r1:8"]}
+drag: dragged
+=== after drag ===
+{"tbl":true,"nColgroup":1,"colgroup":["width:209px","width:209px","width:209px","width:209px"],"rows":["THx1r1:甲|THx1r1:乙|THx1r1:丙|THx1r1:丁","TDx1r1:1|TDx2r1:2 3|TDx1r1:4","TDx1r1:5|TDx1r1:6|TDx1r1:7|TDx1r1:8"]}
+raw[0]: {"raw":["<table class=\"md-tbl\" style=\"width: 836px; table-layout: fixed;\">\n  <colgroup><col style=\"width:209px\"><col style=\"width:209px\"><col style=\"width:209px\"><col style=\"width:209px\"></colgroup>\n  <thead>\n    <tr><th>甲</th><th>乙</th><th>丙</th><th>丁</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td colspan=\"2\">2 3</td><td>4</td></tr>\n    <tr><td>5</td><td>6</td><td>7</td><td>8</td></tr>\n  </tbody>\n</table>"],"editIdx":-1}
+DONE

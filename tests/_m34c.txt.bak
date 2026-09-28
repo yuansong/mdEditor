@@ -1,0 +1,12 @@
+FAIL | C0 引用内选表格后网格面板打开 | ["OK", {"grid": false, "pop": "{\"drag\":false,\"trail\":0,\"pend\":false}"}]
+DIAG after enter: ["> 引用行"] | {"grid": false, "pop": "{\"drag\":false,\"trail\":0,\"pend\":false}"}
+FAIL | C-fix 引用内表格插入且带>前缀 | ["> 引用行"]
+DIAG quote-hr: ["> 引用行\n> ---"]
+PASS | C-x1 引用内插分割线 | ["OK", ["> 引用行\n> ---"]]
+DIAG quote-code: ["OK", {"lang": false}, ["> 引用行"]]
+FAIL | C-x2 引用内插代码块 | ["OK", {"lang": false}, ["> 引用行"]]
+DIAG enter-split: ["正文段落"]
+FAIL | D-fix 脚注引用+自动定义块 | ["NOMENU", ["正文段落"]]
+FAIL | D-fix2 脚注编号递增[^2] | ["NOMENU", ["正文段落"]]
+PASS | E-fix 空块Ctrl+B×2记录 | [""]
+DONE

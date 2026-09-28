@@ -1,0 +1,9 @@
+NOTE | menu items | [["0","H标题二级菜单","si act has-sub"],["1","•列表二级菜单","si has-sub"],["2","▦表格选择行列","si"],["3","‹›代码块可直接编辑","si"],["4","─分割线---","si"],["5","❝引用> ","si"],["6","🖼图片本地或网络","si"],["7","📊图表二级菜单","si has-sub"],["8","¹脚注二级菜单","si has-sub"],["9","≣定义列表术语 : ","si"],["10","ˣ上标 / 下标二级","si has-sub"],["11","∑公式二级菜单","si has-sub"]]
+NOTE | click_si | clicked:6
+NOTE | wantPick t=150ms | pick
+NOTE | wantPick t=300ms | no
+NOTE | wantPick t=450ms | no
+NOTE | wantPick t=600ms | no
+NOTE | wantPick t=750ms | no
+NOTE | wantPick t=900ms | no
+DONE

@@ -1,0 +1,6 @@
+### B1 send
+sent nodes="第一行","\n","\n","第三行"
+### B2 raw (expect > 第一行\n> 第三行)
+{"raw":["> 第一行\n> 第三行"],"editIdx":-1}
+### B3 blockquote exists? (expect True)
+True

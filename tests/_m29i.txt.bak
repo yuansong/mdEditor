@@ -1,0 +1,13 @@
+NOTE | A sel | sel:标题测试
+NOTE | A floatbar | {'show': True, 'btns': ['粗体', '斜体', '删除线', '高亮', '行内代码', '链接', '清除格式']}
+NOTE | B click 高亮 | ok
+NOTE | B raw | ['# ==标题测试==行']
+NOTE | B dom | {'edit': False, 'h': True}
+PASS | 高亮后回到渲染态（标题仍渲染） | {'edit': False, 'h': True}
+NOTE | B2 click 粗体 | ok
+NOTE | B2 raw | ['# ==**标题测试==**行']
+PASS | 加粗后仍为渲染态标题 | {'edit': False, 'h': True}
+NOTE | C raw after commit | ['# ==**标题测试==**行']
+PASS | 高亮后标题前缀保留 | # ==**标题测试==**行
+PASS | 高亮标记写入 | # ==**标题测试==**行
+DONE

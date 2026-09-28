@@ -1,0 +1,2 @@
+RESULT: {"msg":"Unexpected token '**'","stack":["SyntaxError: Unexpected token '**'","    at new Function (<anonymous>)","    at <anonymous>:8:6","    at <anonymous>:13:3"]}
+DONE

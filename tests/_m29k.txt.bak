@@ -1,0 +1,7 @@
+NOTE | merge click | ok
+NOTE | raw after merge | <table class="md-tbl">
+NOTE | split btn state | {'dis': False}
+NOTE | after split click | {'tszShow': True, 'cells': 36, 'gc01': True}
+NOTE | gc click | x
+NOTE | raw after split | <table class="md-tbl">
+DONE

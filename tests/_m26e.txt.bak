@@ -1,0 +1,22 @@
+### P0 drag done
+dragged
+### P1 merge btn click
+clicked
+### P2 DOM after real-drag merge
+TH[c1,r1]甲 | TH[c1,r1]乙 | TH[c1,r1]丙 | TH[c1,r1]丁
+TD[c1,r1]1 | TD[c2,r1]2 3 | TD[c1,r1]4
+TD[c1,r1]5 | TD[c1,r1]6 | TD[c1,r1]7 | TD[c1,r1]8
+### P3 raw
+{"raw":["<table class=\"md-tbl\">\n  <thead>\n    <tr><th>甲</th><th>乙</th><th>丙</th><th>丁</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td colspan=\"2\">2 3</td><td>4</td></tr>\n    <tr><td>5</td><td>6</td><td>7</td><td>8</td></tr>\n  </tbody>\n</table>"],"editIdx":-1}
+### Q0 reverse drag done
+dragged-rev
+### Q1 merge btn click (reverse)
+clicked
+### Q2 DOM after reverse-drag merge
+TH[c1,r1]甲 | TH[c1,r1]乙 | TH[c1,r1]丙 | TH[c1,r1]丁
+TD[c1,r1]1 | TD[c2,r1]2 3 | TD[c1,r1]4
+TD[c1,r1]5 | TD[c1,r1]6 | TD[c1,r1]7 | TD[c1,r1]8
+### Q3 raw
+{"raw":["<table class=\"md-tbl\">\n  <thead>\n    <tr><th>甲</th><th>乙</th><th>丙</th><th>丁</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td colspan=\"2\">2 3</td><td>4</td></tr>\n    <tr><td>5</td><td>6</td><td>7</td><td>8</td></tr>\n  </tbody>\n</table>"],"editIdx":-1}
+### R0 mousedown near right edge (resize trigger?)
+{"sel":"{\"idx\":0,\"r0\":1,\"c0\":1,\"r1\":1,\"c1\":2,\"ar\":1,\"ac\":1}"}

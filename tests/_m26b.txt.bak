@@ -1,0 +1,16 @@
+### B1 header-row middle merge dom
+
+### B2 raw
+{"raw":["<table class=\"md-tbl\">\n  <thead>\n    <tr><th>甲</th><th colspan=\"2\">乙 丙</th><th>丁</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td>2</td><td>3</td><td>4</td></tr>\n    <tr><td>5</td><td>6</td><td>7</td><td>8</td></tr>\n  </tbody>\n</table>"],"editIdx":-1}
+### C1 vertical middle-col merge dom
+
+### C2 raw
+{"raw":["<table class=\"md-tbl\">\n  <thead>\n    <tr><th>甲</th><th>乙</th><th>丙</th><th>丁</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td rowspan=\"2\">2 6</td><td>3</td><td>4</td></tr>\n    <tr><td>5</td><td>7</td><td>8</td></tr>\n  </tbody>\n</table>"],"editIdx":-1}
+### E1 2x2 middle merge dom
+
+### E2 raw
+{"raw":["<table class=\"md-tbl\">\n  <thead>\n    <tr><th>甲</th><th>乙</th><th>丙</th><th>丁</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td colspan=\"2\" rowspan=\"2\">2 3 6 7</td><td>4</td></tr>\n    <tr><td>5</td><td>8</td></tr>\n  </tbody>\n</table>"],"editIdx":-1}
+### F1 single-cell op (expect unmerge no-op)
+{"raw":["| 甲 | 乙 | 丙 | 丁 |\n| --- | --- | --- | --- |\n| 1 | 2 | 3 | 4 |\n| 5 | 6 | 7 | 8 |"],"editIdx":-1}
+### G1 merge with header row included (partial?)
+{"raw":["<table class=\"md-tbl\">\n  <thead>\n    <tr><th>甲</th><th>乙</th><th>丙</th><th>丁</th></tr>\n  </thead>\n  <tbody>\n    <tr><td colspan=\"4\">1 2 3 4</td></tr>\n    <tr><td>5</td><td>6</td><td>7</td><td>8</td></tr>\n  </tbody>\n</table>"],"editIdx":-1}

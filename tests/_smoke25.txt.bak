@@ -1,0 +1,65 @@
+PASS | 默认图片存放方式为 assets（相对路径） | assets
+PASS | 图片模式已下发到编辑器（默认 assets） | assets
+PASS | 测试文档已打开 | C:\Users\ADMINI~1\AppData\Local\Temp\md25_ki2mpk0w\笔记.md
+PASS | 文档目录已下发到编辑器（相对路径解析基础） | C:\Users\ADMINI~1\AppData\Local\Temp\md25_ki2mpk0w
+PASS | assets 目录已创建 | C:\Users\ADMINI~1\AppData\Local\Temp\md25_ki2mpk0w\笔记.assets
+PASS | 图片已落盘为文件（v3.25 编号名） | ['00001_shot.png']
+PASS | Markdown 写入相对路径（不使用 data URL） | # 笔记
+
+正文内容。
+
+![shot](笔记.assets/00001_shot.png)
+
+
+PASS | 相对路径已解析成绝对 file:// URL 供渲染 | file:///C:/Users/ADMINI~1/AppData/Local/Temp/md25_ki2mpk0w/%E7%AC%94%E8%AE%B0.assets/00001_shot.png
+PASS | 绝对 / data: / http(s) 路径不被改写 | 
+PASS | 重复插入自动递增编号（00002_shot.png，不覆盖） | ['00001_shot.png', '00002_shot.png']
+PASS | 模式已切换为 embed 并持久化 | embed/embed
+PASS | embed 模式插入 data URL（不落盘） | goAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==)
+
+
+PASS | embed 模式未新增文件 | ['00001_shot.png', '00002_shot.png']
+PASS | 未命名文档已激活（无路径） | None
+PASS | 未保存文档时安全回退为内嵌 data URL | EUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==)
+
+
+PASS | 迁移：内嵌图片全部抽出 | ok=2 bad=0
+PASS | 迁移：路径替换为相对路径且无 data URL | # 迁移测试\n\n![a](笔记.assets/a.png)\n\n正文。\n\n![b](笔记.assets/b.png)\n
+PASS | 迁移：文件确实写入磁盘 | ['00001_shot.png', '00002_shot.png', 'a.png', 'b.png']
+PASS | 迁移命令：文档已写回并瘦身 | # 迁移测试\n\n![a](笔记.assets/a-1.png)\n\n正文。\n\n![b](笔记.assets/b-1.png)\n
+PASS | stats 字段齐全（cjk/words/raw/digits/punct/paragraphs/lines/readMin） | {"chars":12,"cjk":9,"words":3,"raw":29,"digits":5,"punct":3,"paragraphs":3,"lines":5,"readMin":1}
+PASS | 中文字符按字计（5+4=9）/ 英文按词计（Hello/world/ok=3） | {"chars":12,"cjk":9,"words":3,"raw":29,"digits":5,"punct":3,"paragraphs":3,"lines":5,"readMin":1}
+PASS | 纯数字不计入英文单词（12345） | {"chars":12,"cjk":9,"words":3,"raw":29,"digits":5,"punct":3,"paragraphs":3,"lines":5,"readMin":1}
+PASS | 段落数与行数 | {"chars":12,"cjk":9,"words":3,"raw":29,"digits":5,"punct":3,"paragraphs":3,"lines":5,"readMin":1}
+PASS | 字数 = 中文字符 + 英文单词 且给出阅读时长 | {"chars":12,"cjk":9,"words":3,"raw":29,"digits":5,"punct":3,"paragraphs":3,"lines":5,"readMin":1}
+PASS | 状态栏显示「字数 … · 约 … 分钟」 | 字数 12 · 约 1 分钟
+PASS | 统计详情弹窗内容含各项指标 | <b>字数</b>：12　<span style='color:#888;'>（中文字符 9 ＋ 英文单词 3）</span><br><b>字符数</b>（不含空白）：29<br>
+PASS | 搜索根目录取当前文档所在目录 | C:\Users\ADMINI~1\AppData\Local\Temp\md25s_lakif72e
+PASS | 侧栏只剩文件 / 大纲两个标签页 | 2
+PASS | 侧栏不再有搜索面板 / show_search 入口 | sidebar cleaned
+PASS | Ctrl+Shift+F 打开查找对话框且范围为「全局搜索」 | 0
+PASS | 范围下拉含 全局搜索 / 当前文件 两项（置于搜索框前） | ['全局搜索', '当前文件']
+PASS | v3.26 已移除区分大小写 / 正则复选框 | removed
+PASS | 搜索框旁有 ？ 正则帮助按钮 | ?
+PASS | 跨文件搜索命中 3 个文件（含子目录，跳过 .assets） | ['alpha.md', 'beta.txt', 'gamma.md']
+PASS | 固定不区分大小写：alpha.md 命中 2 处（hello / HELLO） | alpha.md  (2)
+PASS | 默认支持正则搜索：仅命中 beta.txt | beta.txt  (1)
+PASS | 非法正则回退为普通文本搜索（不报错） | 未找到匹配「[unclosed」
+PASS | 扩展名筛选「仅 .md」排除 beta.txt | ['alpha.md', 'gamma.md']
+PASS | 无命中时给出提示 | 未找到匹配「绝不存在的关键词XYZ」
+PASS | 切到「当前文件」：全局面板仍可见（同页合一） | True
+PASS | 切到「当前文件」：查找框获得焦点 | True
+PASS | 点击搜索结果打开对应文件 | C:\Users\ADMINI~1\AppData\Local\Temp\md25s_lakif72e\beta.txt
+PASS | 跳转请求已消费（无残留待跳转） | None
+PASS | 菜单动作已注册：导出 Word / EPUB / 迁移内嵌图片 / 在文件夹中搜索 | ['导出 HTML…', '导出 PDF…（含书签）', '导出 Word (docx)…', '导出 EPUB…', '迁移内嵌图片为文件…', '在文件夹中搜索…']
+PASS | 「在文件夹中搜索」默认快捷键 Ctrl+Shift+F | Ctrl+Shift+F
+PASS | PDF 导出改为「含书签」入口 | ['导出 PDF…（含书签）']
+PASS | 大纲缓存已填充（PDF 书签数据源） | [{'index': 0, 'level': 1, 'text': '第一章'}, {'index': 2, 'level': 2, 'text': '小节'}, {'index': 3, 'level': 1, 'text': '第二章'}]
+PASS | 导出 docx 调用链可用 | 已导出 Word · C:\Users\ADMINI~1\AppData\Local\Temp\md25_ki2mpk0w\o.docx
+PASS | 导出 EPUB 调用链可用 | 已导出 EPUB（2 章节 / 0 图）· C:\Users\ADMINI~1\AppData\Local\Temp\md25_ki2mpk0w\o.epub
+PASS | 设置→编辑器 有「图片存放方式」且与主窗口同步 | assets
+PASS | 设置→通用 有 pandoc 路径输入框 | 
+PASS | 设置里切换为 embed 即时生效 | embed
+PASS | 设置里切回 assets 即时生效 | 
+PASS | pandoc 路径保存逻辑可用（留空=自动探测） | 
+--- 54 PASS / 0 FAIL ---

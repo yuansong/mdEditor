@@ -1,0 +1,36 @@
+NOTE | F md | <table class="md-tbl">
+  <thead>
+    <tr><th>甲</th><th>乙</th><th>丙</th><th>丁</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td colspan="2" rowspan="2">2 3 6 7</td><td>4</td></tr>
+    <tr><td>5</td><td>8</td></tr>
+    <tr><td>9</td><td>10</td><td>11</td><td>12</td></tr>
+  </tbody>
+</table>
+NOTE | F dom pos after roundtrip | {'1': '1,0', '4': '1,3', '5': '2,0', '8': '2,3', '9': '3,0', '10': '3,1', '11': '3,2', '12': '3,3', '甲': '0,0', '乙': '0,1', '丙': '0,2', '丁': '0,3', '2 3 6 7': '1,1'}
+NOTE | G merge btn state | en
+NOTE | G raw | <table class="md-tbl">
+  <thead>
+    <tr><th>甲</th><th>乙</th><th>丙</th><th>丁</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td colspan="2" rowspan="2">2 3 6 7</td><td rowspan="2">4 8</td></tr>
+    <tr><td>5</td></tr>
+    <tr><td>9</td><td>10</td><td>11</td><td>12</td></tr>
+  </tbody>
+</table>
+NOTE | G dom pos | {'1': '1,0', '5': '2,0', '9': '3,0', '10': '3,1', '11': '3,2', '12': '3,3', '甲': '0,0', '乙': '0,1', '丙': '0,2', '丁': '0,3', '2 3 6 7': '1,1', '4 8': '1,3'}
+NOTE | H raw | <table class="md-tbl">
+  <thead>
+    <tr><th>甲</th><th>乙</th><th>丙</th><th>丁</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td colspan="2" rowspan="2">2 3 6 7</td><td>4</td></tr>
+    <tr><td>5</td><td>8</td></tr>
+    <tr><td>9</td><td colspan="2">10 11</td><td>12</td></tr>
+  </tbody>
+</table>
+NOTE | H dom pos | {'1': '1,0', '4': '1,3', '5': '2,0', '8': '2,3', '9': '3,0', '12': '3,3', '甲': '0,0', '乙': '0,1', '丙': '0,2', '丁': '0,3', '2 3 6 7': '1,1', '10 11': '3,1'}
+NOTE | errs | []
+DONE

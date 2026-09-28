@@ -1,0 +1,607 @@
+==== session 2026-09-27 17:33:45 ====
+17:33:45.365 [RZ] WATCH_ON
+==== session 2026-09-27 17:42:19 ====
+17:42:19.524 [RZ] WATCH_ON
+==== session 2026-09-27 17:54:55 ====
+17:54:55.295 [RZ] WATCH_ON
+==== session 2026-09-27 17:56:00 ====
+17:56:00.978 [RZ] WATCH_ON
+17:56:05.744 [RZ] ENSURECG T9tppd {"n":4,"w":["","","",""],"miss":[0,1,2,3]}
+17:56:05.745 [RZ] EXPAND-B T9tppd {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+17:56:05.746 [RZ] EXPAND-A T9tppd {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+17:56:05.746 [RZ] ENSURECG T9tppd {"n":4,"w":["194","194","194","194"],"miss":[]}
+17:56:05.748 [RZ] START-RZ merge-path T9tppd {"cw0":[194,194,194,194],"restored":{"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}}
+17:56:05.748 [RZ] START-RZ T9tppd {"kind":"col","index":0,"size":194,"merges":1}
+17:56:05.748 [RZ] APPLY-RZ col T9tppd i=0 -> 234 {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+17:56:05.748 [RZ] ENSURECG T9tppd {"n":4,"w":["194","194","194","194"],"miss":[]}
+17:56:05.748 [RZ] UP-RZ T9tppd {"kind":"col","index":0,"st":{"w":[234,194,194,194],"st":"width: 818px;","tl":"fixed","rectW":818,"rows":4}}
+17:56:05.748 [RZ] COMMIT-RZ in T9tppd {"kind":"col","index":0,"st":{"w":[234,194,194,194],"st":"width: 818px;","tl":"fixed","rectW":818,"rows":4}}
+17:56:05.749 [RZ] COMMIT-RZ out T9tppd {"colW":["234","194","194","194"],"rawLen":465}
+17:56:05.749 [RZ] COMMIT-RZ rebuilt Tawjjm {"w":[234,194,194,194],"st":"width: 818px;","tl":"fixed","rectW":818,"rows":4}
+17:56:05.750 [RZ] MUT T9tppd/childList {"w":[234,194,194,194],"st":"width: 818px;","tl":"","rectW":0,"rows":4}
+==== session 2026-09-27 17:57:24 ====
+17:57:24.896 [RZ] WATCH_ON
+17:57:28.728 [RZ] ENSURECG Tgg5s8 {"n":4,"w":["40","200","60","100"],"miss":[]}
+17:57:28.728 [RZ] START-RZ Tgg5s8 {"kind":"col","index":0,"size":40,"merges":0}
+17:57:28.730 [RZ] APPLY-RZ col Tgg5s8 i=0 -> 80 {"w":[40,200,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}
+17:57:28.730 [RZ] ENSURECG Tgg5s8 {"n":4,"w":["40","200","60","100"],"miss":[]}
+17:57:28.731 [RZ] UP-RZ Tgg5s8 {"kind":"col","index":0,"st":{"w":[80,200,60,100],"st":"width: 442px;","tl":"fixed","rectW":442,"rows":4}}
+17:57:28.732 [RZ] COMMIT-RZ in Tgg5s8 {"kind":"col","index":0,"st":{"w":[80,200,60,100],"st":"width: 442px;","tl":"fixed","rectW":442,"rows":4}}
+17:57:28.732 [RZ] COMMIT-RZ out Tgg5s8 {"colW":["80","200","60","100"],"rawLen":480}
+17:57:28.733 [RZ] COMMIT-RZ rebuilt T3kube {"w":[80,200,60,100],"st":"width: 442px;","tl":"fixed","rectW":442,"rows":4}
+17:57:28.733 [RZ] MUT Tgg5s8/childList {"w":[80,200,60,100],"st":"width: 442px;","tl":"","rectW":0,"rows":4}
+17:57:31.582 [RZ] ENSURECG Twwoxe {"n":4,"w":["40","200","60","100"],"miss":[]}
+17:57:31.584 [RZ] EXPAND-B Twwoxe {"w":[40,200,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}
+17:57:31.585 [RZ] EXPAND-A Twwoxe {"w":[40,200,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}
+17:57:31.585 [RZ] ENSURECG Twwoxe {"n":4,"w":["40","200","60","100"],"miss":[]}
+17:57:31.585 [RZ] START-RZ merge-path Twwoxe {"cw0":[40,200,60,100],"restored":{"w":[40,200,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}}
+17:57:31.585 [RZ] START-RZ Twwoxe {"kind":"col","index":0,"size":40,"merges":1}
+17:57:31.586 [RZ] APPLY-RZ col Twwoxe i=0 -> 80 {"w":[40,200,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}
+17:57:31.586 [RZ] ENSURECG Twwoxe {"n":4,"w":["40","200","60","100"],"miss":[]}
+17:57:31.586 [RZ] UP-RZ Twwoxe {"kind":"col","index":0,"st":{"w":[80,200,60,100],"st":"width: 442px;","tl":"fixed","rectW":442,"rows":4}}
+17:57:31.586 [RZ] COMMIT-RZ in Twwoxe {"kind":"col","index":0,"st":{"w":[80,200,60,100],"st":"width: 442px;","tl":"fixed","rectW":442,"rows":4}}
+17:57:31.587 [RZ] COMMIT-RZ out Twwoxe {"colW":["80","200","60","100"],"rawLen":463}
+17:57:31.587 [RZ] COMMIT-RZ rebuilt T220pl {"w":[80,200,60,100],"st":"width: 442px;","tl":"fixed","rectW":442,"rows":4}
+17:57:31.588 [RZ] MUT Twwoxe/attributes {"w":[80,200,60,100],"st":"width: 442px;","tl":"","rectW":0,"rows":4}
+17:57:34.415 [RZ] ENSURECG To5ut5 {"n":4,"w":["40","200","60","100"],"miss":[]}
+17:57:34.416 [RZ] EXPAND-B To5ut5 {"w":[40,200,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}
+17:57:34.417 [RZ] EXPAND-A To5ut5 {"w":[40,200,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}
+17:57:34.417 [RZ] ENSURECG To5ut5 {"n":4,"w":["40","200","60","100"],"miss":[]}
+17:57:34.417 [RZ] START-RZ merge-path To5ut5 {"cw0":[40,200,60,100],"restored":{"w":[40,200,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}}
+17:57:34.417 [RZ] START-RZ To5ut5 {"kind":"col","index":2,"size":60,"merges":1}
+17:57:34.417 [RZ] APPLY-RZ col To5ut5 i=2 -> 100 {"w":[40,200,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}
+17:57:34.418 [RZ] ENSURECG To5ut5 {"n":4,"w":["40","200","60","100"],"miss":[]}
+17:57:34.418 [RZ] UP-RZ To5ut5 {"kind":"col","index":2,"st":{"w":[40,200,100,100],"st":"width: 442px;","tl":"fixed","rectW":442,"rows":4}}
+17:57:34.418 [RZ] COMMIT-RZ in To5ut5 {"kind":"col","index":2,"st":{"w":[40,200,100,100],"st":"width: 442px;","tl":"fixed","rectW":442,"rows":4}}
+17:57:34.419 [RZ] COMMIT-RZ out To5ut5 {"colW":["40","200","100","100"],"rawLen":464}
+17:57:34.419 [RZ] COMMIT-RZ rebuilt T162kt {"w":[40,200,100,100],"st":"width: 442px;","tl":"fixed","rectW":442,"rows":4}
+17:57:34.420 [RZ] MUT To5ut5/attributes {"w":[40,200,100,100],"st":"width: 442px;","tl":"","rectW":0,"rows":4}
+17:57:37.232 [RZ] ENSURECG Tgrh4a {"n":4,"w":["40","200","60","100"],"miss":[]}
+17:57:37.232 [RZ] EXPAND-B Tgrh4a {"w":[40,200,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}
+17:57:37.233 [RZ] EXPAND-A Tgrh4a {"w":[40,200,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}
+17:57:37.233 [RZ] ENSURECG Tgrh4a {"n":4,"w":["40","200","60","100"],"miss":[]}
+17:57:37.233 [RZ] START-RZ merge-path Tgrh4a {"cw0":[40,200,60,100],"restored":{"w":[40,200,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}}
+17:57:37.233 [RZ] START-RZ Tgrh4a {"kind":"col","index":1,"size":200,"merges":1}
+17:57:37.234 [RZ] APPLY-RZ col Tgrh4a i=1 -> 170 {"w":[40,200,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}
+17:57:37.234 [RZ] ENSURECG Tgrh4a {"n":4,"w":["40","200","60","100"],"miss":[]}
+17:57:37.235 [RZ] UP-RZ Tgrh4a {"kind":"col","index":1,"st":{"w":[40,170,60,100],"st":"width: 372px;","tl":"fixed","rectW":372,"rows":4}}
+17:57:37.235 [RZ] COMMIT-RZ in Tgrh4a {"kind":"col","index":1,"st":{"w":[40,170,60,100],"st":"width: 372px;","tl":"fixed","rectW":372,"rows":4}}
+17:57:37.235 [RZ] COMMIT-RZ out Tgrh4a {"colW":["40","170","60","100"],"rawLen":463}
+17:57:37.236 [RZ] COMMIT-RZ rebuilt Twa5hg {"w":[40,170,60,100],"st":"width: 372px;","tl":"fixed","rectW":372,"rows":4}
+17:57:37.236 [RZ] MUT Tgrh4a/attributes {"w":[40,170,60,100],"st":"width: 372px;","tl":"","rectW":0,"rows":4}
+==== session 2026-09-27 18:00:00 ====
+18:00:00.139 [RZ] WATCH_ON
+==== session 2026-09-27 18:01:35 ====
+18:01:35.779 [RZ] WATCH_ON
+18:01:51.765 [RZ] ENSURECG Twjnp4 {"n":5,"w":["","","","",""],"miss":[0,1,2,3,4]}
+18:01:51.767 [RZ] EXPAND-B Twjnp4 {"w":[155,155,155,155,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:01:51.768 [RZ] EXPAND-A Twjnp4 {"w":[155,155,155,155,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:01:51.768 [RZ] ENSURECG Twjnp4 {"n":5,"w":["155","155","155","155","155"],"miss":[]}
+18:01:51.768 [RZ] START-RZ merge-path Twjnp4 {"cw0":[155,155,155,155,155],"restored":{"w":[155,155,155,155,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}}
+18:01:51.768 [RZ] START-RZ Twjnp4 {"kind":"col","index":1,"size":155,"merges":1}
+18:01:51.769 [RZ] MUT Twjnp4/childList {"w":[155,155,155,155,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:01:52.028 [RZ] APPLY-RZ col Twjnp4 i=1 -> 154 {"w":[155,155,155,155,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:01:52.029 [RZ] ENSURECG Twjnp4 {"n":5,"w":["155","155","155","155","155"],"miss":[]}
+18:01:52.030 [RZ] MUT Twjnp4/childList {"w":[155,154,155,155,155],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":5}
+18:01:52.050 [RZ] ENSURECG Twjnp4 {"n":5,"w":["155","154","155","155","155"],"miss":[]}
+18:01:52.057 [RZ] ENSURECG Twjnp4 {"n":5,"w":["155","153","155","155","155"],"miss":[]}
+18:01:52.088 [RZ] ENSURECG Twjnp4 {"n":5,"w":["155","152","155","155","155"],"miss":[]}
+18:01:52.148 [RZ] ENSURECG Twjnp4 {"n":5,"w":["155","151","155","155","155"],"miss":[]}
+18:01:52.375 [RZ] UP-RZ Twjnp4 {"kind":"col","index":1,"st":{"w":[155,150,155,155,155],"st":"width: 772px;","tl":"fixed","rectW":772,"rows":5}}
+18:01:52.375 [RZ] COMMIT-RZ in Twjnp4 {"kind":"col","index":1,"st":{"w":[155,150,155,155,155],"st":"width: 772px;","tl":"fixed","rectW":772,"rows":5}}
+18:01:52.375 [RZ] COMMIT-RZ out Twjnp4 {"colW":["155","150","155","155","155"],"rawLen":533}
+18:01:52.377 [RZ] COMMIT-RZ rebuilt T39pvl {"w":[155,150,155,155,155],"st":"width: 772px;","tl":"fixed","rectW":772,"rows":5}
+18:01:54.599 [RZ] ENSURECG T39pvl {"n":5,"w":["155","150","155","155","155"],"miss":[]}
+18:01:54.600 [RZ] EXPAND-B T39pvl {"w":[155,150,155,155,155],"st":"width: 772px;","tl":"fixed","rectW":772,"rows":5}
+18:01:54.601 [RZ] EXPAND-A T39pvl {"w":[155,150,155,155,155],"st":"width: 772px;","tl":"fixed","rectW":772,"rows":5}
+18:01:54.601 [RZ] ENSURECG T39pvl {"n":5,"w":["155","150","155","155","155"],"miss":[]}
+18:01:54.601 [RZ] START-RZ merge-path T39pvl {"cw0":[155,150,155,155,155],"restored":{"w":[155,150,155,155,155],"st":"width: 772px;","tl":"fixed","rectW":772,"rows":5}}
+18:01:54.601 [RZ] START-RZ T39pvl {"kind":"col","index":2,"size":155,"merges":1}
+18:01:54.601 [RZ] MUT T39pvl/childList {"w":[155,150,155,155,155],"st":"width: 772px;","tl":"fixed","rectW":772,"rows":5}
+18:01:54.749 [RZ] APPLY-RZ col T39pvl i=2 -> 153 {"w":[155,150,155,155,155],"st":"width: 772px;","tl":"fixed","rectW":772,"rows":5}
+18:01:54.749 [RZ] ENSURECG T39pvl {"n":5,"w":["155","150","155","155","155"],"miss":[]}
+18:01:54.757 [RZ] ENSURECG T39pvl {"n":5,"w":["155","150","153","155","155"],"miss":[]}
+18:01:54.758 [RZ] MUT T39pvl/childList {"w":[155,150,152,155,155],"st":"width: 769px;","tl":"fixed","rectW":769,"rows":5}
+18:01:54.774 [RZ] ENSURECG T39pvl {"n":5,"w":["155","150","152","155","155"],"miss":[]}
+18:01:54.792 [RZ] ENSURECG T39pvl {"n":5,"w":["155","150","147","155","155"],"miss":[]}
+18:01:54.808 [RZ] ENSURECG T39pvl {"n":5,"w":["155","150","134","155","155"],"miss":[]}
+18:01:54.825 [RZ] ENSURECG T39pvl {"n":5,"w":["155","150","114","155","155"],"miss":[]}
+18:01:54.841 [RZ] ENSURECG T39pvl {"n":5,"w":["155","150","79","155","155"],"miss":[]}
+18:01:54.858 [RZ] ENSURECG T39pvl {"n":5,"w":["155","150","60","155","155"],"miss":[]}
+18:01:54.874 [RZ] ENSURECG T39pvl {"n":5,"w":["155","150","52","155","155"],"miss":[]}
+18:01:55.028 [RZ] UP-RZ T39pvl {"kind":"col","index":2,"st":{"w":[155,150,50,155,155],"st":"width: 667px;","tl":"fixed","rectW":667,"rows":5}}
+18:01:55.028 [RZ] COMMIT-RZ in T39pvl {"kind":"col","index":2,"st":{"w":[155,150,50,155,155],"st":"width: 667px;","tl":"fixed","rectW":667,"rows":5}}
+18:01:55.028 [RZ] COMMIT-RZ out T39pvl {"colW":["155","150","50","155","155"],"rawLen":532}
+18:01:55.029 [RZ] COMMIT-RZ rebuilt T0dhtp {"w":[155,150,50,155,155],"st":"width: 667px;","tl":"fixed","rectW":667,"rows":5}
+18:03:05.829 [RZ] ENSURECG T0dhtp {"n":5,"w":["155","150","50","155","155"],"miss":[]}
+18:03:05.829 [RZ] EXPAND-B T0dhtp {"w":[155,150,50,155,155],"st":"width: 667px;","tl":"fixed","rectW":667,"rows":5}
+18:03:05.830 [RZ] EXPAND-A T0dhtp {"w":[155,150,50,155,155],"st":"width: 667px;","tl":"fixed","rectW":667,"rows":5}
+18:03:05.830 [RZ] ENSURECG T0dhtp {"n":5,"w":["155","150","50","155","155"],"miss":[]}
+18:03:05.830 [RZ] START-RZ merge-path T0dhtp {"cw0":[155,150,50,155,155],"restored":{"w":[155,150,50,155,155],"st":"width: 667px;","tl":"fixed","rectW":667,"rows":5}}
+18:03:05.831 [RZ] START-RZ T0dhtp {"kind":"col","index":2,"size":50,"merges":1}
+18:03:05.831 [RZ] MUT T0dhtp/childList {"w":[155,150,50,155,155],"st":"width: 667px;","tl":"fixed","rectW":667,"rows":5}
+18:03:05.926 [RZ] APPLY-RZ col T0dhtp i=2 -> 49 {"w":[155,150,50,155,155],"st":"width: 667px;","tl":"fixed","rectW":667,"rows":5}
+18:03:05.926 [RZ] ENSURECG T0dhtp {"n":5,"w":["155","150","50","155","155"],"miss":[]}
+18:03:05.975 [RZ] ENSURECG T0dhtp {"n":5,"w":["155","150","49","155","155"],"miss":[]}
+18:03:05.990 [RZ] ENSURECG T0dhtp {"n":5,"w":["155","150","47","155","155"],"miss":[]}
+18:03:05.991 [RZ] MUT T0dhtp/childList {"w":[155,150,46,155,155],"st":"width: 663px;","tl":"fixed","rectW":663,"rows":5}
+18:03:06.006 [RZ] ENSURECG T0dhtp {"n":5,"w":["155","150","46","155","155"],"miss":[]}
+18:03:06.022 [RZ] ENSURECG T0dhtp {"n":5,"w":["155","150","45","155","155"],"miss":[]}
+18:03:06.038 [RZ] ENSURECG T0dhtp {"n":5,"w":["155","150","44","155","155"],"miss":[]}
+18:03:06.054 [RZ] ENSURECG T0dhtp {"n":5,"w":["155","150","43","155","155"],"miss":[]}
+18:03:06.316 [RZ] APPLY-RZ col T0dhtp i=2 -> 40 {"w":[155,150,41,155,155],"st":"width: 658px;","tl":"fixed","rectW":658,"rows":5}
+18:03:06.316 [RZ] ENSURECG T0dhtp {"n":5,"w":["155","150","41","155","155"],"miss":[]}
+18:03:06.317 [RZ] MUT T0dhtp/childList {"w":[155,150,40,155,155],"st":"width: 657px;","tl":"fixed","rectW":657,"rows":5}
+18:03:06.335 [RZ] ENSURECG T0dhtp {"n":5,"w":["155","150","40","155","155"],"miss":[]}
+18:03:06.350 [RZ] ENSURECG T0dhtp {"n":5,"w":["155","150","40","155","155"],"miss":[]}
+18:03:06.365 [RZ] ENSURECG T0dhtp {"n":5,"w":["155","150","40","155","155"],"miss":[]}
+18:03:06.382 [RZ] ENSURECG T0dhtp {"n":5,"w":["155","150","40","155","155"],"miss":[]}
+18:03:06.403 [RZ] ENSURECG T0dhtp {"n":5,"w":["155","150","40","155","155"],"miss":[]}
+18:03:06.457 [RZ] ENSURECG T0dhtp {"n":5,"w":["155","150","40","155","155"],"miss":[]}
+18:03:06.742 [RZ] APPLY-RZ col T0dhtp i=2 -> 40 {"w":[155,150,40,155,155],"st":"width: 657px;","tl":"fixed","rectW":657,"rows":5}
+18:03:06.742 [RZ] ENSURECG T0dhtp {"n":5,"w":["155","150","40","155","155"],"miss":[]}
+18:03:06.742 [RZ] MUT T0dhtp/childList {"w":[155,150,40,155,155],"st":"width: 657px;","tl":"fixed","rectW":657,"rows":5}
+18:03:06.759 [RZ] ENSURECG T0dhtp {"n":5,"w":["155","150","40","155","155"],"miss":[]}
+18:03:06.775 [RZ] ENSURECG T0dhtp {"n":5,"w":["155","150","40","155","155"],"miss":[]}
+18:03:06.841 [RZ] UP-RZ T0dhtp {"kind":"col","index":2,"st":{"w":[155,150,40,155,155],"st":"width: 657px;","tl":"fixed","rectW":657,"rows":5}}
+18:03:06.841 [RZ] COMMIT-RZ in T0dhtp {"kind":"col","index":2,"st":{"w":[155,150,40,155,155],"st":"width: 657px;","tl":"fixed","rectW":657,"rows":5}}
+18:03:06.841 [RZ] COMMIT-RZ out T0dhtp {"colW":["155","150","40","155","155"],"rawLen":532}
+18:03:06.842 [RZ] COMMIT-RZ rebuilt Tm7hv5 {"w":[155,150,40,155,155],"st":"width: 657px;","tl":"fixed","rectW":657,"rows":5}
+==== session 2026-09-27 18:06:39 ====
+18:06:39.165 [RZ] WATCH_ON
+18:06:42.977 [RZ] ENSURECG T3x9rz {"n":4,"w":["","","",""],"miss":[0,1,2,3]}
+18:06:42.978 [RZ] START-RZ T3x9rz {"kind":"col","index":1,"size":194,"merges":0}
+18:06:42.981 [RZ] MUT T3x9rz/childList {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:06:43.027 [RZ] APPLY-RZ col T3x9rz i=1 -> 235 {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:06:43.027 [RZ] ENSURECG T3x9rz {"n":4,"w":["194","194","194","194"],"miss":[]}
+18:06:43.029 [RZ] UP-RZ T3x9rz {"kind":"col","index":1,"st":{"w":[194,235,194,194],"st":"width: 819px;","tl":"fixed","rectW":819,"rows":4}}
+18:06:43.029 [RZ] COMMIT-RZ in T3x9rz {"kind":"col","index":1,"st":{"w":[194,235,194,194],"st":"width: 819px;","tl":"fixed","rectW":819,"rows":4}}
+18:06:43.029 [RZ] COMMIT-RZ out T3x9rz {"colW":["194","235","194","194"],"rawLen":482}
+18:06:43.031 [RZ] COMMIT-RZ rebuilt Tsg616 {"w":[194,235,194,194],"st":"width: 819px;","tl":"fixed","rectW":819,"rows":4}
+18:06:45.566 [RZ] ENSURECG Tyyvqz {"n":4,"w":["","","",""],"miss":[0,1,2,3]}
+18:06:45.567 [RZ] EXPAND-B Tyyvqz {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:06:45.569 [RZ] EXPAND-A Tyyvqz {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:06:45.569 [RZ] ENSURECG Tyyvqz {"n":4,"w":["194","194","194","194"],"miss":[]}
+18:06:45.569 [RZ] START-RZ merge-path Tyyvqz {"cw0":[194,194,194,194],"restored":{"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}}
+18:06:45.569 [RZ] START-RZ Tyyvqz {"kind":"col","index":1,"size":194,"merges":1}
+18:06:45.569 [RZ] MUT Tyyvqz/childList {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:06:45.572 [RZ] APPLY-RZ col Tyyvqz i=1 -> 235 {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:06:45.572 [RZ] ENSURECG Tyyvqz {"n":4,"w":["194","194","194","194"],"miss":[]}
+18:06:45.573 [RZ] UP-RZ Tyyvqz {"kind":"col","index":1,"st":{"w":[194,235,194,194],"st":"width: 819px;","tl":"fixed","rectW":819,"rows":4}}
+18:06:45.573 [RZ] COMMIT-RZ in Tyyvqz {"kind":"col","index":1,"st":{"w":[194,235,194,194],"st":"width: 819px;","tl":"fixed","rectW":819,"rows":4}}
+18:06:45.573 [RZ] COMMIT-RZ out Tyyvqz {"colW":["194","235","194","194"],"rawLen":465}
+18:06:45.574 [RZ] COMMIT-RZ rebuilt Th6ecs {"w":[194,235,194,194],"st":"width: 819px;","tl":"fixed","rectW":819,"rows":4}
+18:06:48.089 [RZ] ENSURECG Tuixr7 {"n":4,"w":["","","",""],"miss":[0,1,2,3]}
+18:06:48.090 [RZ] EXPAND-B Tuixr7 {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:06:48.090 [RZ] EXPAND-A Tuixr7 {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:06:48.090 [RZ] ENSURECG Tuixr7 {"n":4,"w":["194","194","194","194"],"miss":[]}
+18:06:48.091 [RZ] START-RZ merge-path Tuixr7 {"cw0":[194,194,194,194],"restored":{"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}}
+18:06:48.091 [RZ] START-RZ Tuixr7 {"kind":"col","index":1,"size":194,"merges":1}
+18:06:48.091 [RZ] MUT Tuixr7/childList {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:06:48.094 [RZ] APPLY-RZ col Tuixr7 i=1 -> 155 {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:06:48.094 [RZ] ENSURECG Tuixr7 {"n":4,"w":["194","194","194","194"],"miss":[]}
+18:06:48.095 [RZ] UP-RZ Tuixr7 {"kind":"col","index":1,"st":{"w":[194,155,194,194],"st":"width: 739px;","tl":"fixed","rectW":739,"rows":4}}
+18:06:48.095 [RZ] COMMIT-RZ in Tuixr7 {"kind":"col","index":1,"st":{"w":[194,155,194,194],"st":"width: 739px;","tl":"fixed","rectW":739,"rows":4}}
+18:06:48.095 [RZ] COMMIT-RZ out Tuixr7 {"colW":["194","155","194","194"],"rawLen":465}
+18:06:48.096 [RZ] COMMIT-RZ rebuilt Teng8c {"w":[194,155,194,194],"st":"width: 739px;","tl":"fixed","rectW":739,"rows":4}
+18:06:56.024 [RZ] ENSURECG Tm7hv5 {"n":5,"w":["155","150","40","155","155"],"miss":[]}
+18:06:56.024 [RZ] EXPAND-B Tm7hv5 {"w":[155,150,40,155,155],"st":"width: 657px;","tl":"fixed","rectW":657,"rows":5}
+18:06:56.025 [RZ] EXPAND-A Tm7hv5 {"w":[155,150,40,155,155],"st":"width: 657px;","tl":"fixed","rectW":657,"rows":5}
+18:06:56.025 [RZ] ENSURECG Tm7hv5 {"n":5,"w":["155","150","40","155","155"],"miss":[]}
+18:06:56.025 [RZ] START-RZ merge-path Tm7hv5 {"cw0":[155,150,40,155,155],"restored":{"w":[155,150,40,155,155],"st":"width: 657px;","tl":"fixed","rectW":657,"rows":5}}
+18:06:56.025 [RZ] START-RZ Tm7hv5 {"kind":"col","index":1,"size":150,"merges":1}
+18:06:56.026 [RZ] MUT Tm7hv5/childList {"w":[155,150,40,155,155],"st":"width: 657px;","tl":"fixed","rectW":657,"rows":5}
+18:06:56.165 [RZ] APPLY-RZ col Tm7hv5 i=1 -> 149 {"w":[155,150,40,155,155],"st":"width: 657px;","tl":"fixed","rectW":657,"rows":5}
+18:06:56.165 [RZ] ENSURECG Tm7hv5 {"n":5,"w":["155","150","40","155","155"],"miss":[]}
+18:06:56.189 [RZ] ENSURECG Tm7hv5 {"n":5,"w":["155","149","40","155","155"],"miss":[]}
+18:06:56.190 [RZ] MUT Tm7hv5/childList {"w":[155,148,40,155,155],"st":"width: 655px;","tl":"fixed","rectW":655,"rows":5}
+18:06:56.211 [RZ] ENSURECG Tm7hv5 {"n":5,"w":["155","148","40","155","155"],"miss":[]}
+18:06:56.233 [RZ] ENSURECG Tm7hv5 {"n":5,"w":["155","147","40","155","155"],"miss":[]}
+18:06:56.248 [RZ] ENSURECG Tm7hv5 {"n":5,"w":["155","146","40","155","155"],"miss":[]}
+18:06:56.265 [RZ] ENSURECG Tm7hv5 {"n":5,"w":["155","145","40","155","155"],"miss":[]}
+18:06:56.281 [RZ] ENSURECG Tm7hv5 {"n":5,"w":["155","143","40","155","155"],"miss":[]}
+18:06:56.296 [RZ] ENSURECG Tm7hv5 {"n":5,"w":["155","141","40","155","155"],"miss":[]}
+18:06:56.312 [RZ] ENSURECG Tm7hv5 {"n":5,"w":["155","139","40","155","155"],"miss":[]}
+18:06:56.327 [RZ] APPLY-RZ col Tm7hv5 i=1 -> 134 {"w":[155,136,40,155,155],"st":"width: 643px;","tl":"fixed","rectW":643,"rows":5}
+18:06:56.327 [RZ] ENSURECG Tm7hv5 {"n":5,"w":["155","136","40","155","155"],"miss":[]}
+18:06:56.344 [RZ] ENSURECG Tm7hv5 {"n":5,"w":["155","134","40","155","155"],"miss":[]}
+18:06:56.345 [RZ] MUT Tm7hv5/childList {"w":[155,131,40,155,155],"st":"width: 638px;","tl":"fixed","rectW":638,"rows":5}
+18:06:56.375 [RZ] ENSURECG Tm7hv5 {"n":5,"w":["155","131","40","155","155"],"miss":[]}
+18:06:56.407 [RZ] ENSURECG Tm7hv5 {"n":5,"w":["155","126","40","155","155"],"miss":[]}
+18:06:57.129 [RZ] UP-RZ Tm7hv5 {"kind":"col","index":1,"st":{"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}}
+18:06:57.129 [RZ] COMMIT-RZ in Tm7hv5 {"kind":"col","index":1,"st":{"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}}
+18:06:57.129 [RZ] COMMIT-RZ out Tm7hv5 {"colW":["155","124","40","155","155"],"rawLen":532}
+18:06:57.131 [RZ] COMMIT-RZ rebuilt T6veu6 {"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}
+18:06:58.011 [RZ] ENSURECG T6veu6 {"n":5,"w":["155","124","40","155","155"],"miss":[]}
+18:06:58.011 [RZ] EXPAND-B T6veu6 {"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}
+18:06:58.013 [RZ] EXPAND-A T6veu6 {"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}
+18:06:58.013 [RZ] ENSURECG T6veu6 {"n":5,"w":["155","124","40","155","155"],"miss":[]}
+18:06:58.013 [RZ] START-RZ merge-path T6veu6 {"cw0":[155,124,40,155,155],"restored":{"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}}
+18:06:58.013 [RZ] START-RZ T6veu6 {"kind":"col","index":1,"size":124,"merges":1}
+18:06:58.014 [RZ] MUT T6veu6/childList {"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}
+18:06:58.724 [RZ] UP-RZ T6veu6 {"kind":"col","index":1,"st":{"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}}
+18:06:58.724 [RZ] COMMIT-RZ in T6veu6 {"kind":"col","index":1,"st":{"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}}
+18:06:58.724 [RZ] COMMIT-RZ out T6veu6 {"colW":["155","124","40","155","155"],"rawLen":532}
+18:06:58.724 [RZ] COMMIT-RZ rebuilt Trcxts {"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}
+18:06:59.329 [RZ] ENSURECG Trcxts {"n":5,"w":["155","124","40","155","155"],"miss":[]}
+18:06:59.329 [RZ] EXPAND-B Trcxts {"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}
+18:06:59.330 [RZ] EXPAND-A Trcxts {"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}
+18:06:59.330 [RZ] ENSURECG Trcxts {"n":5,"w":["155","124","40","155","155"],"miss":[]}
+18:06:59.331 [RZ] START-RZ merge-path Trcxts {"cw0":[155,124,40,155,155],"restored":{"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}}
+18:06:59.331 [RZ] START-RZ Trcxts {"kind":"col","index":1,"size":124,"merges":1}
+18:06:59.331 [RZ] MUT Trcxts/childList {"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}
+18:06:59.968 [RZ] UP-RZ Trcxts {"kind":"col","index":1,"st":{"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}}
+18:06:59.968 [RZ] COMMIT-RZ in Trcxts {"kind":"col","index":1,"st":{"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}}
+18:06:59.968 [RZ] COMMIT-RZ out Trcxts {"colW":["155","124","40","155","155"],"rawLen":532}
+18:06:59.969 [RZ] COMMIT-RZ rebuilt Twnlbf {"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}
+18:07:01.967 [RZ] ENSURECG Twnlbf {"n":5,"w":["155","124","40","155","155"],"miss":[]}
+18:07:01.967 [RZ] EXPAND-B Twnlbf {"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}
+18:07:01.968 [RZ] EXPAND-A Twnlbf {"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}
+18:07:01.968 [RZ] ENSURECG Twnlbf {"n":5,"w":["155","124","40","155","155"],"miss":[]}
+18:07:01.968 [RZ] START-RZ merge-path Twnlbf {"cw0":[155,124,40,155,155],"restored":{"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}}
+18:07:01.969 [RZ] START-RZ Twnlbf {"kind":"col","index":2,"size":40,"merges":1}
+18:07:01.969 [RZ] MUT Twnlbf/childList {"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}
+18:07:02.133 [RZ] APPLY-RZ col Twnlbf i=2 -> 40 {"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}
+18:07:02.133 [RZ] ENSURECG Twnlbf {"n":5,"w":["155","124","40","155","155"],"miss":[]}
+18:07:02.133 [RZ] MUT Twnlbf/childList {"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}
+18:07:02.146 [RZ] ENSURECG Twnlbf {"n":5,"w":["155","124","40","155","155"],"miss":[]}
+18:07:02.161 [RZ] ENSURECG Twnlbf {"n":5,"w":["155","124","40","155","155"],"miss":[]}
+18:07:02.177 [RZ] ENSURECG Twnlbf {"n":5,"w":["155","124","40","155","155"],"miss":[]}
+18:07:02.194 [RZ] ENSURECG Twnlbf {"n":5,"w":["155","124","40","155","155"],"miss":[]}
+18:07:02.213 [RZ] ENSURECG Twnlbf {"n":5,"w":["155","124","40","155","155"],"miss":[]}
+18:07:02.238 [RZ] ENSURECG Twnlbf {"n":5,"w":["155","124","40","155","155"],"miss":[]}
+18:07:02.278 [RZ] ENSURECG Twnlbf {"n":5,"w":["155","124","40","155","155"],"miss":[]}
+18:07:02.628 [RZ] UP-RZ Twnlbf {"kind":"col","index":2,"st":{"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}}
+18:07:02.628 [RZ] COMMIT-RZ in Twnlbf {"kind":"col","index":2,"st":{"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}}
+18:07:02.629 [RZ] COMMIT-RZ out Twnlbf {"colW":["155","124","40","155","155"],"rawLen":532}
+18:07:02.630 [RZ] COMMIT-RZ rebuilt Tqatip {"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}
+18:07:03.610 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","155","155"],"miss":[]}
+18:07:03.611 [RZ] EXPAND-B Tqatip {"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}
+18:07:03.612 [RZ] EXPAND-A Tqatip {"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}
+18:07:03.612 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","155","155"],"miss":[]}
+18:07:03.612 [RZ] START-RZ merge-path Tqatip {"cw0":[155,124,40,155,155],"restored":{"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}}
+18:07:03.612 [RZ] START-RZ Tqatip {"kind":"col","index":3,"size":155,"merges":1}
+18:07:03.614 [RZ] MUT Tqatip/childList {"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}
+18:07:03.724 [RZ] APPLY-RZ col Tqatip i=3 -> 154 {"w":[155,124,40,155,155],"st":"width: 631px;","tl":"fixed","rectW":631,"rows":5}
+18:07:03.724 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","155","155"],"miss":[]}
+18:07:03.736 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","154","155"],"miss":[]}
+18:07:03.744 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","153","155"],"miss":[]}
+18:07:03.760 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","152","155"],"miss":[]}
+18:07:03.777 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","151","155"],"miss":[]}
+18:07:03.778 [RZ] MUT Tqatip/childList {"w":[155,124,40,148,155],"st":"width: 624px;","tl":"fixed","rectW":624,"rows":5}
+18:07:03.794 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","148","155"],"miss":[]}
+18:07:03.811 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","146","155"],"miss":[]}
+18:07:03.827 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","144","155"],"miss":[]}
+18:07:03.845 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","139","155"],"miss":[]}
+18:07:03.860 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","136","155"],"miss":[]}
+18:07:03.879 [RZ] APPLY-RZ col Tqatip i=3 -> 128 {"w":[155,124,40,132,155],"st":"width: 608px;","tl":"fixed","rectW":608,"rows":5}
+18:07:03.879 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","132","155"],"miss":[]}
+18:07:03.896 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","128","155"],"miss":[]}
+18:07:03.915 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","125","155"],"miss":[]}
+18:07:03.949 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","124","155"],"miss":[]}
+18:07:03.949 [RZ] MUT Tqatip/childList {"w":[155,124,40,123,155],"st":"width: 599px;","tl":"fixed","rectW":599,"rows":5}
+18:07:03.949 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","123","155"],"miss":[]}
+18:07:03.981 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","121","155"],"miss":[]}
+18:07:03.997 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","115","155"],"miss":[]}
+18:07:04.014 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","114","155"],"miss":[]}
+18:07:04.047 [RZ] APPLY-RZ col Tqatip i=3 -> 112 {"w":[155,124,40,113,155],"st":"width: 589px;","tl":"fixed","rectW":589,"rows":5}
+18:07:04.047 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","113","155"],"miss":[]}
+18:07:04.065 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","112","155"],"miss":[]}
+18:07:04.111 [RZ] ENSURECG Tqatip {"n":5,"w":["155","124","40","111","155"],"miss":[]}
+18:07:04.112 [RZ] MUT Tqatip/childList {"w":[155,124,40,110,155],"st":"width: 586px;","tl":"fixed","rectW":586,"rows":5}
+18:07:04.182 [RZ] UP-RZ Tqatip {"kind":"col","index":3,"st":{"w":[155,124,40,110,155],"st":"width: 586px;","tl":"fixed","rectW":586,"rows":5}}
+18:07:04.182 [RZ] COMMIT-RZ in Tqatip {"kind":"col","index":3,"st":{"w":[155,124,40,110,155],"st":"width: 586px;","tl":"fixed","rectW":586,"rows":5}}
+18:07:04.182 [RZ] COMMIT-RZ out Tqatip {"colW":["155","124","40","110","155"],"rawLen":532}
+18:07:04.183 [RZ] COMMIT-RZ rebuilt T0p84j {"w":[155,124,40,110,155],"st":"width: 586px;","tl":"fixed","rectW":586,"rows":5}
+==== session 2026-09-27 18:09:16 ====
+18:09:16.556 [RZ] WATCH_ON
+18:09:20.350 [RZ] ENSURECG Tbkefr {"n":4,"w":["","","",""],"miss":[0,1,2,3]}
+18:09:20.351 [RZ] START-RZ Tbkefr {"kind":"col","index":1,"size":194,"merges":0}
+18:09:20.353 [RZ] MUT Tbkefr/childList {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:09:20.379 [RZ] APPLY-RZ col Tbkefr i=1 -> 235 {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:09:20.379 [RZ] ENSURECG Tbkefr {"n":4,"w":["194","194","194","194"],"miss":[]}
+18:09:20.380 [RZ] UP-RZ Tbkefr {"kind":"col","index":1,"st":{"w":[194,235,153,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}}
+18:09:20.381 [RZ] COMMIT-RZ in Tbkefr {"kind":"col","index":1,"st":{"w":[194,235,153,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}}
+18:09:20.381 [RZ] COMMIT-RZ out Tbkefr {"colW":["194","235","153","194"],"rawLen":482}
+18:09:20.383 [RZ] COMMIT-RZ rebuilt T3vl35 {"w":[194,235,153,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:09:22.925 [RZ] ENSURECG Tyg13c {"n":4,"w":["","","",""],"miss":[0,1,2,3]}
+18:09:22.928 [RZ] EXPAND-B Tyg13c {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:09:22.929 [RZ] EXPAND-A Tyg13c {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:09:22.929 [RZ] ENSURECG Tyg13c {"n":4,"w":["194","194","194","194"],"miss":[]}
+18:09:22.929 [RZ] START-RZ merge-path Tyg13c {"cw0":[194,194,194,194],"restored":{"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}}
+18:09:22.929 [RZ] START-RZ Tyg13c {"kind":"col","index":1,"size":194,"merges":1}
+18:09:22.929 [RZ] MUT Tyg13c/childList {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:09:22.933 [RZ] APPLY-RZ col Tyg13c i=1 -> 235 {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:09:22.933 [RZ] ENSURECG Tyg13c {"n":4,"w":["194","194","194","194"],"miss":[]}
+18:09:22.934 [RZ] UP-RZ Tyg13c {"kind":"col","index":1,"st":{"w":[194,235,153,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}}
+18:09:22.934 [RZ] COMMIT-RZ in Tyg13c {"kind":"col","index":1,"st":{"w":[194,235,153,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}}
+18:09:22.934 [RZ] COMMIT-RZ out Tyg13c {"colW":["194","235","153","194"],"rawLen":465}
+18:09:22.935 [RZ] COMMIT-RZ rebuilt Tezsg4 {"w":[194,235,153,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:09:25.444 [RZ] ENSURECG Ty54mc {"n":4,"w":["","","",""],"miss":[0,1,2,3]}
+18:09:25.445 [RZ] EXPAND-B Ty54mc {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:09:25.445 [RZ] EXPAND-A Ty54mc {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:09:25.445 [RZ] ENSURECG Ty54mc {"n":4,"w":["194","194","194","194"],"miss":[]}
+18:09:25.446 [RZ] START-RZ merge-path Ty54mc {"cw0":[194,194,194,194],"restored":{"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}}
+18:09:25.446 [RZ] START-RZ Ty54mc {"kind":"col","index":1,"size":194,"merges":1}
+18:09:25.446 [RZ] MUT Ty54mc/childList {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:09:25.450 [RZ] APPLY-RZ col Ty54mc i=1 -> 155 {"w":[194,194,194,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+18:09:25.450 [RZ] ENSURECG Ty54mc {"n":4,"w":["194","194","194","194"],"miss":[]}
+18:09:25.451 [RZ] UP-RZ Ty54mc {"kind":"col","index":1,"st":{"w":[194,155,233,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}}
+18:09:25.451 [RZ] COMMIT-RZ in Ty54mc {"kind":"col","index":1,"st":{"w":[194,155,233,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}}
+18:09:25.451 [RZ] COMMIT-RZ out Ty54mc {"colW":["194","155","233","194"],"rawLen":465}
+18:09:25.452 [RZ] COMMIT-RZ rebuilt Tpyuci {"w":[194,155,233,194],"st":"width: 778px;","tl":"fixed","rectW":778,"rows":4}
+==== session 2026-09-27 18:13:19 ====
+18:13:19.906 [RZ] WATCH_ON
+18:13:23.702 [RZ] ENSURECG Twwnlp {"n":4,"w":["","","",""],"miss":[0,1,2,3]}
+18:13:23.702 [RZ] START-RZ Twwnlp {"kind":"col","index":1,"size":194,"merges":0}
+18:13:23.705 [RZ] MUT Twwnlp/childList {"w":[192,194,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+18:13:23.730 [RZ] APPLY-RZ col Twwnlp i=1 -> 233 {"w":[192,194,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+18:13:23.730 [RZ] ENSURECG Twwnlp {"n":4,"w":["192","194","194","194"],"miss":[]}
+18:13:23.731 [RZ] UP-RZ Twwnlp {"kind":"col","index":1,"st":{"w":[192,233,155,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}}
+18:13:23.731 [RZ] COMMIT-RZ in Twwnlp {"kind":"col","index":1,"st":{"w":[192,233,155,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}}
+18:13:23.732 [RZ] COMMIT-RZ out Twwnlp {"colW":["192","233","155","194"],"rawLen":482}
+18:13:23.733 [RZ] COMMIT-RZ rebuilt Tft5om {"w":[192,233,155,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+18:13:26.245 [RZ] ENSURECG Tsxxa2 {"n":4,"w":["","","",""],"miss":[0,1,2,3]}
+18:13:26.247 [RZ] EXPAND-B Tsxxa2 {"w":[192,194,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+18:13:26.249 [RZ] EXPAND-A Tsxxa2 {"w":[192,194,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+18:13:26.249 [RZ] ENSURECG Tsxxa2 {"n":4,"w":["192","194","194","194"],"miss":[]}
+18:13:26.250 [RZ] START-RZ merge-path Tsxxa2 {"cw0":[192,194,194,194],"restored":{"w":[192,194,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}}
+18:13:26.250 [RZ] START-RZ Tsxxa2 {"kind":"col","index":1,"size":194,"merges":1}
+18:13:26.251 [RZ] MUT Tsxxa2/childList {"w":[192,194,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+18:13:26.254 [RZ] APPLY-RZ col Tsxxa2 i=1 -> 233 {"w":[192,194,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+18:13:26.255 [RZ] ENSURECG Tsxxa2 {"n":4,"w":["192","194","194","194"],"miss":[]}
+18:13:26.255 [RZ] UP-RZ Tsxxa2 {"kind":"col","index":1,"st":{"w":[192,233,155,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}}
+18:13:26.255 [RZ] COMMIT-RZ in Tsxxa2 {"kind":"col","index":1,"st":{"w":[192,233,155,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}}
+18:13:26.255 [RZ] COMMIT-RZ out Tsxxa2 {"colW":["192","233","155","194"],"rawLen":465}
+18:13:26.256 [RZ] COMMIT-RZ rebuilt Ty5om4 {"w":[192,233,155,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+18:13:28.802 [RZ] ENSURECG T988xr {"n":4,"w":["","","",""],"miss":[0,1,2,3]}
+18:13:28.803 [RZ] EXPAND-B T988xr {"w":[192,194,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+18:13:28.804 [RZ] EXPAND-A T988xr {"w":[192,194,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+18:13:28.804 [RZ] ENSURECG T988xr {"n":4,"w":["192","194","194","194"],"miss":[]}
+18:13:28.805 [RZ] START-RZ merge-path T988xr {"cw0":[192,194,194,194],"restored":{"w":[192,194,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}}
+18:13:28.805 [RZ] START-RZ T988xr {"kind":"col","index":1,"size":194,"merges":1}
+18:13:28.805 [RZ] MUT T988xr/childList {"w":[192,194,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+18:13:28.808 [RZ] APPLY-RZ col T988xr i=1 -> 153 {"w":[192,194,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+18:13:28.808 [RZ] ENSURECG T988xr {"n":4,"w":["192","194","194","194"],"miss":[]}
+18:13:28.809 [RZ] UP-RZ T988xr {"kind":"col","index":1,"st":{"w":[192,153,235,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}}
+18:13:28.809 [RZ] COMMIT-RZ in T988xr {"kind":"col","index":1,"st":{"w":[192,153,235,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}}
+18:13:28.809 [RZ] COMMIT-RZ out T988xr {"colW":["192","153","235","194"],"rawLen":465}
+18:13:28.810 [RZ] COMMIT-RZ rebuilt Tepbih {"w":[192,153,235,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+==== session 2026-09-27 18:19:09 ====
+18:19:09.215 [RZ] WATCH_ON
+18:19:24.126 [RZ] ENSURECG Twfb8m {"n":5,"w":["","","","",""],"miss":[0,1,2,3,4]}
+18:19:24.128 [RZ] EXPAND-B Twfb8m {"w":[155,155,155,155,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:24.129 [RZ] EXPAND-A Twfb8m {"w":[155,155,155,155,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:24.129 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","155","155","155"],"miss":[]}
+18:19:24.129 [RZ] START-RZ merge-path Twfb8m {"cw0":[155,155,155,155,155],"restored":{"w":[155,155,155,155,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}}
+18:19:24.129 [RZ] START-RZ Twfb8m {"kind":"col","index":2,"size":155,"merges":1}
+18:19:24.130 [RZ] MUT Twfb8m/childList {"w":[155,155,155,155,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:24.244 [RZ] APPLY-RZ col Twfb8m i=2 -> 154 {"w":[155,155,155,155,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:24.244 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","155","155","155"],"miss":[]}
+18:19:24.263 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","154","156","155"],"miss":[]}
+18:19:24.278 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","153","157","155"],"miss":[]}
+18:19:24.295 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","152","158","155"],"miss":[]}
+18:19:24.296 [RZ] MUT Twfb8m/childList {"w":[155,155,143,167,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:24.313 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","143","167","155"],"miss":[]}
+18:19:24.329 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","113","197","155"],"miss":[]}
+18:19:24.346 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","87","223","155"],"miss":[]}
+18:19:24.363 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","59","251","155"],"miss":[]}
+18:19:24.378 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","40","270","155"],"miss":[]}
+18:19:24.396 [RZ] APPLY-RZ col Twfb8m i=2 -> 40 {"w":[155,155,40,270,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:24.396 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","40","270","155"],"miss":[]}
+18:19:24.770 [RZ] APPLY-RZ col Twfb8m i=2 -> 40 {"w":[155,155,40,270,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:24.770 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","40","270","155"],"miss":[]}
+18:19:24.770 [RZ] MUT Twfb8m/childList {"w":[155,155,40,270,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:24.899 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","40","270","155"],"miss":[]}
+18:19:24.912 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","40","270","155"],"miss":[]}
+18:19:24.928 [RZ] APPLY-RZ col Twfb8m i=2 -> 40 {"w":[155,155,40,270,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:24.928 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","40","270","155"],"miss":[]}
+18:19:24.929 [RZ] MUT Twfb8m/childList {"w":[155,155,40,270,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:24.945 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","40","270","155"],"miss":[]}
+18:19:25.226 [RZ] APPLY-RZ col Twfb8m i=2 -> 40 {"w":[155,155,40,270,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:25.227 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","40","270","155"],"miss":[]}
+18:19:25.227 [RZ] MUT Twfb8m/childList {"w":[155,155,40,270,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:25.279 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","40","270","155"],"miss":[]}
+18:19:25.296 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","40","270","155"],"miss":[]}
+18:19:25.312 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","40","270","155"],"miss":[]}
+18:19:25.331 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","52","258","155"],"miss":[]}
+18:19:25.347 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","65","245","155"],"miss":[]}
+18:19:25.363 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","75","235","155"],"miss":[]}
+18:19:25.380 [RZ] APPLY-RZ col Twfb8m i=2 -> 78 {"w":[155,155,77,233,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:25.380 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","77","233","155"],"miss":[]}
+18:19:25.381 [RZ] MUT Twfb8m/childList {"w":[155,155,78,232,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:25.542 [RZ] APPLY-RZ col Twfb8m i=2 -> 78 {"w":[155,155,78,232,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:25.542 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","78","232","155"],"miss":[]}
+18:19:25.543 [RZ] MUT Twfb8m/childList {"w":[155,155,78,232,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:25.555 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","78","232","155"],"miss":[]}
+18:19:25.563 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","79","231","155"],"miss":[]}
+18:19:25.578 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","80","230","155"],"miss":[]}
+18:19:25.597 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","81","229","155"],"miss":[]}
+18:19:25.612 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","85","225","155"],"miss":[]}
+18:19:25.629 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","87","223","155"],"miss":[]}
+18:19:25.646 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","89","221","155"],"miss":[]}
+18:19:25.662 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","92","218","155"],"miss":[]}
+18:19:25.678 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","93","217","155"],"miss":[]}
+18:19:25.696 [RZ] APPLY-RZ col Twfb8m i=2 -> 99 {"w":[155,155,97,213,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:25.696 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","97","213","155"],"miss":[]}
+18:19:25.697 [RZ] MUT Twfb8m/childList {"w":[155,155,99,211,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:25.713 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","99","211","155"],"miss":[]}
+18:19:25.730 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","102","208","155"],"miss":[]}
+18:19:25.745 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","104","206","155"],"miss":[]}
+18:19:25.762 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","106","204","155"],"miss":[]}
+18:19:25.779 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","108","202","155"],"miss":[]}
+18:19:25.794 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","109","201","155"],"miss":[]}
+18:19:25.812 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","110","200","155"],"miss":[]}
+18:19:25.946 [RZ] APPLY-RZ col Twfb8m i=2 -> 110 {"w":[155,155,111,199,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:25.946 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","111","199","155"],"miss":[]}
+18:19:25.947 [RZ] MUT Twfb8m/childList {"w":[155,155,110,200,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:25.969 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","110","200","155"],"miss":[]}
+18:19:25.993 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","109","201","155"],"miss":[]}
+18:19:26.012 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","108","202","155"],"miss":[]}
+18:19:26.029 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","107","203","155"],"miss":[]}
+18:19:26.045 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","104","206","155"],"miss":[]}
+18:19:26.062 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","100","210","155"],"miss":[]}
+18:19:26.078 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","96","214","155"],"miss":[]}
+18:19:26.096 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","94","216","155"],"miss":[]}
+18:19:26.112 [RZ] APPLY-RZ col Twfb8m i=2 -> 91 {"w":[155,155,93,217,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:26.112 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","93","217","155"],"miss":[]}
+18:19:26.113 [RZ] MUT Twfb8m/childList {"w":[155,155,91,219,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:26.133 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","91","219","155"],"miss":[]}
+18:19:26.151 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","90","220","155"],"miss":[]}
+18:19:26.161 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","88","222","155"],"miss":[]}
+18:19:26.180 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","86","224","155"],"miss":[]}
+18:19:26.195 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","80","230","155"],"miss":[]}
+18:19:26.211 [RZ] ENSURECG Twfb8m {"n":5,"w":["155","155","76","234","155"],"miss":[]}
+18:19:27.367 [RZ] UP-RZ Twfb8m {"kind":"col","index":2,"st":{"w":[155,155,73,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}}
+18:19:27.367 [RZ] COMMIT-RZ in Twfb8m {"kind":"col","index":2,"st":{"w":[155,155,73,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}}
+18:19:27.367 [RZ] COMMIT-RZ out Twfb8m {"colW":["155","155","73","237","155"],"rawLen":511}
+18:19:27.369 [RZ] COMMIT-RZ rebuilt Tkes4f {"w":[155,155,73,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:28.811 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","155","73","237","155"],"miss":[]}
+18:19:28.812 [RZ] EXPAND-B Tkes4f {"w":[155,155,73,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:28.813 [RZ] EXPAND-A Tkes4f {"w":[155,155,73,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:28.813 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","155","73","237","155"],"miss":[]}
+18:19:28.813 [RZ] START-RZ merge-path Tkes4f {"cw0":[155,155,73,237,155],"restored":{"w":[155,155,73,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}}
+18:19:28.813 [RZ] START-RZ Tkes4f {"kind":"col","index":1,"size":155,"merges":1}
+18:19:28.814 [RZ] MUT Tkes4f/childList {"w":[155,155,73,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:28.929 [RZ] APPLY-RZ col Tkes4f i=1 -> 154 {"w":[155,155,73,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:28.930 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","155","73","237","155"],"miss":[]}
+18:19:28.959 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","154","74","237","155"],"miss":[]}
+18:19:28.978 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","153","75","237","155"],"miss":[]}
+18:19:28.979 [RZ] MUT Tkes4f/childList {"w":[155,152,76,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:28.995 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","152","76","237","155"],"miss":[]}
+18:19:29.012 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","149","79","237","155"],"miss":[]}
+18:19:29.029 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","140","88","237","155"],"miss":[]}
+18:19:29.045 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","134","94","237","155"],"miss":[]}
+18:19:29.062 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","124","104","237","155"],"miss":[]}
+18:19:29.078 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","115","113","237","155"],"miss":[]}
+18:19:29.095 [RZ] APPLY-RZ col Tkes4f i=1 -> 103 {"w":[155,108,120,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:29.095 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","108","120","237","155"],"miss":[]}
+18:19:29.112 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","103","125","237","155"],"miss":[]}
+18:19:29.336 [RZ] APPLY-RZ col Tkes4f i=1 -> 100 {"w":[155,101,127,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:29.336 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","101","127","237","155"],"miss":[]}
+18:19:29.336 [RZ] MUT Tkes4f/childList {"w":[155,100,128,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:29.345 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","100","128","237","155"],"miss":[]}
+18:19:29.363 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","99","129","237","155"],"miss":[]}
+18:19:29.379 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","95","133","237","155"],"miss":[]}
+18:19:29.395 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","92","136","237","155"],"miss":[]}
+18:19:29.412 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","90","138","237","155"],"miss":[]}
+18:19:29.801 [RZ] APPLY-RZ col Tkes4f i=1 -> 89 {"w":[155,88,140,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:29.801 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","88","140","237","155"],"miss":[]}
+18:19:29.802 [RZ] MUT Tkes4f/childList {"w":[155,89,139,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:19:29.812 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","89","139","237","155"],"miss":[]}
+18:19:29.829 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","90","138","237","155"],"miss":[]}
+18:19:29.845 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","91","137","237","155"],"miss":[]}
+18:19:29.864 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","93","135","237","155"],"miss":[]}
+18:19:29.879 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","97","131","237","155"],"miss":[]}
+18:19:29.895 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","100","128","237","155"],"miss":[]}
+18:19:29.911 [RZ] ENSURECG Tkes4f {"n":5,"w":["155","102","126","237","155"],"miss":[]}
+18:19:30.177 [RZ] UP-RZ Tkes4f {"kind":"col","index":1,"st":{"w":[155,104,124,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}}
+18:19:30.177 [RZ] COMMIT-RZ in Tkes4f {"kind":"col","index":1,"st":{"w":[155,104,124,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}}
+18:19:30.177 [RZ] COMMIT-RZ out Tkes4f {"colW":["155","104","124","237","155"],"rawLen":512}
+18:19:30.178 [RZ] COMMIT-RZ rebuilt Tw1cds {"w":[155,104,124,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:20:17.946 [RZ] ENSURECG Tw1cds {"n":5,"w":["155","104","124","237","155"],"miss":[]}
+18:20:17.947 [RZ] EXPAND-B Tw1cds {"w":[155,104,124,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:20:17.947 [RZ] EXPAND-A Tw1cds {"w":[155,104,124,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:20:17.948 [RZ] ENSURECG Tw1cds {"n":5,"w":["155","104","124","237","155"],"miss":[]}
+18:20:17.948 [RZ] START-RZ merge-path Tw1cds {"cw0":[155,104,124,237,155],"restored":{"w":[155,104,124,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}}
+18:20:17.948 [RZ] START-RZ Tw1cds {"kind":"col","index":2,"size":124,"merges":1}
+18:20:17.949 [RZ] MUT Tw1cds/childList {"w":[155,104,124,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:20:18.068 [RZ] APPLY-RZ col Tw1cds i=2 -> 123 {"w":[155,104,124,237,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:20:18.068 [RZ] ENSURECG Tw1cds {"n":5,"w":["155","104","124","237","155"],"miss":[]}
+18:20:18.083 [RZ] ENSURECG Tw1cds {"n":5,"w":["155","104","123","238","155"],"miss":[]}
+18:20:18.096 [RZ] ENSURECG Tw1cds {"n":5,"w":["155","104","121","240","155"],"miss":[]}
+18:20:18.113 [RZ] ENSURECG Tw1cds {"n":5,"w":["155","104","119","242","155"],"miss":[]}
+18:20:18.113 [RZ] MUT Tw1cds/childList {"w":[155,104,118,243,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:20:18.130 [RZ] ENSURECG Tw1cds {"n":5,"w":["155","104","118","243","155"],"miss":[]}
+18:20:18.144 [RZ] ENSURECG Tw1cds {"n":5,"w":["155","104","114","247","155"],"miss":[]}
+18:20:18.160 [RZ] ENSURECG Tw1cds {"n":5,"w":["155","104","109","252","155"],"miss":[]}
+18:20:18.190 [RZ] ENSURECG Tw1cds {"n":5,"w":["155","104","103","258","155"],"miss":[]}
+18:20:18.193 [RZ] ENSURECG Tw1cds {"n":5,"w":["155","104","91","270","155"],"miss":[]}
+18:20:18.221 [RZ] APPLY-RZ col Tw1cds i=2 -> 79 {"w":[155,104,88,273,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:20:18.221 [RZ] ENSURECG Tw1cds {"n":5,"w":["155","104","88","273","155"],"miss":[]}
+18:20:18.237 [RZ] ENSURECG Tw1cds {"n":5,"w":["155","104","79","282","155"],"miss":[]}
+18:20:18.253 [RZ] ENSURECG Tw1cds {"n":5,"w":["155","104","76","285","155"],"miss":[]}
+18:20:18.269 [RZ] ENSURECG Tw1cds {"n":5,"w":["155","104","74","287","155"],"miss":[]}
+18:20:18.269 [RZ] MUT Tw1cds/childList {"w":[155,104,74,287,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:20:19.064 [RZ] APPLY-RZ col Tw1cds i=2 -> 75 {"w":[155,104,74,287,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:20:19.064 [RZ] ENSURECG Tw1cds {"n":5,"w":["155","104","74","287","155"],"miss":[]}
+18:20:19.065 [RZ] MUT Tw1cds/childList {"w":[155,104,75,286,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+18:20:19.239 [RZ] UP-RZ Tw1cds {"kind":"col","index":2,"st":{"w":[155,104,75,286,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}}
+18:20:19.239 [RZ] COMMIT-RZ in Tw1cds {"kind":"col","index":2,"st":{"w":[155,104,75,286,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}}
+18:20:19.239 [RZ] COMMIT-RZ out Tw1cds {"colW":["155","104","75","286","155"],"rawLen":511}
+18:20:19.241 [RZ] COMMIT-RZ rebuilt T5m15d {"w":[155,104,75,286,155],"st":"width: 777px;","tl":"fixed","rectW":777,"rows":5}
+==== session 2026-09-27 18:21:37 ====
+18:21:37.556 [RZ] WATCH_ON
+18:21:42.335 [RZ] ENSURECG Tthslm {"n":4,"w":["","","",""],"miss":[0,1,2,3]}
+18:21:42.336 [RZ] EXPAND-B Tthslm {"w":[192,194,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+18:21:42.337 [RZ] EXPAND-A Tthslm {"w":[192,194,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+18:21:42.337 [RZ] ENSURECG Tthslm {"n":4,"w":["192","194","194","194"],"miss":[]}
+18:21:42.337 [RZ] START-RZ merge-path Tthslm {"cw0":[192,194,194,194],"restored":{"w":[192,194,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}}
+18:21:42.337 [RZ] START-RZ Tthslm {"kind":"col","index":0,"size":192,"merges":1}
+18:21:42.338 [RZ] APPLY-RZ col Tthslm i=0 -> 232 {"w":[192,194,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+18:21:42.338 [RZ] ENSURECG Tthslm {"n":4,"w":["192","194","194","194"],"miss":[]}
+18:21:42.339 [RZ] UP-RZ Tthslm {"kind":"col","index":0,"st":{"w":[232,154,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}}
+18:21:42.339 [RZ] COMMIT-RZ in Tthslm {"kind":"col","index":0,"st":{"w":[232,154,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}}
+18:21:42.339 [RZ] COMMIT-RZ out Tthslm {"colW":["232","154","194","194"],"rawLen":465}
+18:21:42.340 [RZ] COMMIT-RZ rebuilt Tjmhs6 {"w":[232,154,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+18:21:42.340 [RZ] MUT Tthslm/childList {"w":[232,154,194,194],"st":"width: 776px;","tl":"","rectW":0,"rows":4}
+==== session 2026-09-27 18:30:51 ====
+18:30:51.518 [RZ] WATCH_ON
+18:30:56.276 [RZ] ENSURECG Tdp9wc {"n":4,"w":["","","",""],"miss":[0,1,2,3]}
+18:30:56.277 [RZ] START-RZ Tdp9wc {"kind":"col","index":1,"size":194,"merges":0}
+18:30:56.278 [RZ] MUT Tdp9wc/childList {"w":[192,194,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+18:30:56.299 [RZ] APPLY-RZ col Tdp9wc i=1 -> 233 {"w":[192,194,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+18:30:56.299 [RZ] ENSURECG Tdp9wc {"n":4,"w":["192","194","194","194"],"miss":[]}
+18:30:56.299 [RZ] UP-RZ Tdp9wc {"kind":"col","index":1,"st":{"w":[192,233,155,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}}
+18:30:56.299 [RZ] COMMIT-RZ in Tdp9wc {"kind":"col","index":1,"st":{"w":[192,233,155,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}}
+18:30:56.299 [RZ] COMMIT-RZ out Tdp9wc {"colW":["192","233","155","194"],"rawLen":374}
+18:30:56.301 [RZ] COMMIT-RZ rebuilt Tykugf {"w":[192,233,155,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+==== session 2026-09-27 18:38:23 ====
+18:38:23.066 [RZ] WATCH_ON
+18:38:27.843 [RZ] ENSURECG Tw7sna {"n":4,"w":["","","",""],"miss":[0,1,2,3]}
+18:38:27.844 [RZ] START-RZ Tw7sna {"kind":"col","index":0,"size":192,"merges":0}
+18:38:27.845 [RZ] APPLY-RZ col Tw7sna i=0 -> 232 {"w":[192,194,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+18:38:27.845 [RZ] ENSURECG Tw7sna {"n":4,"w":["192","194","194","194"],"miss":[]}
+18:38:27.846 [RZ] UP-RZ Tw7sna {"kind":"col","index":0,"st":{"w":[232,154,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}}
+18:38:27.846 [RZ] COMMIT-RZ in Tw7sna {"kind":"col","index":0,"st":{"w":[232,154,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}}
+18:38:27.846 [RZ] COMMIT-RZ out Tw7sna {"colW":["232","154","194","194"],"rawLen":465}
+18:38:27.847 [RZ] COMMIT-RZ rebuilt Tmut4i {"w":[232,154,194,194],"st":"width: 776px;","tl":"fixed","rectW":776,"rows":4}
+18:38:27.847 [RZ] MUT Tw7sna/childList {"w":[232,154,194,194],"st":"width: 776px;","tl":"","rectW":0,"rows":4}
+==== session 2026-09-27 18:46:03 ====
+18:46:03.105 [RZ] WATCH_ON
+18:46:06.929 [RZ] ENSURECG T15lnu {"n":4,"w":["40","200","60","100"],"miss":[]}
+18:46:06.929 [RZ] START-RZ T15lnu {"kind":"col","index":0,"size":40,"merges":0}
+18:46:06.931 [RZ] APPLY-RZ col T15lnu i=0 -> 80 {"w":[40,200,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}
+18:46:06.931 [RZ] ENSURECG T15lnu {"n":4,"w":["40","200","60","100"],"miss":[]}
+18:46:06.932 [RZ] UP-RZ T15lnu {"kind":"col","index":0,"st":{"w":[80,160,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}}
+18:46:06.933 [RZ] COMMIT-RZ in T15lnu {"kind":"col","index":0,"st":{"w":[80,160,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}}
+18:46:06.933 [RZ] COMMIT-RZ out T15lnu {"colW":["80","160","60","100"],"rawLen":480}
+18:46:06.934 [RZ] COMMIT-RZ rebuilt Tf32c0 {"w":[80,160,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}
+18:46:06.935 [RZ] MUT T15lnu/childList {"w":[80,160,60,100],"st":"width: 402px;","tl":"","rectW":0,"rows":4}
+18:46:09.760 [RZ] ENSURECG Tgpzjc {"n":4,"w":["40","200","60","100"],"miss":[]}
+18:46:09.761 [RZ] START-RZ Tgpzjc {"kind":"col","index":0,"size":40,"merges":0}
+18:46:09.763 [RZ] APPLY-RZ col Tgpzjc i=0 -> 80 {"w":[40,200,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}
+18:46:09.763 [RZ] ENSURECG Tgpzjc {"n":4,"w":["40","200","60","100"],"miss":[]}
+18:46:09.763 [RZ] UP-RZ Tgpzjc {"kind":"col","index":0,"st":{"w":[80,160,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}}
+18:46:09.764 [RZ] COMMIT-RZ in Tgpzjc {"kind":"col","index":0,"st":{"w":[80,160,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}}
+18:46:09.764 [RZ] COMMIT-RZ out Tgpzjc {"colW":["80","160","60","100"],"rawLen":463}
+18:46:09.765 [RZ] COMMIT-RZ rebuilt Ty6922 {"w":[80,160,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}
+18:46:09.765 [RZ] MUT Tgpzjc/childList {"w":[80,160,60,100],"st":"width: 402px;","tl":"","rectW":0,"rows":4}
+18:46:12.598 [RZ] ENSURECG Tbt5if {"n":4,"w":["40","200","60","100"],"miss":[]}
+18:46:12.598 [RZ] START-RZ Tbt5if {"kind":"col","index":2,"size":60,"merges":0}
+18:46:12.599 [RZ] APPLY-RZ col Tbt5if i=2 -> 100 {"w":[40,200,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}
+18:46:12.599 [RZ] ENSURECG Tbt5if {"n":4,"w":["40","200","60","100"],"miss":[]}
+18:46:12.600 [RZ] UP-RZ Tbt5if {"kind":"col","index":2,"st":{"w":[40,200,100,60],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}}
+18:46:12.600 [RZ] COMMIT-RZ in Tbt5if {"kind":"col","index":2,"st":{"w":[40,200,100,60],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}}
+18:46:12.600 [RZ] COMMIT-RZ out Tbt5if {"colW":["40","200","100","60"],"rawLen":463}
+18:46:12.601 [RZ] COMMIT-RZ rebuilt T58akx {"w":[40,200,100,60],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}
+18:46:12.601 [RZ] MUT Tbt5if/childList {"w":[40,200,100,60],"st":"width: 402px;","tl":"","rectW":0,"rows":4}
+18:46:15.411 [RZ] ENSURECG T7gaxf {"n":4,"w":["40","200","60","100"],"miss":[]}
+18:46:15.411 [RZ] START-RZ T7gaxf {"kind":"col","index":1,"size":200,"merges":0}
+18:46:15.412 [RZ] APPLY-RZ col T7gaxf i=1 -> 170 {"w":[40,200,60,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}
+18:46:15.412 [RZ] ENSURECG T7gaxf {"n":4,"w":["40","200","60","100"],"miss":[]}
+18:46:15.412 [RZ] UP-RZ T7gaxf {"kind":"col","index":1,"st":{"w":[40,170,90,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}}
+18:46:15.413 [RZ] COMMIT-RZ in T7gaxf {"kind":"col","index":1,"st":{"w":[40,170,90,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}}
+18:46:15.413 [RZ] COMMIT-RZ out T7gaxf {"colW":["40","170","90","100"],"rawLen":463}
+18:46:15.414 [RZ] COMMIT-RZ rebuilt Tzuxzs {"w":[40,170,90,100],"st":"width: 402px;","tl":"fixed","rectW":402,"rows":4}
+18:46:15.414 [RZ] MUT T7gaxf/childList {"w":[40,170,90,100],"st":"width: 402px;","tl":"","rectW":0,"rows":4}

@@ -1,0 +1,98 @@
+PASS | 原生 Markdown 图片保持 ![alt](src) 存储 | ![示意图](data:image/svg+xml,%3Csvg%20xmlns
+PASS | 图片已渲染并有固有尺寸 | {'l': 44, 't': 70.390625, 'w': 200, 'h': 100, 'r': 244, 'b': 170.390625}
+PASS | 点击图片 → 缩放框 + 对象操作条出现 | {'frame': True, 'bar': True}
+PASS | 图片被标记为选中态 | {'kind': 'img', 'idx': 0}
+PASS | 拖拉右边手柄 → 图片宽度写入 <figure> 存储 | <figure class="md-fig">
+<img src="data:image/svg+xml,%3Csvg%
+PASS | 宽度按拖拉量落盘（约 +80px，200→280） | <figure class="md-fig">
+<img src="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='200'%20height='100'%3E%3Crect%20width='200'%20height='100'%20fill='%23dde'/%3E%3C/svg%3E" alt="示意图" style="width:280px">
+</figure>
+PASS | 渲染宽度同步变化 | {'l': 292, 't': 75.1875, 'w': 280, 'h': 140, 'r': 572, 'b': 215.1875}
+PASS | 点击 <figure> 图片块 → 保持渲染态且可选中 | {'editIdx': -1, 'fig': True, 'sel': True}
+PASS | 图注弹层打开 | {'show': True}
+PASS | 图注写入 figcaption | <figure class="md-fig top">
+<figcaption>图 1 示例图</figcaption>
+<img src="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='200'%20height='100'%3E%3Crect%20width='200'%20height='100
+PASS | 图注在图片上方（figure.top + figcaption 前置） | <figure class="md-fig top">
+<figcaption>图 1 示例图</figcaption>
+<img src="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='200'%20height='100'%3E%3Crect%20width='200'%20height='100
+PASS | 渲染态图注与位置一致 | {'top': True, 'cap': '图 1 示例图', 'w': 280}
+PASS | 重置尺寸后仅保留图注（不再有 style 宽度） | <figure class="md-fig top">
+<figcaption>图 1 示例图</figcaption>
+<img src="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='200'%20height='100'%3E%3Crect%20width='200'%20height='100'%20fill='%23dde'/%3E%3C/svg%3E" alt="示意图">
+</figure>
+PASS | 清空图注 + 无尺寸 → 自动降级回原生 ![alt](src) | ![示意图](data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='2
+PASS | 原生图表保持 ```mermaid 围栏存储 | ```mermaid
+flowchart TD
+  A-->B
+```
+PASS | 图表已渲染 | {'l': 44, 't': 70.390625, 'w': 776, 'h': 188.390625, 'r': 820, 'b': 258.78125}
+PASS | 点击图表 → 缩放框 + 操作条出现 | {'frame': True, 'bar': True}
+PASS | 图表源码框仍在（既有交互未被破坏） | 
+PASS | 图表拖拉 → 围栏属性 w 落盘（围栏本体不变） | ```mermaid w=916
+PASS | 图表宽度渲染生效 | 
+PASS | 图表图注写入围栏属性 cap | ```mermaid w=916 cap="流程图说明"
+PASS | 图表图注渲染在下方 | {'t': '流程图说明', 'top': False}
+PASS | 图注可切到上方（captop） | ```mermaid w=916 cap="流程图说明" captop
+PASS | 图表重置尺寸 → 围栏属性回到 ```mermaid | ```mermaid cap="流程图说明" captop
+PASS | 普通表格保持管道语法存储 | | 甲 | 乙 | 丙 |
+| --- | --- | --
+PASS | 拖拉列边界 → 表格升级为 HTML 存储 | <table class="md-tbl">
+  <colgroup><col style="width:318px">
+PASS | 列宽写入 colgroup |   <colgroup><col style="width:318px"><col style="width:258px"><col style="width:258px"></c
+PASS | 单元格文本与结构保留 | 3
+PASS | 拖拉行边界 → 行高写入 tr style | <table class="md-tbl">
+  <colgroup><col style="width:318px"><col style="width:258px"><col style="width:258px"></colgroup
+PASS | 拖拉整表角手柄 → 表格宽度写入 table style | <table class="md-tbl" style="width: 716px; table-layout: fixed; height: 164px;">
+PASS | 多选表头出现合并单元格按钮并可点击 | ok
+PASS | 合并单元格 → colspan 合并存储 | <table class="md-tbl">
+  <thead>
+    <tr><th colspan="2">甲 乙</th><th>丙</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td>
+PASS | 合并后渲染出跨列表头 | {'n': 1}
+PASS | 拆分单元格 → colspan 消失 | <table class="md-tbl">
+  <thead>
+    <tr><th>甲 乙</th><th></th><th>丙</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td
+PASS | 拆分后表头恢复 3 列 | {'n': 3}
+PASS | 跨行合并 → rowspan 合并存储 | <table class="md-tbl">
+  <thead>
+    <tr><th>甲</th><th>乙</th><th>丙</th></tr>
+  </thead>
+  <tbody>
+    <tr><td rowspan="2">1 4</td><td>2</td><td>3</td></tr>
+    <tr><td>5</td><td>6</td></tr>
+  </tbody>
+</table>
+PASS | 合并内容合并到锚点单元格（1 4） | ok
+PASS | 按行拆表 → 变成两个块 | 2
+PASS | 按行拆表 → 上半保留表头 + 首行数据 | | 甲 | 乙 | 丙 |
+| --- | --- | --- |
+| 1 | 2 | 3 |
+PASS | 按行拆表 → 下半自带表头 | | 甲 | 乙 | 丙 |
+| --- | --- | --- |
+| 4 | 5 | 6 |
+PASS | 按列拆表 → 变成两个块 | 2
+PASS | 按列拆表 → 左侧两列 + 右侧一列 | ['| 甲 | 乙 |\n| --- | --- |\n', '| 丙 |\n| --- |\n| 3 |\n| 6 ']
+PASS | HTML 表格被识别为表格块 | 
+PASS | 编辑 HTML 表格单元格 → 仍以 HTML 回写且内容更新 | <table class="md-tbl">
+  <thead>
+    <tr><th>甲</th><th>乙</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>改过了</td><td>2</td></
+PASS | 普通代码块围栏语言解析正确 | {'lang': 'python'}
+PASS | 回归：斜杠菜单可打开 | 
+PASS | 回归：插入公式后文档含 math 块 | ```math
+\vec{a}
+```
+
+
+PASS | 回归：setMarkdown('') 后旧公式块不回写 | ''
+PASS | 回归：setMarkdown 后无残留源码框 | 
+PASS | 回归：图表源码框已打开 | 
+PASS | 回归：打开图表源码框后换文档，新内容不被旧块污染 | '新文档内容'

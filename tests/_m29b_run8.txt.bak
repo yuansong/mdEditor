@@ -1,0 +1,15 @@
+﻿python.exe : Traceback (most recent call last):
+所在位置 行:445 字符: 314
++ ... 29a_rc.txt; & $py tests\_runner.py tests\_m29b.py 1> tests\_m29b_run. ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "C:\Users\Administrator\WorkBuddy\2026-09-19-18-04-05\markdown-editor\tests\_runner.py", line 55, in <module>
+    rc, timed_out = attempt(1)
+                    ~~~~~~~^^^
+  File "C:\Users\Administrator\WorkBuddy\2026-09-19-18-04-05\markdown-editor\tests\_runner.py", line 44, in attempt
+    with open(out, mode, encoding="utf-8") as f:
+         ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 13] Permission denied: 'C:\\Users\\Administrator\\WorkBuddy\\2026-09-19-18-04-05\\markdown-edit
+or\\tests\\_m29b_run.txt'

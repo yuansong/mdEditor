@@ -1,0 +1,12 @@
+PASS | C1 选中标题文本 | ok
+PASS | C1 删除线写入 raw | ["## ~~我的标题~~"]
+PASS | C2 选区恢复 | ok
+PASS | C2 二次点击取消删除线 | ["## 我的标题"]
+PASS | C3 选中 | ok
+PASS | C3 粗体写入 | ["## **加粗标题**"]
+PASS | C3 粗体取消 | ["## 加粗标题"]
+PASS | C4 段落选中 | ok
+PASS | C4 段落删除线写入 | ["~~普通段落文字~~"]
+PASS | C4 段落删除线取消 | ["普通段落文字"]
+PASS | C5 图片选中后滚动清除 | {"before":{"kind":"img","idx":0},"after":null,"errs":[],"imgSel":false}
+DONE

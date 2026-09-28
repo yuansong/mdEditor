@@ -1,0 +1,42 @@
+### S1 merged 2x2
+TH[c1,r1]甲 | TH[c1,r1]乙 | TH[c1,r1]丙 | TH[c1,r1]丁
+TD[c1,r1]1 | TD[c2,r2]2 3 6 7 | TD[c1,r1]4
+TD[c1,r1]5 | TD[c1,r1]8
+### S2 splitgrid ret
+ok
+### S3 split panel state
+{"show":true,"hint":"拆分为 2 行 × 2 列"}
+### S4 hint at 1x1
+拆分为 1 行 × 1 列
+### S5 clamped? (expect 拆分为 1 行 × 1 列)
+拆分为 1 行 × 1 列
+### S6 after 1x1 split DOM (expect unchanged merge)
+TH[c1,r1]甲 | TH[c1,r1]乙 | TH[c1,r1]丙 | TH[c1,r1]丁
+TD[c1,r1]1 | TD[c2,r2]2 3 6 7 | TD[c1,r1]4
+TD[c1,r1]5 | TD[c1,r1]8
+### S7 hint at 2x1
+拆分为 2 行 × 1 列
+### S8 after 2x1 split DOM
+TH[c1,r1]甲 | TH[c1,r1]乙 | TH[c1,r1]丙 | TH[c1,r1]丁
+TD[c1,r1]1 | TD[c2,r1]2 3 6 7 | TD[c1,r1]4
+TD[c1,r1]5 | TD[c2,r1] | TD[c1,r1]8
+### S9 raw
+{"raw":["<table class=\"md-tbl\">\n  <thead>\n    <tr><th>甲</th><th>乙</th><th>丙</th><th>丁</th></tr>\n  </thead>\n  <tbody>\n    <tr><td>1</td><td colspan=\"2\">2 3 6 7</td><td>4</td></tr>\n    <tr><td>5</td><td colspan=\"2\"></td><td>8</td></tr>\n  </tbody>\n</table>"],"editIdx":-1}
+### T1 tblbar buttons
+["向左插入列","向右插入列","向上插入行","向下插入行","左对齐","居中","右对齐","拆分单元格（选择拆分的行 × 列）"]
+### U1 tblbar visibility during drag / after up
+{"during":false,"duringMove":false,"afterUp":true}
+### V1 focus quote
+BODY
+### V2 raw after Enter
+{"raw":["> 引用内容"],"editIdx":-1}
+### V3 raw after Backspace (expect paragraph 引用内容)
+{"raw":["> 引用内容"],"editIdx":-1}
+### V4 blockquote still exists?
+True
+### W1 caret set
+nohook
+### W2 raw after mid-empty-line Backspace (expect > 第一行\n> 第三行)
+{"raw":["第一行\n\n第三行"],"editIdx":0}
+### X1 raw after line-start Backspace (expect 内容 paragraph)
+{"raw":["内容"],"editIdx":0}

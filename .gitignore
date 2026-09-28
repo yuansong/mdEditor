@@ -1,0 +1,26 @@
+# ---- 构建产物（PyInstaller，可由 build_exe.ps1 重新生成）----
+build*/
+spec*/
+dist*/
+
+# ---- 版本发布包（各约 218MB，单独归档，不入库）----
+mdEditor-v*.zip
+
+# ---- 运行 / 测试临时输出（tests 下的 .py 全部保留，.txt 均为运行结果）----
+tests/_*.txt
+_*.txt
+_*.js
+
+# ---- Python ----
+__pycache__/
+*.pyc
+
+# ---- Qt / PySide6 运行期生成 ----
+*.pyproj
+*.sln
+
+# ---- WorkBuddy 会话数据（项目笔记 / 日志，非源码）----
+.workbuddy/
+
+# ---- 编辑器版本历史目录（若在项目内打开过文档）----
+.mdeditor-history/

@@ -1,0 +1,19 @@
+NOTE | A hl | {'spans': 11, 'h': True, 'b': True, 'code': True, 'link': True, 'quote': True, 'list': True, 'fence': True, 'codec': True, 'color': 'rgba(0, 0, 0, 0)', 'caret': 'rgb(31, 35, 40)'}
+PASS | 高亮垫层存在且分类命中 | {'spans': 11, 'h': True, 'b': True, 'code': True, 'link': True, 'quote': True, 'list': True, 'fence': True, 'codec': True, 'color': 'rgba(0, 0, 0, 0)', 'caret': 'rgb(31, 35, 40)'}
+PASS | 编辑层文字透明 / 光标可见 | {'spans': 11, 'h': True, 'b': True, 'code': True, 'link': True, 'quote': True, 'list': True, 'fence': True, 'codec': True, 'color': 'rgba(0, 0, 0, 0)', 'caret': 'rgb(31, 35, 40)'}
+NOTE | A2 refresh | {'newh': True, 'gutter': 15, 'md': '。\n## 探针新标题'}
+PASS | 输入后高亮实时更新 | {'newh': True, 'gutter': 15, 'md': '。\n## 探针新标题'}
+PASS | 行号同步更新 | {'newh': True, 'gutter': 15, 'md': '。\n## 探针新标题'}
+PASS | srcText 回写正确 | {'newh': True, 'gutter': 15, 'md': '。\n## 探针新标题'}
+PASS | 退出源码后垫层清理 | {'hl': False, 'r0': '# 高亮标题'}
+NOTE | B poll | {'idx': 58, 'frac': 0.21, 'cidx': 0, 'cfrac': 0, 'cv': False}
+PASS | pollSrcScroll 返回块序号 | {'idx': 58, 'frac': 0.21, 'cidx': 0, 'cfrac': 0, 'cv': False}
+NOTE | B prevY | 6577.0
+PASS | 预览视图已跟随滚动 | 6577.0
+NOTE | B blockTop | 58.46875
+PASS | 预览对应块在视口内 | 58.46875
+NOTE | B2 poll | {'idx': 61, 'frac': 0.66, 'cidx': 35, 'cfrac': 0, 'cv': True}
+PASS | 光标块上报 | {'idx': 61, 'frac': 0.66, 'cidx': 35, 'cfrac': 0, 'cv': True}
+NOTE | B2 blockTop | 58.78125
+PASS | 预览定位到光标段落（块顶≈8vh 垫高） | 58.78125
+DONE
