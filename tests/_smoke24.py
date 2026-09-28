@@ -71,9 +71,10 @@ def outline_state():
     sb = win._sidebar
 
     def walk(item, depth, out):
+        # v3.31（#8）：剥掉大纲项的分节字数后缀「　·　N 字」，按标题原文断言
         out.append({"idx": item.data(0, Qt.UserRole), "depth": depth,
                     "expanded": item.isExpanded(),
-                    "text": item.text(0)})
+                    "text": item.text(0).split("　·　")[0]})
         for k in range(item.childCount()):
             walk(item.child(k), depth + 1, out)
 

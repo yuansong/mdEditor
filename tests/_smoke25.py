@@ -229,8 +229,8 @@ win.file_path = os.path.abspath(os.path.join(sdir, "alpha.md"))
 check("搜索根目录取当前文档所在目录",
       os.path.normcase(win.search_root()) == os.path.normcase(sdir), win.search_root())
 
-# v3.26：查找面板合并为单页 —— 范围下拉（全局搜索 / 当前文件）+ 默认正则 + ? 帮助
-check("侧栏只剩文件 / 大纲两个标签页", sb.stack.count() == 2, sb.stack.count())
+# v3.26：查找面板合并为单页；v3.31（#5）：侧栏新增「目录」页（共 3 个标签页）
+check("侧栏标签页 = 文件 / 大纲 / 目录（3 个）", sb.stack.count() == 3, sb.stack.count())
 check("侧栏不再有搜索面板 / show_search 入口",
       not hasattr(sb, "search_panel") and not hasattr(sb, "TAB_SEARCH")
       and not hasattr(sb, "show_search"), "sidebar cleaned")

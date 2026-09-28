@@ -185,7 +185,7 @@ setMarkdown 时清空 lastFB，一行修复。
 - `py_compile`（sidebar/dialogs/mainwindow）+ editor.html 内联脚本语法检查：returncode=0；
 - 内核：`node tests/test_core.js` ALL TESTS PASSED（懒渲染引擎对 node 测试桩加了最小 DOM 守卫）；
 - 新增回归：`tests/_smoke32.py` 36 项断言全部 PASS（#5 目录树 7 项 / #27 diff 4 项 / #7+#8 大纲 9 项 / #18+#19 查找 8 项 / #15 懒渲染 7 项 / 收尾），已登记进 `_run_full.ps1`；
-- 全量回归 `tests/_run_full.ps1`：见 `tests/_full_out.txt`（本轮执行于 2026-09-28 上午，smoke11~32 + probe25 + m29a/m29b + syntax + core）。
+- 全量回归 `tests/_run_full.ps1` **VERDICT: 全部通过**（2026-09-28 上午执行，exit 0）：syntax ✅ / core ALL TESTS PASSED ✅ / probe25 DONE 无 FAIL ✅ / m29a 8P0F / m29b 11P0F / smoke11~32 共 625 项断言全部 FAIL=0；smoke24（大纲断言剥字数后缀）与 smoke25（侧栏标签页 2→3）两处旧断言已随本批同步更新并复跑通过。
 
 ---
 
