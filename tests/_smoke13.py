@@ -142,7 +142,7 @@ r = js("(function(){var s=document.getElementById('submenu');"
        "return JSON.stringify({show:s.classList.contains('show'),items:s.querySelectorAll('.si').length,"
        "last:(s.querySelector('.si:last-child .lb')||{}).textContent||''})})()")
 d = json.loads(r or "{}")
-check("标题 submenu 7 levels", d.get("show") is True and d.get("items") == 7 and d.get("last") == "标题 7", d)
+check("标题 submenu 6 levels（v3.31.1 移除标题7）", d.get("show") is True and d.get("items") == 6 and d.get("last") == "标题 6", d)
 # 点二级第 3 项（标题 3）
 js("(function(){var s=document.getElementById('submenu');"
    "var c=s.querySelector('.si[data-k=\"2\"]');"
@@ -151,18 +151,19 @@ wait(500)
 r = js("window.getMarkdown()")
 check("apply 标题3 via submenu", (r or "").startswith("### "), (r or "")[:30])
 
-# ---------- 4) 标题 7 全链路 ----------
+# ---------- 4) 七级标题按 6 级封顶（v3.31.1 BUG-2：####### 按正文段落处理） ----------
 js("window.setMarkdown('####### 七级标题内容')")
 wait(800)
 r = js("(function(){var b=document.querySelector('.blk');"
        "return JSON.stringify({cls:b.className,tag:b.querySelector('h1,h2,h3,h4,h5,h6')?"
        "b.querySelector('h1,h2,h3,h4,h5,h6').tagName:''})})()")
 d = json.loads(r or "{}")
-check("h7 block type", "b-h7" in (d.get("cls") or ""), d)
+check("####### 按段落处理（b-p，无 heading 标签）",
+      "b-p" in (d.get("cls") or "") and not (d.get("tag") or ""), d)
 r = js("window.__core.blockInfo('####### t').type")
-check("blockInfo h7", r == "h7", r)
+check("blockInfo '####### t' = p", r == "p", r)
 r = js("window.getMarkdown()")
-check("h7 roundtrip", (r or "").startswith("####### 七级"), (r or "")[:40])
+check("####### 原文往返保留", (r or "").startswith("####### 七级"), (r or "")[:40])
 
 # ---------- 5) 块菜单二级（标题 -> 标题7，默认选中标题3） ----------
 js("window.setMarkdown('普通段落文字')")
@@ -180,14 +181,14 @@ r = js("(function(){var s=document.getElementById('submenu');"
        "return JSON.stringify({show:s.classList.contains('show'),items:s.querySelectorAll('.si').length,"
        "def:act?act.textContent:''})})()")
 d = json.loads(r or "{}")
-check("block 标题 submenu 7 items", d.get("show") is True and d.get("items") == 7, d)
+check("block 标题 submenu 6 items（v3.31.1 移除标题7）", d.get("show") is True and d.get("items") == 6, d)
 check("标题 submenu default 标题3", "标题 3" in (d.get("def") or ""), d)
 js("(function(){var s=document.getElementById('submenu');"
-   "var c=s.querySelector('.si[data-k=\"6\"]');"  # 标题 7 索引 6
+   "var c=s.querySelector('.si[data-k=\"5\"]');"  # 标题 6 索引 5（v3.31.1 移除标题7）
    "c.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));return 'p'})()")
 wait(500)
 r = js("window.getMarkdown()")
-check("transform to 标题7", (r or "").startswith("####### 普通段落"), (r or "")[:40])
+check("transform to 标题6", (r or "").startswith("###### 普通段落"), (r or "")[:40])
 
 # ---------- 5b) 块菜单「列表」子菜单（默认有序） + 空块唤起斜杠菜单 ----------
 js("window.setMarkdown('普通段落文字')")

@@ -26,7 +26,7 @@ MENU_ITEMS = [("heading", "标题"), ("list", "列表"), ("table", "表格"), ("
               ("hr", "分隔线"), ("quote", "引用"), ("image", "图片"), ("chart", "图表"),
               ("footnote", "脚注"), ("deflist", "定义列表"),
               ("math", "公式")]
-SUB_HEADING = ["标题 1", "标题 2", "标题 3", "标题 4", "标题 5", "标题 6", "标题 7"]
+SUB_HEADING = ["标题 1", "标题 2", "标题 3", "标题 4", "标题 5", "标题 6"]  # v3.31.1 移除标题7
 SUB_LIST = ["无序列表", "有序列表", "待办事项"]
 SUB_CHART = ["流程图", "时序图", "类图", "状态图", "E-R 图", "甘特图", "饼图"]
 SUB_MATH = ["上标", "下标", "分式", "根式", "求和", "积分", "极限", "导数", "偏导数", "向量",
@@ -601,6 +601,32 @@ class SettingsDialog(_ThemedDialog):
         title.setObjectName("pageTitle")
         lay.addWidget(title)
 
+        # ---- v3.31.2（#8/#9）：段落与标题（组框） ----
+        gb_para, gpara = self._group("段落与标题")
+        prow = QHBoxLayout()
+        prow.addWidget(QLabel("段首缩进（每段首行空出的格数）"))
+        self.para_indent_box = QComboBox(page)
+        for _pn in range(0, 5):
+            self.para_indent_box.addItem(f"{_pn} 格" if _pn else "无（0 格）", _pn)
+        _pi = int(getattr(self._win, "_para_indent", 0) or 0)
+        _piidx = self.para_indent_box.findData(_pi)
+        self.para_indent_box.setCurrentIndex(_piidx if _piidx >= 0 else 0)
+        self.para_indent_box.currentIndexChanged.connect(self._on_para_indent)
+        prow.addWidget(self.para_indent_box, 1)
+        gpara.addLayout(prow)
+
+        self.h1_center_box = QCheckBox("标题 1 始终居中显示（导出跟随；单个标题可用格式栏按钮单独切换）", page)
+        self.h1_center_box.setChecked(bool(getattr(self._win, "_h1_center", False)))
+        self.h1_center_box.toggled.connect(self._win.set_h1_center)
+        gpara.addWidget(self.h1_center_box)
+
+        para_hint = QLabel("· 段首缩进仅作用于段落首行（列表 / 引用 / 表格不受影响），导出 HTML 同步生效\n"
+                           "· 标题 1 居中为全局默认；格式栏「⇔」按钮可对单个标题 1 覆盖（优先级更高）")
+        para_hint.setObjectName("pageHint")
+        para_hint.setWordWrap(True)
+        gpara.addWidget(para_hint)
+        lay.addWidget(gb_para)
+
         # ---- 图片存储（组框；v3.29c：描述信息直接作为组框标题） ----
         gb_img, gimg = self._group("图片存储")
         gimg.addWidget(QLabel("图片存放方式"))
@@ -788,6 +814,12 @@ class SettingsDialog(_ThemedDialog):
         if str(getattr(self._win, "_code_lang", "C")) != text:
             self._win.set_code_lang(text)
 
+    def _on_para_indent(self, _idx):
+        """v3.31.2（#8）：段首缩进格数。"""
+        n = self.para_indent_box.currentData()
+        if n is not None and int(n) != int(getattr(self._win, "_para_indent", 0)):
+            self._win.set_para_indent(int(n))
+
     def _on_code_lnum(self, on):
         """v3.25：代码块行号开关。"""
         if bool(on) != bool(getattr(self._win, "_code_lnum", True)):
@@ -870,6 +902,12 @@ class SettingsDialog(_ThemedDialog):
         self.outline_level_box.currentIndexChanged.connect(self._on_outline_level)
         orow.addWidget(self.outline_level_box, 1)
         gfile.addLayout(orow)
+
+        # ---- v3.31.2（#3）：大纲分节字数后缀开关 ----
+        self.outline_words_box = QCheckBox("大纲显示分节字数（标题后追加「· N 字」）", page)
+        self.outline_words_box.setChecked(bool(getattr(self._win, "_outline_words", False)))
+        self.outline_words_box.toggled.connect(self._win.set_outline_words)
+        gfile.addWidget(self.outline_words_box)
 
         # ---- 文件列表显示模式（v3.26 语义澄清：指未选择文件 / 文件夹时的初始状态）----
         lrow = QHBoxLayout()

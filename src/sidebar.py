@@ -12,7 +12,7 @@ from PySide6.QtCore import QEvent, Qt, QPointF
 from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QApplication, QAbstractItemView, QButtonGroup, QCheckBox, QComboBox,
-    QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
+    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
     QListWidgetItem, QMenu, QMessageBox, QPushButton, QSizePolicy,
     QStackedWidget, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
     QWidget,
@@ -258,9 +258,12 @@ class OutlineTree(QTreeWidget):
 
 
 class Sidebar(QWidget):
-    """Typora 风格左侧边栏：文件列表（一级目录）/ 大纲 / 文件目录树 三个标签页。"""
+    """Typora 风格左侧边栏：文件列表（一级目录）/ 大纲 两个标签页。
 
-    TAB_FILES, TAB_OUTLINE, TAB_TREE = 0, 1, 2   # v3.31（#5）：新增「目录」页
+    v3.31.2（需求变更）：原「目录」树形页与「文件」页职责重合，整体移除；
+    新建 / 新建文件夹 / 重命名 / 回收站删除等管理操作迁入「文件」页右键菜单。"""
+
+    TAB_FILES, TAB_OUTLINE = 0, 1
     MD_EXTS = (".md", ".markdown", ".mdown", ".txt")
 
     def __init__(self, win):
@@ -271,6 +274,7 @@ class Sidebar(QWidget):
         self.setStyleSheet(SIDEBAR_QSS)
         self._outline_sig = None
         self._outline_level = 3      # 大纲展开显示级别（1~6，系统设置可改）
+        self._outline_words = False  # v3.31.2（#3）：分节字数后缀开关（默认关）
         self._last_headings = None   # 最近一次大纲数据（级别切换时复用重建）
         self._file_mode = "current"  # 文件列表显示模式：current=跟随当前文档 / blank=空白项
 
@@ -286,8 +290,7 @@ class Sidebar(QWidget):
         tab_row.setSpacing(2)
         self.btn_files = QToolButton(tabcap, text="文件")
         self.btn_outline = QToolButton(tabcap, text="大纲")
-        self.btn_tree = QToolButton(tabcap, text="目录")
-        for b in (self.btn_files, self.btn_outline, self.btn_tree):
+        for b in (self.btn_files, self.btn_outline):
             b.setCheckable(True)
             b.setCursor(Qt.PointingHandCursor)
             b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -296,11 +299,9 @@ class Sidebar(QWidget):
         self._tabs.setExclusive(True)
         self._tabs.addButton(self.btn_files)
         self._tabs.addButton(self.btn_outline)
-        self._tabs.addButton(self.btn_tree)
         self.btn_files.setChecked(True)
         self.btn_files.clicked.connect(lambda: self.select_tab(self.TAB_FILES))
         self.btn_outline.clicked.connect(lambda: self.select_tab(self.TAB_OUTLINE))
-        self.btn_tree.clicked.connect(lambda: self.select_tab(self.TAB_TREE))
         cap_row = QHBoxLayout()
         cap_row.setContentsMargins(10, 6, 10, 2)
         cap_row.addWidget(tabcap)
@@ -345,59 +346,17 @@ class Sidebar(QWidget):
         self.outline.setDragDropMode(QAbstractItemView.InternalMove)
         self.outline.itemClicked.connect(self._on_outline_clicked)
 
-        # v3.31（#5）：树形文件目录（懒加载子目录 / 右键管理 / 当前文档加粗）
-        self.tree_root_lbl = QPushButton(self)
-        self.tree_root_lbl.setObjectName("fileHeader")
-        self.tree_root_lbl.setCursor(Qt.PointingHandCursor)
-        self.tree_root_lbl.setText("📁 （未选择目录）")
-        self.tree_root_lbl.setToolTip("双击选择根目录；右键可恢复跟随当前文档")
-        self.tree_root_lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.tree_root_lbl.installEventFilter(self)
-        self.tree_root_lbl.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.tree_root_lbl.customContextMenuRequested.connect(self._on_tree_root_menu)
-        self.tree_refresh = QToolButton(self)
-        self.tree_refresh.setText("⟳")
-        self.tree_refresh.setToolTip("刷新目录树")
-        self.tree_refresh.setCursor(Qt.PointingHandCursor)
-        self.tree_refresh.clicked.connect(self.tree_reload)
-        self.tree = QTreeWidget(self)
-        self.tree.setHeaderHidden(True)
-        self.tree.setIndentation(14)
-        self.tree.setVerticalScrollMode(QTreeWidget.ScrollPerPixel)
-        self.tree.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.tree.itemExpanded.connect(self._on_tree_expand)
-        self.tree.itemDoubleClicked.connect(self._on_tree_dbl)
-        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.tree.customContextMenuRequested.connect(self._on_tree_menu)
-        self.tree_panel = QWidget(self)
-        tp_lay = QVBoxLayout(self.tree_panel)
-        tp_lay.setContentsMargins(0, 0, 0, 0)
-        tp_lay.setSpacing(2)
-        tp_row = QHBoxLayout()
-        tp_row.setContentsMargins(0, 0, 0, 0)
-        tp_row.setSpacing(2)
-        tp_row.addWidget(self.tree_root_lbl, 1)
-        tp_row.addWidget(self.tree_refresh)
-        tp_lay.addLayout(tp_row)
-        tp_lay.addWidget(self.tree, 1)
-
+        # v3.31.2：树形「目录」页已移除（与文件页重合，管理操作迁文件页右键）
         # 全局搜索面板（v3.24 起移入「查找」对话框的「全局搜索」页签）：
         # 面板构造与检索逻辑见 GlobalSearchPanel，侧栏只保留文件 / 大纲两个标签页。
         self.stack = QStackedWidget(self)
         self.stack.addWidget(self.file_panel)
         self.stack.addWidget(self.outline)
-        self.stack.addWidget(self.tree_panel)
         lay.addWidget(self.stack, 1)
 
         # 初始进入「此电脑」层
         self._refresh_files()
         self._update_file_header()
-        # v3.31（#5）：目录树根目录 —— 上次使用的根（无则跟随当前文档目录）
-        self._tree_root = None
-        _saved_root = win._settings.value("treeRoot", "") or ""
-        if os.path.isdir(_saved_root):
-            self._tree_root = _saved_root
-        self.tree_reload()
         # v3.26：加粗放大的展开/收拢箭头（颜色随主题）
         self.set_tree_arrows(getattr(win, "_theme", "light"))
 
@@ -437,22 +396,11 @@ class Sidebar(QWidget):
                 f"QTreeWidget::branch{sel} {{ image: url({url}); }}"
             )
         self.outline.setStyleSheet("\n".join(qss))
-        if getattr(self, "tree", None) is not None:
-            self.tree.setStyleSheet("\n".join(qss))   # v3.31（#5）：目录树箭头同色
 
     # ---- 行为 ----
     def eventFilter(self, obj, ev):
         if obj is self.file_header and ev.type() == QEvent.MouseButtonDblClick:
             self.go_up()
-            return True
-        # v3.31（#5）：目录树根标签双击 = 选择新的根目录
-        # （getattr 守卫：file_header 的事件过滤器在构造早期就会触发，
-        #  此时 tree_root_lbl 尚未创建）
-        if obj is getattr(self, "tree_root_lbl", None) and ev.type() == QEvent.MouseButtonDblClick:
-            d = QFileDialog.getExistingDirectory(
-                self, "选择目录树根文件夹", self.tree_root() or "")
-            if d:
-                self.set_tree_root(d)
             return True
         return super().eventFilter(obj, ev)
 
@@ -469,16 +417,28 @@ class Sidebar(QWidget):
             self._win.open_file(p)
 
     def _on_file_menu(self, pos):
-        """v3.25：文件列表右键菜单（原「文件」菜单中的两项迁到这里）。
-        文件：打开 / 在资源管理器中显示 / 用外部程序打开；文件夹：进入 / 在资源管理器中显示。"""
+        """v3.31.2：文件列表右键菜单（v3.25 两项 + v3.31.2 自「目录」页迁入的管理操作）。
+        文件：打开 / 资源管理器 / 外部打开 / 重命名 / 删除（回收站）；
+        文件夹：进入 / 资源管理器 / 重命名 / 删除（回收站）；
+        空白处：新建 Markdown 文件 / 新建文件夹（当前所在文件夹）。"""
         item = self.file_list.itemAt(pos)
+        menu = QMenu(self)
+        d = self._cur_dir if (self._cur_dir and os.path.isdir(self._cur_dir)) else None
         if item is None:
+            # 空白处：管理操作作用于当前所在文件夹
+            if d and self._file_mode != "blank":
+                menu.addAction("新建 Markdown 文件", lambda: self._file_new_file(d))
+                menu.addAction("新建文件夹", lambda: self._file_new_dir(d))
+                menu.addSeparator()
+                menu.addAction("刷新", self._refresh_files)
+            if menu.isEmpty():
+                return
+            menu.exec(self.file_list.mapToGlobal(pos))
             return
         data = item.data(Qt.UserRole)
         if not data:
             return
         kind, p = data
-        menu = QMenu(self)
         if kind == "dir":
             menu.addAction("进入文件夹", lambda: self._on_file_dbl(item))
         else:
@@ -486,6 +446,9 @@ class Sidebar(QWidget):
         menu.addAction("在资源管理器中显示", lambda: self._win.show_in_explorer(p))
         if kind == "file":
             menu.addAction("用外部程序打开", lambda: self._win.open_external(p))
+        menu.addSeparator()
+        menu.addAction("重命名", lambda: self._file_rename(p))
+        menu.addAction("删除（移入回收站）", lambda: self._file_delete(p))
         menu.exec(self.file_list.mapToGlobal(pos))
 
     def go_up(self):
@@ -586,10 +549,9 @@ class Sidebar(QWidget):
         self._win.jump_to_heading(item.data(0, Qt.UserRole))
 
     def select_tab(self, tab):
-        """切换侧栏标签页（文件 / 大纲 / 目录）。"""
+        """切换侧栏标签页（文件 / 大纲）。"""
         self.btn_files.setChecked(tab == self.TAB_FILES)
         self.btn_outline.setChecked(tab == self.TAB_OUTLINE)
-        self.btn_tree.setChecked(tab == self.TAB_TREE)
         self.stack.setCurrentIndex(tab)
 
     def show_outline(self):
@@ -718,16 +680,24 @@ class Sidebar(QWidget):
                     break
 
     # ================= v3.31（#8）大纲分节字数 =================
+    def set_outline_words(self, on):
+        """v3.31.2（#3）：分节字数后缀显示开关，切换后原地刷新（不重建树）。"""
+        self._outline_words = bool(on)
+        self._update_outline_words(self._last_headings or [])
+
     def _update_outline_words(self, headings):
         """分节字数后缀：原地 setText，不重建树（避免轮询闪烁 / 丢点击）。"""
+        show = getattr(self, "_outline_words", False)
         items = getattr(self, "_outline_items", None) or {}
         for h in headings:
             it = items.get(h.get("index"))
             if it is None:
                 continue
-            w = int(h.get("words") or 0)
             base = h.get("text") or ""
-            suffix = f"　·　{w:,} 字" if w else ""
+            suffix = ""
+            if show:
+                w = int(h.get("words") or 0)
+                suffix = f"　·　{w:,} 字" if w else ""
             if it.text(0) != base + suffix:
                 it.setText(0, base + suffix)
 
@@ -753,157 +723,8 @@ class Sidebar(QWidget):
         if len(pairs) >= 2:
             self._win.reorder_sections(pairs)
 
-    # ================= v3.31（#5）树形文件目录 =================
-    def tree_root(self):
-        return getattr(self, "_tree_root", None)
-
-    def set_tree_root(self, path, persist=True):
-        """设置目录树根目录；persist=False 用于跟随当前文档（不写设置）。"""
-        path = os.path.abspath(path) if path else None
-        if path and not os.path.isdir(path):
-            path = None
-        self._tree_root = path
-        if persist and path:
-            self._win._settings.setValue("treeRoot", path)
-        self.tree_reload()
-
-    def tree_follow(self, doc_path):
-        """打开 / 切换文档时：未自选根目录则跟随文档目录；总是刷新当前文件高亮。"""
-        root = getattr(self, "_tree_root", None)
-        if doc_path and os.path.isfile(doc_path):
-            if not root:
-                self.set_tree_root(os.path.dirname(os.path.abspath(doc_path)),
-                                   persist=False)
-                return
-        self.tree_highlight(doc_path)
-
-    def tree_reload(self):
-        if not hasattr(self, "tree"):
-            return
-        self.tree.blockSignals(True)
-        self.tree.clear()
-        root = getattr(self, "_tree_root", None)
-        base = os.path.basename((root or "").rstrip("/\\")) or (root or "")
-        self.tree_root_lbl.setText("📁 " + (base or "（未选择目录）"))
-        self.tree_root_lbl.setToolTip(root or "双击选择根目录；右键可恢复跟随当前文档")
-        if not root:
-            empty = QTreeWidgetItem(["（双击上方选择根目录）"])
-            empty.setFlags(Qt.ItemIsEnabled)
-            self.tree.addTopLevelItem(empty)
-            self.tree.blockSignals(False)
-            return
-        self._fill_dir(self.tree.invisibleRootItem(), root)
-        self.tree.blockSignals(False)
-        self.tree_highlight(getattr(self._win, "file_path", None))
-
-    def _tree_children(self, d):
-        try:
-            names = os.listdir(d)
-        except OSError:
-            return [], []
-        dirs = sorted(n for n in names
-                      if not n.startswith(".") and n not in TREE_SKIP_DIRS
-                      and not n.lower().endswith(".assets")
-                      and os.path.isdir(os.path.join(d, n)))
-        files = sorted(n for n in names
-                       if os.path.isfile(os.path.join(d, n))
-                       and n.lower().endswith(self.MD_EXTS))
-        return dirs, files
-
-    def _fill_dir(self, parent_item, d):
-        parent_item.takeChildren()
-        dirs, files = self._tree_children(d)
-        for n in dirs:
-            p = os.path.join(d, n)
-            it = QTreeWidgetItem(["📁 " + n])
-            it.setData(0, Qt.UserRole, ("dir", p))
-            it.setToolTip(0, p)
-            it.addChild(QTreeWidgetItem())   # 占位子节点：保证显示展开箭头（懒加载）
-            it.setChildIndicatorPolicy(QTreeWidgetItem.ChildIndicatorPolicy.ShowIndicator)
-            parent_item.addChild(it)
-        for n in files:
-            p = os.path.join(d, n)
-            it = QTreeWidgetItem(["📄 " + n])
-            it.setData(0, Qt.UserRole, ("file", p))
-            it.setToolTip(0, p)
-            parent_item.addChild(it)
-        if not dirs and not files:
-            empty = QTreeWidgetItem(["（空文件夹）"])
-            empty.setFlags(Qt.ItemIsEnabled)
-            parent_item.addChild(empty)
-
-    def _on_tree_expand(self, item):
-        data = item.data(0, Qt.UserRole)
-        if not data or data[0] != "dir":
-            return
-        if item.childCount() == 1 and item.child(0).data(0, Qt.UserRole) is None:
-            self._fill_dir(item, data[1])   # 替换占位子节点（懒加载）
-            self.tree_highlight(getattr(self._win, "file_path", None))
-
-    def _on_tree_dbl(self, item, _col=0):
-        data = item.data(0, Qt.UserRole)
-        if not data:
-            return
-        if data[0] == "file":
-            self._win.open_file(data[1])
-        else:
-            item.setExpanded(not item.isExpanded())
-
-    def tree_highlight(self, doc_path):
-        """当前文档加粗（仅扫描已加载节点，不强行展开）。"""
-        target = os.path.abspath(doc_path) if doc_path and os.path.isfile(doc_path) else None
-
-        def walk(item):
-            for k in range(item.childCount()):
-                c = item.child(k)
-                data = c.data(0, Qt.UserRole)
-                hit = bool(target and data and data[0] == "file"
-                           and os.path.abspath(data[1]) == target)
-                f = c.font(0)
-                if f.bold() != hit:
-                    f.setBold(hit)
-                    c.setFont(0, f)
-                walk(c)
-
-        walk(self.tree.invisibleRootItem())
-
-    def _on_tree_root_menu(self, pos):
-        menu = QMenu(self)
-        menu.addAction("刷新目录树", self.tree_reload)
-        menu.addAction("跟随当前文档目录",
-                       lambda: self.set_tree_root(
-                           os.path.dirname(self._win.file_path)
-                           if self._win.file_path else None, persist=False))
-        menu.exec(self.tree_root_lbl.mapToGlobal(pos))
-
-    def _on_tree_menu(self, pos):
-        item = self.tree.itemAt(pos)
-        data = item.data(0, Qt.UserRole) if item is not None else None
-        menu = QMenu(self)
-        menu.addAction("刷新", self.tree_reload)
-        cur_dir = None
-        if data and data[0] == "dir":
-            cur_dir = data[1]
-        elif data and data[0] == "file":
-            cur_dir = os.path.dirname(data[1])
-        cur_dir = cur_dir or getattr(self, "_tree_root", None)
-        if cur_dir:
-            menu.addSeparator()
-            menu.addAction("新建 Markdown 文件", lambda: self._tree_new_file(cur_dir))
-            menu.addAction("新建文件夹", lambda: self._tree_new_dir(cur_dir))
-        if item is not None and data:
-            p = data[1]
-            menu.addSeparator()
-            if data[0] == "file":
-                menu.addAction("打开", lambda: self._win.open_file(p))
-                menu.addAction("用外部程序打开", lambda: self._win.open_external(p))
-            menu.addAction("在资源管理器中显示", lambda: self._win.show_in_explorer(p))
-            menu.addSeparator()
-            menu.addAction("重命名", lambda: self._tree_rename(p))
-            menu.addAction("删除（移入回收站）", lambda: self._tree_delete(p))
-        menu.exec(self.tree.mapToGlobal(pos))
-
-    def _tree_new_file(self, d):
+    # ================= v3.31.2 文件页管理操作（自「目录」页迁入） =================
+    def _file_new_file(self, d):
         name, ok = QInputDialog.getText(self, "新建 Markdown 文件", "文件名：",
                                         text="未命名.md")
         if not ok:
@@ -923,10 +744,10 @@ class Sidebar(QWidget):
         except OSError as e:
             QMessageBox.critical(self, "新建文件", str(e))
             return
-        self.tree_reload()
+        self._refresh_files()
         self._win.open_file(p)
 
-    def _tree_new_dir(self, d):
+    def _file_new_dir(self, d):
         name, ok = QInputDialog.getText(self, "新建文件夹", "文件夹名：")
         if not ok:
             return
@@ -942,9 +763,9 @@ class Sidebar(QWidget):
         except OSError as e:
             QMessageBox.critical(self, "新建文件夹", str(e))
             return
-        self.tree_reload()
+        self._refresh_files()
 
-    def _tree_rename(self, p):
+    def _file_rename(self, p):
         base = os.path.basename(p)
         new, ok = QInputDialog.getText(self, "重命名", "新名称：", text=base)
         if not ok:
@@ -965,9 +786,11 @@ class Sidebar(QWidget):
             QMessageBox.critical(self, "重命名", str(e))
             return
         self._win.rename_current_file(p, np)
-        self.tree_reload()
+        if os.path.abspath(p) == os.path.abspath(self._cur_file or ""):
+            self._cur_file = np
+        self._refresh_files()
 
-    def _tree_delete(self, p):
+    def _file_delete(self, p):
         is_cur = p == getattr(self._win, "file_path", None)
         tip = ("\n注意：这是当前正在编辑的文件，删除后请不要再保存该标签\n"
                "（否则会以原内容重建同名文件）。") if is_cur else ""
@@ -976,5 +799,5 @@ class Sidebar(QWidget):
                                 QMessageBox.Ok | QMessageBox.Cancel) != QMessageBox.Ok:
             return
         if self._win.recycle_path(p):
-            self.tree_reload()
+            self._refresh_files()
             self._win.show_status("已移入回收站：" + p)

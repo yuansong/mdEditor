@@ -217,7 +217,19 @@ js("document.getElementById('link-ok').click()")
 wait(500)
 check("F1 确认后按选区写入 Markdown 链接", raw()[0] == EXPECT, raw()[0])
 
-# 取消：不改内容，也不把块留在源码态
+# 取消 / toggle：v3.31.2（FMT-2）链接 toggle 语义 —— 已链接文字再点 🔗 = 直接移除
+# 链接（与其余 6 个动作的 toggle 行为对齐，不弹输入层、不产生嵌套）
+select_block_text("#editor .b-p")
+click_btn("#floatbar", "链接")
+wait(400)
+d = jj("(function(){var d=JSON.parse(window.__raw());"
+       "return JSON.stringify({lp:document.getElementById('linkpop').classList.contains('show'),"
+       "editIdx:d.editIdx,raw:d.raw[0]})})()")
+check("F1 已链接文字再点 🔗 → toggle 移除链接（不嵌套、不弹层）",
+      d.get("lp") is False and d.get("editIdx") == -1
+      and d.get("raw") == "这是一段用来加链接的文字", d)
+
+# 非链接文字：弹层取消路径仍然不改内容、不残留源码态
 select_block_text("#editor .b-p")
 click_btn("#floatbar", "链接")
 wait(400)
@@ -225,8 +237,9 @@ close_pops()
 d = jj("(function(){var d=JSON.parse(window.__raw());"
        "return JSON.stringify({lp:document.getElementById('linkpop').classList.contains('show'),"
        "editIdx:d.editIdx,raw:d.raw[0]})})()")
-check("F1 取消链接输入 → 不改内容、不残留源码态",
-      d.get("lp") is False and d.get("editIdx") == -1 and d.get("raw") == EXPECT, d)
+check("F1 链接输入弹层取消 → 不改内容、不残留源码态",
+      d.get("lp") is False and d.get("editIdx") == -1
+      and d.get("raw") == "这是一段用来加链接的文字", d)
 
 # ==================== 4) T1 表格向上插行 ====================
 TBL = "| 甲 | 乙 | 丙 |\n| --- | --- | --- |\n| 1 | 2 | 3 |\n| 4 | 5 | 6 |"
@@ -278,8 +291,8 @@ js("window.openBlockMenu()")
 wait(450)
 st = jj("window.__blkMenuState()")
 check("G5 Ctrl+/ 入口：块菜单打开", st.get("show") is True, st)
-check("G5 Ctrl+/ 入口：默认展开「标题」二级（7 级）",
-      st.get("sub") is True and len(st.get("subItems") or []) == 7, st.get("subItems"))
+check("G5 Ctrl+/ 入口：默认展开「标题」二级（6 级，v3.31.1 移除标题7）",
+      st.get("sub") is True and len(st.get("subItems") or []) == 6, st.get("subItems"))
 close_pops()
 
 # ⠿ 手柄入口（与 Ctrl+/ 行为一致）
@@ -291,8 +304,8 @@ r = js("(function(){var b=document.querySelector('#editor .blk');"
 wait(450)
 st2 = jj("window.__blkMenuState()")
 check("G5 ⠿ 手柄入口：块菜单打开", r == "ok" and st2.get("show") is True, [r, st2])
-check("G5 ⠿ 手柄入口与 Ctrl+/ 一致：同样默认展开标题二级",
-      st2.get("sub") is True and len(st2.get("subItems") or []) == 7, st2.get("subItems"))
+check("G5 ⠿ 手柄入口与 Ctrl+/ 一致：同样默认展开标题二级（6 级）",
+      st2.get("sub") is True and len(st2.get("subItems") or []) == 6, st2.get("subItems"))
 check("G5 两入口菜单项一致", (st.get("items") or []) == (st2.get("items") or []),
       [st.get("items"), st2.get("items")])
 close_pops()

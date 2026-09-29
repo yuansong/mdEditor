@@ -45,7 +45,7 @@ foreach ($m in "m29a", "m29b") {
 }
 
 "=== smoke ===" | Add-Content $log -Encoding UTF8
-foreach ($n in 11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32) {
+foreach ($n in 11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33) {
     & $venv tests\_runner.py ("tests\_smoke" + $n + ".py") | Out-Null
     # v3.28: back-to-back QWebEngine GUI launches can deadlock the next process
     # while GPU / shared-memory state is being released, so leave a short gap.
@@ -68,7 +68,7 @@ if ($sumText -notmatch "FAIL= 0(\s|$)") { $fail += "smoke-fail" }
 
 # v3.28 final integrity check: confirm every result file exists with FAIL=0.
 # The in-loop branches once let a 0/0 case (no result file at all) slip through.
-foreach ($n in 11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32) {
+foreach ($n in 11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33) {
     $rf = "tests\_smoke" + $n + ".txt"
     $pp = 0
     $ff = 0

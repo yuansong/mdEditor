@@ -1,5 +1,5 @@
 ﻿# -*- coding: utf-8 -*-
-"""v3.32 冒烟测试：结构性大项批次（#5 目录树 / #15 懒渲染 / #27 diff / #7/#8 大纲 / #18/#19 查找全部命中）。
+"""v3.32 冒烟测试：结构性大项批次（#5 侧栏文件管理（v3.31.2 目录页移除改版）/ #15 懒渲染 / #27 diff / #7/#8 大纲 / #18/#19 查找全部命中）。
 输出：tests/_smoke32.txt
 """
 import json
@@ -64,86 +64,29 @@ def setmd(md):
 wait(3000)
 js("window.setSlashMenuConfig(null)")
 
-# ================= #5 树形文件目录 =================
+# ================= #5（v3.31.2 改版：目录页整体移除，管理操作迁入文件页右键） =================
 tmp = tempfile.mkdtemp(prefix="mded_tree_")
-sub = os.path.join(tmp, "sub")
-sub2 = os.path.join(tmp, "sub2")
-os.makedirs(sub)
-os.makedirs(sub2)
 a_path = os.path.join(tmp, "a.md")
-b_path = os.path.join(tmp, "b.md")
-c_path = os.path.join(sub, "c.md")
-for p, text in ((a_path, "# A 文档\n\n内容A"), (b_path, "# B 文档"), (c_path, "# C")):
-    with open(p, "w", encoding="utf-8") as f:
-        f.write(text)
-with open(os.path.join(tmp, "note.txt"), "w", encoding="utf-8") as f:
-    f.write("not md")
-os.makedirs(os.path.join(tmp, "x.assets"), exist_ok=True)
+with open(a_path, "w", encoding="utf-8") as f:
+    f.write("# A 文档\n\n内容A")
 
 sb = win._sidebar
-sb.set_tree_root(tmp, persist=False)
-wait(200)
-tops = [sb.tree.topLevelItem(i).text(0) for i in range(sb.tree.topLevelItemCount())]
-check("#5 根目录条目 = sub/sub2 + a.md + b.md + note.txt（.txt 在扩展名白名单，无 assets/隐藏）",
-      len(tops) == 5 and all(any(k in t for t in tops) for k in ("sub", "a.md", "b.md", "note.txt")),
-      str(tops))
-check("#5 目录排前、文件排后", tops[0].find("sub") >= 0, str(tops))
+check("#5 目录页已移除：侧栏 2 页（文件 / 大纲）", sb.stack.count() == 2, sb.stack.count())
+check("#5 目录页已移除：无 tree 控件 / 目录页签 / TAB_TREE",
+      not hasattr(sb, "tree") and not hasattr(sb, "btn_tree") and not hasattr(sb, "TAB_TREE"),
+      "sidebar cleaned")
+check("#5 管理操作已迁入文件页：新建/新建文件夹/重命名/删除四方法就位",
+      all(hasattr(sb, m) for m in ("_file_new_file", "_file_new_dir", "_file_rename", "_file_delete")),
+      "menu ops present")
 
-# 懒加载展开
-it_sub = None
-for i in range(sb.tree.topLevelItemCount()):
-    if "sub" in sb.tree.topLevelItem(i).text(0) and "sub2" not in sb.tree.topLevelItem(i).text(0):
-        it_sub = sb.tree.topLevelItem(i)
-        break
-if it_sub is not None:
-    it_sub.setExpanded(True)
-    wait(300)
-    kids = [it_sub.child(i).text(0) for i in range(it_sub.childCount())]
-    check("#5 子目录懒加载展开出现 c.md", any("c.md" in k for k in kids), str(kids))
-else:
-    check("#5 子目录懒加载展开出现 c.md", False, "sub item not found")
-
-# 空文件夹占位
-it_sub2 = None
-for i in range(sb.tree.topLevelItemCount()):
-    if "sub2" in sb.tree.topLevelItem(i).text(0):
-        it_sub2 = sb.tree.topLevelItem(i)
-        break
-if it_sub2 is not None:
-    it_sub2.setExpanded(True)
-    wait(300)
-    kids2 = [it_sub2.child(i).text(0) for i in range(it_sub2.childCount())]
-    check("#5 空文件夹显示占位", any("空文件夹" in k for k in kids2), str(kids2))
-else:
-    check("#5 空文件夹显示占位", False, "sub2 item not found")
-
-# 当前文档高亮 + 跟随
 win.open_file(a_path)
 wait(1500)
-sb.tree_follow(a_path)
-wait(200)
-bold_items = []
+check("#5 文件页跟随当前文档（_cur_file/_cur_dir）",
+      os.path.normcase(getattr(sb, "_cur_file", "") or "") == os.path.normcase(a_path)
+      and os.path.normcase(getattr(sb, "_cur_dir", "") or "") == os.path.normcase(tmp),
+      f"{getattr(sb, '_cur_file', None)} | {getattr(sb, '_cur_dir', None)}")
 
-
-def walk_bold(item):
-    for k in range(item.childCount()):
-        c = item.child(k)
-        if c.font(0).bold():
-            bold_items.append(c.text(0))
-        walk_bold(c)
-
-
-walk_bold(sb.tree.invisibleRootItem())
-check("#5 当前文档 a.md 加粗高亮", any("a.md" in t for t in bold_items), str(bold_items))
-
-# 不存在根目录 → 清空提示
-sb.set_tree_root(os.path.join(tmp, "不存在目录"), persist=False)
-wait(200)
-tops2 = [sb.tree.topLevelItem(i).text(0) for i in range(sb.tree.topLevelItemCount())]
-check("#5 根目录不存在 → 提示占位", len(tops2) == 1 and "双击上方选择根目录" in tops2[0], str(tops2))
-sb.set_tree_root(tmp, persist=False)
-
-# recycle_path
+# recycle_path（文件页「删除（移入回收站）」使用的主窗口通道）
 del_path = os.path.join(tmp, "delme.txt")
 with open(del_path, "w", encoding="utf-8") as f:
     f.write("x")
@@ -173,13 +116,23 @@ r = js("JSON.stringify(window.getOutline())")
 ol = json.loads(r or "[]")
 check("#8 getOutline 3 个标题", len(ol) == 3, r[:120])
 check("#8 一级节 end=4", ol and ol[0].get("end") == 4, r[:160])
-check("#8 分节字数（A 节 10 / A1 节 6 / B 节 4）",
-      [h.get("words") for h in ol] == [10, 6, 4], str([h.get("words") for h in ol]))
-# 侧栏后缀
+# v3.31.2（#2）：分节字数口径与状态栏对齐（中文按字/拉丁按词、剔围栏与行内码、标题剥 # 前缀）
+# A 节 = A(1)+p1(1)+A1(1)+p2(1)；A1 节 = A1+p2；B 节 = B+p3
+check("#8 分节字数新口径（A 节 4 / A1 节 2 / B 节 2）",
+      [h.get("words") for h in ol] == [4, 2, 2], str([h.get("words") for h in ol]))
+# 侧栏后缀（v3.31.2 #3：默认关，可开关切换）
 win._sidebar.set_outline(ol)
 wait(200)
 t0 = win._sidebar.outline.topLevelItem(0).text(0)
-check("#8 大纲项显示分节字数后缀", "10 字" in t0, t0)
+check("#8 后缀默认不显示（outlineWords 默认关）", "字" not in t0, t0)
+win.set_outline_words(True)
+wait(200)
+t0 = win._sidebar.outline.topLevelItem(0).text(0)
+check("#8 开启后大纲项显示分节字数后缀", "4 字" in t0, t0)
+win.set_outline_words(False)
+wait(200)
+t0 = win._sidebar.outline.topLevelItem(0).text(0)
+check("#8 关闭后后缀即被剥离", "字" not in t0, t0)
 
 # 拖拽调序（模拟 _on_outline_dropped 的数据通路：同级 [A, B] → [B, A]）
 r = js(f"window.reorderSections({json.dumps(json.dumps([[4, 6], [0, 4]]))})")

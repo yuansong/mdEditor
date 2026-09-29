@@ -63,8 +63,11 @@ if "PROBE25 DONE" not in out:
 if '"FAIL"' in out:
     fail.append("probe25-fail")
 
-for m in ("m29a", "m29b", "m30a", "m30b", "m31", "m33", "m34", "m35", "m39"):
-    subprocess.run([VENV, "_runner.py", "_%s.py" % m], cwd=HERE,
+# 探针脚本名约定为 _<tag>.py；少数探针带后缀，在此显式登记
+PROBE_SCRIPT = {"m84": "_m84_toggle.py", "m85": "_m85_toggle2.py"}
+for m in ("m29a", "m29b", "m30a", "m30b", "m31", "m33", "m34", "m35", "m39",
+          "m83", "m84", "m85"):
+    subprocess.run([VENV, "_runner.py", PROBE_SCRIPT.get(m, "_%s.py" % m)], cwd=HERE,
                    capture_output=True, text=True)
     time.sleep(5)
     rc_txt = os.path.join(HERE, "_%s.txt" % m)
@@ -78,7 +81,7 @@ for m in ("m29a", "m29b", "m30a", "m30b", "m31", "m33", "m34", "m35", "m39"):
 
 # === smoke ===
 logln("=== smoke ===")
-for n in range(11, 31):
+for n in range(11, 34):
     subprocess.run([VENV, "_runner.py", "_smoke%d.py" % n], cwd=HERE,
                    capture_output=True, text=True)
     time.sleep(5)
@@ -92,7 +95,7 @@ for n in range(11, 31):
     logln("smoke%d done PASS=%d FAIL=%d" % (n, pass_n, fail_n))
 
 # === final integrity check (same as ps1) ===
-for n in range(11, 31):
+for n in range(11, 34):
     res = os.path.join(HERE, "_smoke%d.txt" % n)
     pass_n, fail_n = count_result(res)
     if pass_n == 0:

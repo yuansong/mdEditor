@@ -70,6 +70,16 @@ body[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background-color: rgba
 
 /* ---------- rendered blocks ---------- */
 .blk p { margin: 0.6em 0; }
+/* v3.31.2（#7）：行首空格真实可见 —— 渲染态文本容器 white-space:pre-wrap，
+   段首 / Tab 插入的半角空格不再被折叠（存储本来就保留，仅显示折叠）；
+   表格单元格维持原有折叠语义（显式还原，防继承） */
+.blk p, .blk li, .blk blockquote { white-space: pre-wrap; overflow-wrap: break-word; }
+.blk td, .blk th { white-space: normal; }
+/* v3.31.2（#8）：段落首行缩进（设置项 paraIndent 0~4；--pind 由 setParaIndent 注入 body） */
+.blk p { text-indent: calc(var(--pind, 0) * 1em); }
+/* v3.31.2（#9）：标题 1 全局居中（设置项 h1Center；块级 <h1 align="center"> 优先级更高） */
+body.h1-center .blk h1:not([align="center"]) { text-align: center; }
+body.h1-center .src-hl .h-h1c { display: block; text-align: center; }
 .blk h1, .blk h2, .blk h3, .blk h4, .blk h5, .blk h6 {
   font-weight: 600; line-height: 1.4; color: var(--text);
 }
@@ -203,7 +213,6 @@ del { color: var(--text-2); }
 .raw-edit.t-h4 { font-size: var(--h4); font-weight: 600; margin: 0.85em 0 0.4em; line-height: 1.4; }
 .raw-edit.t-h5 { font-size: var(--h5); font-weight: 600; margin: 0.75em 0 0.35em; line-height: 1.4; }
 .raw-edit.t-h6 { font-size: var(--h6); font-weight: 600; color: var(--text-2); margin: 0.75em 0 0.35em; line-height: 1.4; }
-.raw-edit.t-h7 { font-size: 0.95em; font-weight: 600; color: var(--text-2); margin: 0.75em 0 0.35em; line-height: 1.4; }
 .raw-edit.t-fence {
   font-family: Consolas, "Cascadia Code", monospace;
   font-size: 0.9em; line-height: 1.6;
@@ -1413,13 +1422,25 @@ img.img-broken { display: none; }
     if (lines.length >= 2 && first.trim() !== '' && /^\s*:\s+(?:\S.*)?$/.test(lines[1])) {
       return { type: 'deflist' };   /* v3.30.19（DL-4）：空定义 ": " 不再使块类型漂移 */
     }
-    if ((m = first.match(/^(#{1,7})\s+(.*)$/))) return { type: 'h' + m[1].length };
+    if ((m = first.match(/^(#{1,6})\s+(.*)$/))) return { type: 'h' + m[1].length };
+    /* v3.31.2（#4）：h1 居中的持久化形式 —— 单行 <h1 align="center">…</h1>。
+       与 `# ` 形式同型（type h1~h6），tagForm 标记供渲染 / 映射 / 回写分支识别 */
+    if ((m = first.match(/^<h([1-6])(\s[^>]*)?>[\s\S]*<\/h\1>\s*$/i)) && lines.length === 1)
+      return { type: 'h' + m[1], tagForm: true,
+               align: /align\s*=\s*["']?center["']?/i.test(m[2] || '') ? 'center' : '' };
     if (/^\s{0,3}(?:[-*_]\s*){3,}$/.test(first)) return { type: 'hr' };
     if (/^\s*>/.test(first)) return { type: 'quote' };
     if (/^\s*(?:[-*+]|\d+[.)])(?:[ \t]+|$)/.test(first)) return { type: 'list' };
     if (lines.length >= 2 && first.indexOf('|') !== -1 &&
         /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[1]) && lines[1].indexOf('-') !== -1) return { type: 'table' };
     return { type: 'p' };
+  }
+  /* v3.31.2（#4）：标题块正文文本（兼容 `# x` 与 <h1 …>x</h1> 两种存储形式） */
+  function headingTextOf(raw) {
+    var s = String(raw || '');
+    var m = s.match(/^<h[1-6](?:\s[^>]*)?>([\s\S]*)<\/h[1-6]>\s*$/i);
+    if (m) return m[1];
+    return s.replace(/^#{1,6}\s+/, '');
   }
 
   function renderList(lines) {
@@ -1529,7 +1550,7 @@ img.img-broken { display: none; }
           var bi = blockInfo(state.raw[t]);
           if (bi.type && /^h[1-6]$/.test(bi.type)) {
             var ln = +bi.type[1];
-            var txt = state.raw[t].replace(/^#{1,7}\s+/, '');
+            var txt = headingTextOf(state.raw[t]);
             if (lvl && ln > lvl) { toc += '<ol>'.repeat(Math.min(ln - lvl, 2)); }
             while (lvl && ln < lvl) { toc += '</ol>'; lvl--; }
             lvl = ln;
@@ -1540,10 +1561,12 @@ img.img-broken { display: none; }
         toc += '</ol></div>';
         return toc;
       }
-      case 'h1': case 'h2': case 'h3': case 'h4': case 'h5': case 'h6': case 'h7': {
+      case 'h1': case 'h2': case 'h3': case 'h4': case 'h5': case 'h6': {
         var n = +info.type[1];
-        var text = raw.replace(/^#{1,7}\s+/, '');
-        return '<h' + Math.min(n, 6) + '>' + inlineHTML(text) + '</h' + Math.min(n, 6) + '>';
+        var text = headingTextOf(raw);
+        var opentag = '<h' + Math.min(n, 6) +
+          (info.tagForm && info.align === 'center' ? ' align="center"' : '') + '>';
+        return opentag + inlineHTML(text) + '</h' + Math.min(n, 6) + '>';
       }
       case 'quote': {
         /* v3.29：引用支持嵌套层级与内嵌块（表格 / 代码块 / 列表等）——
@@ -1650,7 +1673,19 @@ img.img-broken { display: none; }
   /* split full markdown text into block raws */
   function splitBlocks(md) {
     var lines = String(md == null ? '' : md).replace(/\r\n?/g, '\n').split('\n');
-    var blocks = [], cur = [], fence = false, yamlDone = false;
+    var blocks = [], cur = [], fence = false, yamlDone = false, tblOpen = false;
+    /* v3.31.1（BUG-1）：分隔行判定 —— 竖线分隔的 :?-+:? 列（GFM 允许
+       首尾不带竖线，如 `--- | ---`）；纯 `---`（hr）因无竖线不误判 */
+    function isSepRow(line) {
+      if (!/\|/.test(line)) return false;
+      var s = line.trim();
+      if (!/^[-|\s:]+$/.test(s) || !/-/.test(s)) return false;
+      var cols = s.replace(/^\|/, '').replace(/\|$/, '').split('|');
+      for (var i = 0; i < cols.length; i++) {
+        if (!/^\s*:?-+:?\s*$/.test(cols[i])) return false;
+      }
+      return cols.length >= 1;
+    }
     function kindOf(line) {
       if (/^\s*```/.test(line)) return 'fence';
       if (/^\s*$/.test(line)) return 'blank';
@@ -1660,7 +1695,7 @@ img.img-broken { display: none; }
       if (/^\s*\[TOC\]\s*$/i.test(line)) return 'toc';
       return 'text';
     }
-    function flush() { if (cur.length) { blocks.push(cur.join('\n')); cur = []; } }
+    function flush() { if (cur.length) { blocks.push(cur.join('\n')); cur = []; } tblOpen = false; }
     for (var k = 0; k < lines.length; k++) {
       var line = lines[k], kind = kindOf(line);
       if (fence) {
@@ -1697,7 +1732,20 @@ img.img-broken { display: none; }
         }
         // 未闭合 → 当作普通 hr 走默认逻辑
       }
-      var pk = cur.length ? kindOf(cur[0]) : null; // 以块首行类型为准
+      var pk = cur.length ? (tblOpen ? 'table' : kindOf(cur[0])) : null; // 以块首行类型为准
+      /* v3.31.1（BUG-1）：管道表格分组补全 —— kindOf 只识别整行全竖线形式，
+         GFM 允许表头/数据行不带首尾竖线（`列A | 列C`），导致「裸表头 + 竖线
+         分隔行」按类型不一致被拆块，整表降级为段落且往返结构劣化。
+         ① 表头进入：当前块为空、本行含非转义竖线且下一行是分隔行 → 表格行；
+         ② 表体延续：表格块已开启、本行含竖线（转义亦算）→ 并入当前表格块。 */
+      if (kind === 'text') {
+        if (tblOpen && /\|/.test(line)) kind = 'table';
+        else if (!tblOpen && !cur.length && /(?<!\\)\|/.test(line) &&
+                 k + 1 < lines.length && isSepRow(lines[k + 1])) {
+          kind = 'table'; tblOpen = true;
+        }
+      }
+      if (!cur.length && kind === 'table') tblOpen = true;
       if (cur.length && kind !== pk) {
         /* 列表 / 引用的懒延续行（紧随其后、无空行的普通文本）并入当前块，
            否则 setMarkdown -> getMarkdown 往返会在续行前插入空行，破坏原文 */
@@ -1735,8 +1783,18 @@ img.img-broken { display: none; }
           end = rawLen - lines[lines.length - 1].length - 1;
         return Math.min(end, base + Math.max(0, idx));
       }
-      case 'h1': case 'h2': case 'h3': case 'h4': case 'h5': case 'h6': case 'h7': {
-        var m = lines[0].match(/^#{1,7}\s+/);
+      case 'h1': case 'h2': case 'h3': case 'h4': case 'h5': case 'h6': {
+        /* v3.31.2（#4）：tagForm（<h1 align="center">…</h1>）——plain 相对开标签
+           之后的正文映射，右端钳位到闭标签起点（收尾标记不进区间） */
+        var tm = lines[0].match(/^<h[1-6](?:\s[^>]*)?>/i);
+        if (info.tagForm && tm && tm[0].length < lines[0].length) {
+          var tb = tm[0].length;
+          var te = rawLen - (lines[0].length - lines[0].replace(/<\/h[1-6]>\s*$/i, '').length);
+          var inner2 = raw.slice(tb, te);
+          var L2 = inlinePlainLen(inner2);
+          return Math.min(te, tb + inlineMap(inner2, Math.max(0, Math.min(idx, L2))));
+        }
+        var m = lines[0].match(/^#{1,6}\s+/);
         var b = m ? m[0].length : 0;
         return Math.min(rawLen, b + inlineMap(raw.slice(b), Math.max(0, idx)));
       }
@@ -2434,7 +2492,7 @@ img.img-broken { display: none; }
   function foldKeyAt(i) {
     var inf = blockInfo(state.raw[i] || '');
     if (!/^h[1-6]$/.test(inf.type)) return '';
-    return inf.type + '|' + String(state.raw[i] || '').replace(/^#{1,7}\s+/, '').trim();
+    return inf.type + '|' + headingTextOf(String(state.raw[i] || '')).trim();
   }
   /* 折叠三角挂在标题块上（绝对定位在标题行左侧），点击切换 */
   function mountFoldTri(div, i) {
@@ -2547,6 +2605,12 @@ img.img-broken { display: none; }
      KaTeX / mermaid / 代码着色等重型增强由视口观察器按需补齐 */
   var LAZY_MIN = 400;
   function rebuild() {
+    /* v3.31.2（#6）：源码态（源码模式 / 双栏左栏）下 rebuild 不得重建渲染块 ——
+       src-wrap 层会被整体替换、界面回到渲染态，而 srcEl 仍指向游离节点，
+       getMarkdown 与所见脱节（首次进双栏左栏显示渲染态的根因）。
+       换文档（setMarkdown）与退出源码（setSourceMode(false)）都会先把 srcEl
+       置空再进来，不受此守卫影响 */
+    if (srcEl) { updateSrcGutter(); renderSrcHl(); return; }
     ED.textContent = '';
     state.lazyBuild = state.raw.length >= LAZY_MIN;
     for (var i = 0; i < state.raw.length; i++) ED.appendChild(blockEl(i));
@@ -2825,11 +2889,27 @@ img.img-broken { display: none; }
        守卫：标记外侧再出现同字符（如 ***粗斜*** 上的斜体、相邻的粗体片段）
        时不判为包裹对，回退普通包裹，避免拆坏嵌套 / 相邻标记 */
     var mch = marker.charAt(0);
-    var prevCh = a - mlen - 1 >= 0 ? raw.charAt(a - mlen - 1) : '';
-    var nextCh = raw.charAt(b + mlen);
-    if (raw.slice(Math.max(0, a - mlen), a) === marker &&
-        raw.slice(b, b + mlen) === marker && prevCh !== mch && nextCh !== mch) {
-      var newTextT = raw.slice(0, a - mlen) + selected + raw.slice(b + mlen);
+    /* v3.31.2（FMT-4 根修）：标记包在链接外壳之外（**[文字](url)** / ==[文字](url)==）
+       时，紧邻选区的是 [ 与 ] —— 直接用 a/b 判 toggle 会被外壳挡住，误判「未包裹」
+       而再套一层，产生 **[**文字**](url)**：链接失效、源码字面可见。
+       这里先把 [ … ](url) 外壳纳入判定区间（_oa/_ob），命中即解包「外层」标记，
+       链接本体整条保留；无链接外壳时 _oa/_ob 等于 a/b，与原有语义完全一致 */
+    var _lkT = raw.slice(b).match(/^\]\([^)\n]*\)/);
+    var _oa = a, _ob = b;
+    if (raw.charAt(a - 1) === '[' && _lkT) { _oa = a - 1; _ob = b + _lkT[0].length; }
+    var prevCh = _oa - mlen - 1 >= 0 ? raw.charAt(_oa - mlen - 1) : '';
+    var nextCh = raw.charAt(_ob + mlen);
+    /* v3.31.2：外侧同字符游程「左右平衡」时允许解包 —— ***粗斜*** 上按加粗，
+       外侧各剩 1 个 *（斜体标记左右各一），解包得 *C* 仍合法且符合 LIFO 取消
+       语义；仅游程不平衡（嵌套 / 相邻标记真拆坏风险）才回退普通包裹 */
+    var _lr = 0, _rr = 0;
+    while (_oa - mlen - 1 - _lr >= 0 && raw.charAt(_oa - mlen - 1 - _lr) === mch) _lr++;
+    while (raw.charAt(_ob + mlen + _rr) === mch) _rr++;
+    if (raw.slice(Math.max(0, _oa - mlen), _oa) === marker &&
+        raw.slice(_ob, _ob + mlen) === marker &&
+        ((prevCh !== mch && nextCh !== mch) ||
+         (prevCh === mch && nextCh === mch && _lr === _rr && _lr < mlen))) {
+      var newTextT = raw.slice(0, _oa - mlen) + raw.slice(_oa, _ob) + raw.slice(_ob + mlen);
       state.raw[state.editIdx] = newTextT;
       el.textContent = newTextT;
       setCaretSel(el, a - mlen, selected.length);
@@ -3356,7 +3436,13 @@ img.img-broken { display: none; }
     /* v3.30.18（QUO-1 标题侧止血）：含行内格式渲染产物时纯文本回写剥标记 */
     if (wysHasInlineRich(hEl)) return;
     var text = hEl.textContent.replace(/\u00a0/g, ' ');
-    state.raw[i] = '#'.repeat(+hEl.tagName[1]) + ' ' + text;
+    /* v3.31.2（#4）：居中 h1 的存储形态保持 <h1 align="center">…</h1> */
+    var bi0 = blockInfo(state.raw[i] || '');
+    if (bi0.tagForm && bi0.align === 'center' && bi0.type === ('h' + hEl.tagName[1])) {
+      state.raw[i] = '<h1 align="center">' + text + '</h1>';
+    } else {
+      state.raw[i] = '#'.repeat(+hEl.tagName[1]) + ' ' + text;
+    }
     markDirty(); scheduleSnapshot();
   }
   /* v3.29：引用 DOM → 原始行（带嵌套 '> ' 标记；内嵌富块按 data-raw 还原）。
@@ -5449,15 +5535,25 @@ img.img-broken { display: none; }
         out.push({
           index: i,
           level: +bi.type[1],
-          text: state.raw[i].replace(/^#{1,7}\s+/, '').slice(0, 60)
+          text: headingTextOf(state.raw[i]).slice(0, 60)
         });
       }
     }
-    /* v3.31（#7/#8）：节结束块（下一同级/更高级标题处）+ 分节字数（非空白字符，
-       前缀和一次累计，避免 O(块数×标题数) 重复统计） */
+    /* v3.31（#7/#8）：节结束块（下一同级/更高级标题处）
+       v3.31.2（#2）：分节字数口径与状态栏统计对齐 —— 中文按字 / 拉丁按词，
+       剔除围栏代码块与行内码内容，标题行剥 # 前缀 */
+    function _blkWords(bi, raw) {
+      if (!bi.type || bi.type === 'fence') return 0;
+      var s = String(raw || '');
+      if (/^h[1-6]$/.test(bi.type)) s = headingTextOf(s);
+      s = s.replace(/`[^`]*`/g, ' ');
+      var cjk = (s.match(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/g) || []).length;
+      var wds = (s.match(/[A-Za-z][A-Za-z0-9_'-]*/g) || []).length;
+      return cjk + wds;
+    }
     var cum = [0];
     for (i = 0; i < state.raw.length; i++)
-      cum.push(cum[i] + String(state.raw[i] || '').replace(/\s+/g, '').length);
+      cum.push(cum[i] + _blkWords(blockInfo(state.raw[i]), state.raw[i]));
     for (var k = 0; k < out.length; k++) {
       var end = state.raw.length;
       for (var m = k + 1; m < out.length; m++) {
@@ -5599,7 +5695,10 @@ img.img-broken { display: none; }
   function renderSrcHl() {
     if (!srcEl || !srcHl) return;
     var lines = srcText.split('\n');
-    var out = [], fence = false, fenceMark = '';
+    var out = [], blkFlags = [], fence = false, fenceMark = '';
+    /* v3.31.2（#9）：标题 1 全局居中开启时，h1 行包进块级容器（h-h1c），
+       使 text-align:center 生效（行内 span 上设置对齐无效） */
+    var h1c = document.body.classList.contains('h1-center');
     for (var i = 0; i < lines.length; i++) {
       var ln = lines[i];
       var fm = ln.match(/^\s{0,3}(`{3,}|~{3,})/);
@@ -5607,25 +5706,41 @@ img.img-broken { display: none; }
         if (!fence) { fence = true; fenceMark = fm[1].charAt(0); out.push('<span class="h-fence">' + escHtml(ln) + '</span>'); }
         else if (fm[1].charAt(0) === fenceMark) { fence = false; out.push('<span class="h-fence">' + escHtml(ln) + '</span>'); }
         else out.push('<span class="h-codec">' + escHtml(ln) + '</span>');
+        blkFlags.push(false);
         continue;
       }
-      if (fence) { out.push('<span class="h-codec">' + escHtml(ln) + '</span>'); continue; }
+      if (fence) { out.push('<span class="h-codec">' + escHtml(ln) + '</span>'); blkFlags.push(false); continue; }
       var m2;
       if (/^\s{0,3}(---+|\*\*\*+|___+)\s*$/.test(ln)) {
         out.push('<span class="h-hr">' + escHtml(ln) + '</span>');
+        blkFlags.push(false);
       } else if ((m2 = ln.match(/^(\s{0,3}#{1,6}\s)(.*)$/))) {
-        out.push('<span class="h-hm">' + escHtml(m2[1]) + '</span><span class="h-h">' + hlInline(m2[2]) + '</span>');
+        var isH1c = h1c && (m2[1].match(/#/g) || []).length === 1;
+        var seg = '<span class="h-hm">' + escHtml(m2[1]) + '</span><span class="h-h">' + hlInline(m2[2]) + '</span>';
+        out.push(isH1c ? '<span class="h-h1c">' + seg + '</span>' : seg);
+        blkFlags.push(isH1c);
       } else if ((m2 = ln.match(/^(\s*>+\s?)(.*)$/))) {
         out.push('<span class="h-quote">' + escHtml(m2[1]) + '</span>' + hlInline(m2[2]));
+        blkFlags.push(false);
       } else if ((m2 = ln.match(/^(\s*(?:[-*+]|\d+[.)])\s)()/))) {
         out.push('<span class="h-list">' + escHtml(m2[1]) + '</span>' + hlInline(ln.slice(m2[1].length)));
+        blkFlags.push(false);
       } else if (/^\s*\|/.test(ln)) {
         out.push('<span class="h-tbl">' + escHtml(ln) + '</span>');
+        blkFlags.push(false);
       } else {
         out.push(hlInline(ln));
+        blkFlags.push(false);
       }
     }
-    srcHl.innerHTML = out.join('\n');
+    /* 块级行（h-h1c）自占一行：仅在「内联行 ↔ 内联行」之间补 '\n' 分隔，
+       空行 / 行数语义与逐行 join 完全一致（行号与编辑层逐行对齐不漂移） */
+    var html = '';
+    for (var j = 0; j < out.length; j++) {
+      if (j > 0 && !blkFlags[j] && !blkFlags[j - 1]) html += '\n';
+      html += out[j];
+    }
+    srcHl.innerHTML = html;
   }
   var srcHlPending = false;
   function scheduleSrcHl() {
@@ -5751,6 +5866,18 @@ img.img-broken { display: none; }
       modes.emoji = !!m.emoji;
       if (!modes.emoji) closeEmojiPop();
     }
+  };
+  /* v3.31.2（#8）：段落首行缩进（0~4 格，1 格 = 1em）——渲染层经 CSS 变量生效 */
+  window.setParaIndent = function (n) {
+    n = Math.max(0, Math.min(4, parseInt(n, 10) || 0));
+    document.body.style.setProperty('--pind', String(n));
+  };
+  /* v3.31.2（#9）：标题 1 全局居中开关 —— body.h1-center 类驱动渲染层与源码高亮层 */
+  window.setH1Center = function (on) {
+    var want = !!on;
+    if (document.body.classList.contains('h1-center') === want) return;
+    document.body.classList.toggle('h1-center', want);
+    if (srcEl) renderSrcHl();   /* 源码态即时重渲染高亮层 */
   };
   window.setTheme = function (name) {
     var known = ['dark', 'sepia', 'night', 'panda', 'azure'];
@@ -6119,6 +6246,9 @@ img.img-broken { display: none; }
       (needMath ? '<style>__KATEX_CSS__</style>\n' : '') +
       '<style>' +
       css +
+      /* v3.31.2（#8/#9）：段首缩进 / 标题 1 居中随当前设置写入导出物 */
+      '\n.blk p{text-indent:' + (parseInt(document.body.style.getPropertyValue('--pind') || '0', 10) || 0) + 'em}' +
+      (document.body.classList.contains('h1-center') ? '\n.blk h1{text-align:center}' : '') +
       '\nbody{background:#fff}#editor,.page{max-width:830px;margin:0 auto;padding:48px 56px}' +
       '</style>\n</head>\n<body>\n<article class="page">\n' + body + '</article>\n' +
       '</body>\n</html>';
@@ -6349,7 +6479,7 @@ img.img-broken { display: none; }
   function setHeadingLevel(level) {
     var i = state.editIdx, el = editEl();
     if (i < 0 || !el) return;
-    var r = el.textContent.replace(/^#{1,7}\s+/, '');
+    var r = el.textContent.replace(/^#{1,6}\s+/, '');
     if (level > 0) r = new Array(level + 1).join('#') + ' ' + r;
     state.raw[i] = r;
     el.textContent = r;
@@ -6546,7 +6676,7 @@ img.img-broken { display: none; }
 
   /* ---------- 1) 行编辑菜单：选中文字浮现 ---------- */
   var lastFB = null;  // 最近一次有效选区快照（点击按钮时选区可能已被浏览器塌陷，用快照兜底）
-  function buildFloatbar(delOnly, selCount, inCell) {
+  function buildFloatbar(delOnly, selCount, inCell, h1State) {
     FB.innerHTML = '';
     /* 图表 / 代码块 / 公式（及图片块）内选中文字：悬浮栏只保留「删除」，
        避免把 ** 等格式标记写进代码 / 源码里 */
@@ -6567,6 +6697,11 @@ img.img-broken { display: none; }
          （列表 / 代码块 / 图片 / 图表 / 公式），与 "/" 菜单同一套项 */
       btns.splice(btns.length - 1, 0, ['＋', 'inscell', '插入（列表 / 代码块 / 图片 / 图表 / 公式）']);
     }
+    /* v3.31.2（#4）：标题 1 块 → 「清除格式」前插入 居中 ⇔ 向左 切换按钮 */
+    if (h1State && !delOnly) {
+      btns.splice(btns.length - 1, 0,
+        ['⇔', 'h1center', h1State === 2 ? '标题向左对齐' : '标题居中']);
+    }
     btns.forEach(function (b) {
       var el = document.createElement('button');
       el.innerHTML = b[0];
@@ -6583,11 +6718,15 @@ img.img-broken { display: none; }
       });
       FB.appendChild(el);
     });
-    /* v3.29d（UX #16）：格式栏尾部显示「已选 N 字」，长选区套格式前可见范围 */
-    if (selCount > 0) {
+    /* v3.29d（UX #16）：格式栏尾部显示「已选 N 字」，长选区套格式前可见范围
+       v3.31.2（#5b）：标题块追加级别标识 ——「标题 N · 已选 N 字」 */
+    var tailTxt = '';
+    if (h1State) tailTxt = '标题 1';
+    if (selCount > 0) tailTxt += (tailTxt ? ' · ' : '') + '已选 ' + selCount + ' 字';
+    if (tailTxt) {
       var cnt = document.createElement('span');
       cnt.className = 'fbcnt';
-      cnt.textContent = '已选 ' + selCount + ' 字';
+      cnt.textContent = tailTxt;
       FB.appendChild(cnt);
     }
   }
@@ -7016,11 +7155,56 @@ img.img-broken { display: none; }
        映射——表格纯文本拼接无分隔符，块级映射会写错位置（污染分隔行等） */
     var cf = cellFormatCtx();
     if (cf) { applyCellFloat(cf, action); return; }
+    /* v3.31.2（FMT-1 根修）：选区落在渲染态 <code> 内时拒绝叠加行内格式 ——
+       行内代码内容按 CommonMark 不解析任何标记，叠加只会产生字面标记（~~ 变正文），
+       且渲染明文长度与 raw 错位 → 后续映射整体偏移、源码结构性损坏。
+       与下方「跨行守卫」同款策略：拒绝应用并提示。
+       放行两类：code（选区内码壳 toggle 取消）、clearfmt（连码壳一起剥掉）；
+       delblk / 单元格路径（上方已 return）不受影响 */
+    if (action === 'bold' || action === 'italic' || action === 'strike' ||
+        action === 'mark' || action === 'link') {
+      var _sel = getSelection();
+      if (_sel && _sel.rangeCount) {
+        var _sc = _sel.getRangeAt(0).startContainer;
+        var _pe = _sc.nodeType === 1 ? _sc : _sc.parentElement;
+        var _pb = _pe && _pe.closest ? _pe.closest('#editor .blk') : null;
+        /* 用 intersectsNode 而非 closest：列表整项选区（selectNodeContents(li)）
+           的起点 container 是 li 元素，code 是它的子节点 —— closest 探测不到，
+           必须判定选区是否与块内任一 <code> 相交 */
+        if (_pb && _pb.querySelectorAll) {
+          var _codes = _pb.querySelectorAll('code');
+          for (var _ci = 0; _ci < _codes.length; _ci++) {
+            var _hit = false;
+            try { _hit = _sel.getRangeAt(0).intersectsNode(_codes[_ci]); } catch (e1) {}
+            if (_hit) {
+              toastStatus('行内代码内不支持叠加行内格式（可点 T× 连码壳一起清除）');
+              hidePops();
+              return;
+            }
+          }
+        }
+      }
+    }
     /* 优先使用当前实时选区；若点击过程中选区被浏览器塌陷，则回退到最近一次快照 */
     var info = currentSelectionInfo() || lastFB;
     if (!info) { hidePops(); return; }
     lastFB = info;
     if (action === 'delblk') { deleteBlockAt(info.idx); return; }
+    /* v3.31.2（#4）：标题 1 居中 ⇔ 向左（块级切换；居中态存储为
+       <h1 align="center">…</h1>，向左态还原 `# ` 原生形式） */
+    if (action === 'h1center') {
+      var _hr = state.raw[info.idx] || '';
+      var _hb = blockInfo(_hr);
+      if (_hb.type === 'h1') {
+        var _wasC = _hb.tagForm && _hb.align === 'center';
+        state.raw[info.idx] = _wasC ? '# ' + headingTextOf(_hr)
+                                    : '<h1 align="center">' + headingTextOf(_hr) + '</h1>';
+        markDirty(); scheduleSnapshot(); rebuild();
+        toastStatus(_wasC ? '标题已向左对齐' : '标题已居中');
+      }
+      hidePops();
+      return;
+    }
     var raw = state.raw[info.idx];
     var rawOff, rawLen;
     if (info.el.classList.contains('raw-edit')) {
@@ -7060,6 +7244,21 @@ img.img-broken { display: none; }
               rawOff += mls; mchg = true;
             }
           }
+          /* v3.31.2（FMT 批 G4/G6）：idx===L 在链接 / 图片节点上返回 n.re（含
+             ](url) 收尾）—— 区间尾带着 ](url) 时包裹动作会把标记包到外面
+             （[~~x](u)~~ 损坏）。向左定位最近 '[' 并校验其间无其它 '['（嵌套
+             [~~`x`~~](u) 选内层文字时左邻不是 '['），收敛到链接文字尾；
+             剥尾后新暴露的 ~~ / ` 由下一轮标记收缩继续处理 */
+          var _lts = raw.slice(rawOff, rawEnd);
+          var _me2 = _lts.match(/\]\(([^)\n]*)\)$/);
+          if (_me2) {
+            var _br = rawEnd - _me2[0].length;
+            var _p2 = raw.lastIndexOf('[', _br - 1);
+            var _nx = _p2 >= 0 ? raw.indexOf('[', _p2 + 1) : -1;
+            if (_p2 >= 0 && _p2 < rawOff && (_nx === -1 || _nx > _br)) {
+              rawEnd = _br; mchg = true;
+            }
+          }
         }
       }
       /* v3.30.18（LIST-1 止血）：CommonMark 行内标记不可跨行 —— 映射区间含
@@ -7075,6 +7274,23 @@ img.img-broken { display: none; }
     /* F1：链接改用页内小弹层（不再 window.prompt），确认时按 raw 区间直接改写，
        这样"取消"不会像以前那样把块留在源码态 */
     if (action === 'link') {
+      /* v3.31.2（FMT-2）：已包裹链接 → toggle 取消（移除 [ 与 ](url)，保留文字），
+         不再无条件再套一层（曾产生 [[x](u)](u) 嵌套垃圾且无法还原）。
+         判定与 wrapSelection 的 toggle 同款：区间紧邻 [ 与 ](url) */
+      var _ltxt = raw.slice(rawOff, rawOff + rawLen);
+      /* plainToRawOffset 在 idx===L 时返回 n.re（整个链接的结尾）—— 全选链接
+         文字时映射区间尾含 ](url)，先剥出来拿纯文字；再认定 [左邻 + 尾] 即可 */
+      var _mE = _ltxt.match(/\]\(([^)\n]*)\)$/);
+      var _inner = _mE ? _ltxt.slice(0, _mE.index) : _ltxt;
+      var _mU = _mE ? _mE : raw.slice(rawOff + rawLen).match(/^\]\(([^)\n]*)\)/);
+      if (_mU && _inner && raw.charAt(rawOff - 1) === '[') {
+        state.raw[info.idx] = raw.slice(0, rawOff - 1) + _inner +
+                             raw.slice(rawOff + rawLen + (_mE ? 0 : _mU[0].length));
+        markDirty(); scheduleSnapshot(); rebuild();
+        toastStatus('已移除链接');
+        hidePops();
+        return;
+      }
       hidePops();                              /* 先收起格式栏，再弹输入层 */
       openLinkPop(info, rawOff, rawLen);
       return;
@@ -7126,9 +7342,24 @@ img.img-broken { display: none; }
     var raw = state.raw[state.editIdx];
     /* 选区映射到 raw 后通常不含两侧标记（如选中"已加粗"而非"**已加粗**"），
        向两侧吸附扩展，把紧邻的标记字符包进来再做清除 */
-    var markerChar = /[*_~`$=]/;
+    /* v3.31.2（FMT-3）：选区为链接文字时，把 [ 与 ](url) 外壳一并纳入清除范围
+       （保留纯文字）—— 此前 markerChar 不含括号，链接清不掉（T× 失效）。
+       先吸收链接外壳，再走通用标记吸附，**[x](u)** 等叠加场景一并解决 */
+    var _slk = raw.slice(a, b);
+    var _mE3 = _slk.match(/\]\(([^)\n]*)\)$/);   /* 映射尾含 ](url) 形态 */
+    var _lk = raw.slice(b).match(/^\]\(([^)\n]*)\)/);   /* 尾不含形态 */
+    if (raw.charAt(a - 1) === '[' && _mE3) { a--; }
+    else if (_lk && raw.charAt(a - 1) === '[') { a--; b += _lk[0].length; }
+    var markerChar = /[*_~`$=\[\]\(\)]/;
     while (a > 0 && markerChar.test(raw[a - 1])) a--;
     while (b < raw.length && markerChar.test(raw[b])) b++;
+    /* v3.31.2（FMT-3 补）：吸附停在链接 url 中间（url 字符不是标记）——
+       区间尾是未闭合的 ](url… 时补到配对 ')'，保证整条外壳进清除区间 */
+    var _mOpen = raw.slice(a, b).match(/\]\([^()\n]*$/);
+    if (_mOpen) {
+      var _cl = raw.indexOf(')', b);
+      if (_cl !== -1) b = _cl + 1;
+    }
     var selected = raw.slice(a, b);
     var cleaned = selected
       .replace(/\*\*([^*]+)\*\*/g, '$1')
@@ -7343,7 +7574,10 @@ img.img-broken { display: none; }
          显示（菜单锚在块下方、格式栏锚在选区上方，互不遮挡）——
          行内格式操作入口不再因菜单打开而整体中断 */
       lastFB = info;  // 记录快照，供行菜单按钮点击兜底
-      buildFloatbar(fbDelOnly(info), info.plainLen, !!cellFormatCtx());   // 代码/图表/公式上下文：仅保留删除按钮
+      /* v3.31.2（#4/#5b）：当前块为标题 1 时传状态（1=向左 / 2=居中） */
+      var _fbi = blockInfo(state.raw[info.idx] || '');
+      var _h1s = _fbi.type === 'h1' ? ((_fbi.tagForm && _fbi.align === 'center') ? 2 : 1) : 0;
+      buildFloatbar(fbDelOnly(info), info.plainLen, !!cellFormatCtx(), _h1s);   // 代码/图表/公式上下文：仅保留删除按钮
       FB.classList.add('show');
       placePop(FB, info.rect.left, info.rect.top - 44);
     }, 160);
@@ -7377,8 +7611,7 @@ img.img-broken { display: none; }
       { ic: 'H3', lb: '标题 3', t: '### ' },
       { ic: 'H4', lb: '标题 4', t: '#### ' },
       { ic: 'H5', lb: '标题 5', t: '##### ' },
-      { ic: 'H6', lb: '标题 6', t: '###### ' },
-      { ic: 'H7', lb: '标题 7', t: '####### ' }
+      { ic: 'H6', lb: '标题 6', t: '###### ' }
     ] },
     list: { id: 'list', ic: '•', lb: '列表', def: 1, children: [
       { ic: '•', lb: '无序列表', t: '- ' },
@@ -7440,7 +7673,7 @@ img.img-broken { display: none; }
       var it = SLASH_DEFS[id];
       if (it.children) {
         it.def = (sub[id] != null && !isNaN(+sub[id]))
-          ? Math.max(0, +sub[id])
+          ? Math.max(0, Math.min(it.children.length - 1, +sub[id]))
           : (id === 'heading' ? 2 : id === 'list' ? 1 : 0);
       }
       SLASH_ITEMS.push(it);
@@ -8226,7 +8459,7 @@ img.img-broken { display: none; }
     return ({ p: '正文段落', quote: '引用', list: '列表', fence: '代码块', table: '表格',
       yaml: 'YAML', toc: '目录', hr: '分割线', image: '图片', chart: '图表', math: '公式',
       deflist: '定义列表', mathdl: '公式',
-      h1: '标题 1', h2: '标题 2', h3: '标题 3', h4: '标题 4', h5: '标题 5', h6: '标题 6', h7: '标题 7' })[t] || t;
+      h1: '标题 1', h2: '标题 2', h3: '标题 3', h4: '标题 4', h5: '标题 5', h6: '标题 6' })[t] || t;
   }
   /* v3.30.10（HP-1）：光标所在块类型（状态栏显示用）——
      优先取焦点所在块（表格单元格 / 代码区 / 渲染态内容都算），
@@ -8242,7 +8475,7 @@ img.img-broken { display: none; }
   }
   function transformTo(raw, target) {
     function strip(r) {
-      return r.replace(/^#{1,7}\s+/, '').replace(/^>\s?/gm, '')
+      return r.replace(/^#{1,6}\s+/, '').replace(/^>\s?/gm, '')
         .replace(/^(\s*)(?:[-*+]|\d+[.)])[ \t]*/gm, '$1').replace(/```[a-z]*\n?/g, '');
     }
     if (/^h[1-7]$/.test(target)) {
@@ -8377,7 +8610,7 @@ img.img-broken { display: none; }
   }
   /* 块菜单「转为」分组：标题（子菜单默认标题3）、段落、
      列表（子菜单：无序/有序/待办，默认有序）、代码块、引用 */
-  var BM_HEADING_SUBS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'h7'].map(function (h, k) {
+  var BM_HEADING_SUBS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].map(function (h, k) {
     return { ic: 'H' + (k + 1), lb: '标题 ' + (k + 1), act: 'to:' + h };
   });
   var BM_LIST_SUBS = [

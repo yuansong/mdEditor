@@ -1,4 +1,4 @@
-﻿# mdEditor 一键打包脚本（v3.30.18 清单批次：LIST/QUO/CODE/F/FN/DL/IMG 导出 → dist53，不打版本 zip）
+﻿# mdEditor 一键打包脚本（v3.31.2 行内格式卫生批 FMT-1/2/3 + 9 项优化批次 → dist55）
 $ErrorActionPreference = "Stop"
 $pyi = "C:\Users\Administrator\.workbuddy\binaries\python\envs\default\Scripts\pyinstaller.exe"
 $root = $PSScriptRoot
@@ -9,7 +9,7 @@ Set-Location $root
 # （首行 INFO 即中断）→ 调用 PyInstaller 期间必须临时 EAP=Continue
 $ErrorActionPreference = "Continue"
 & $pyi --noconfirm --windowed --name mdEditor `
-    --distpath dist53 --workpath build53 --specpath spec53 `
+    --distpath dist55 --workpath build55 --specpath spec55 `
     --icon "$root\src\mdeditor.ico" `
     --add-data "$root\src\editor.html;." `
     --add-data "$root\src\mdeditor.ico;." `

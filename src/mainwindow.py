@@ -157,6 +157,15 @@ class MainWindow(QMainWindow):
             self._outline_level = 3
         _flm = str(self._settings.value("fileListMode", "current") or "current")
         self._file_list_mode = "blank" if _flm == "blank" else "current"
+        # v3.31.2（#3）：大纲分节字数后缀显示开关（默认关）
+        self._outline_words = self._settings.value("outlineWords", False, type=bool)
+        # v3.31.2（#8）：段落首行缩进格数（0~4，默认 0）
+        try:
+            self._para_indent = max(0, min(4, int(self._settings.value("paraIndent", 0))))
+        except (TypeError, ValueError):
+            self._para_indent = 0
+        # v3.31.2（#9）：标题 1 全局居中（默认关）
+        self._h1_center = self._settings.value("h1Center", False, type=bool)
         # 图片存放方式：assets=落盘到「文档名.assets/」并插入相对路径（推荐）
         #              embed =内嵌 data URL（图片写入 Markdown 本身）
         _imgm = str(self._settings.value("imageMode", "assets") or "assets")
@@ -261,8 +270,9 @@ class MainWindow(QMainWindow):
         rl.addWidget(self._stack, 1)
 
         self._sidebar = Sidebar(self)
-        # 应用持久化的侧栏设置：大纲显示级别 / 文件列表显示模式
+        # 应用持久化的侧栏设置：大纲显示级别 / 分节字数开关 / 文件列表显示模式
         self._sidebar.set_outline_level(self._outline_level)
+        self._sidebar.set_outline_words(self._outline_words)
         self._sidebar.set_file_mode(self._file_list_mode)
         split = QSplitter(Qt.Horizontal, self)
         split.setChildrenCollapsible(False)
@@ -476,7 +486,6 @@ class MainWindow(QMainWindow):
         self._act_sidebar.setChecked(True)
         self._reg_act("视图", "文件列表", "Ctrl+Shift+E", lambda: self._show_sidebar_tab(0), menu=m_view)
         self._reg_act("视图", "大纲", "Ctrl+Shift+O", lambda: self._show_sidebar_tab(1), menu=m_view)
-        self._reg_act("视图", "文件目录", None, lambda: self._show_sidebar_tab(2), menu=m_view)   # v3.31（#5）
         m_view.addSeparator()
         self._act_typewriter = self._reg_act("视图", "打字机模式", None,
                                              self.toggle_typewriter, menu=m_view, checkable=True)
@@ -661,6 +670,10 @@ class MainWindow(QMainWindow):
                             f"style: {js(self._code_style)}}})")
         # v3.30.19（MMD-7）：全局图表主题随视图加载同步（空 = 跟随界面主题）
         self._js_view(view, f"window.setMmdTheme({js(self._settings.value('mmdTheme', '') or '')})")
+        # v3.31.2（#8/#9）：段首缩进 / 标题 1 居中随视图加载下发
+        self._js_view(view, f"window.setParaIndent({int(getattr(self, '_para_indent', 0))})")
+        self._js_view(view,
+                      f"window.setH1Center({str(bool(getattr(self, '_h1_center', False))).lower()})")
         self._js_view(view, f"window.setSlashMenuConfig({js(json.dumps(self._slash_cfg()))})")
         self._install_drop_filter()
 
@@ -920,7 +933,7 @@ class MainWindow(QMainWindow):
         self._update_title()
         self.show_status(f"已恢复历史版本（{when}）· 按 Ctrl+S 保存")
 
-    # ================= v3.31（#5）目录树支撑 =================
+    # ================= 侧栏文件管理支撑（回收站删除 / 重命名同步） =================
     def recycle_path(self, path):
         """把文件 / 文件夹移入回收站（SHFileOperationW，FOF_ALLOWUNDO）。"""
         import ctypes
@@ -1623,7 +1636,6 @@ class MainWindow(QMainWindow):
         self._refresh_tab_texts()
         if self.file_path:
             self._sidebar.set_root(self.file_path)
-            self._sidebar.tree_follow(self.file_path)   # v3.31（#5）：目录树跟随 / 高亮
             self._status.setText(f"已打开 · {self.file_path}")
         else:
             self.show_status("未命名文档")
@@ -1821,7 +1833,6 @@ class MainWindow(QMainWindow):
             return False
         self._remember_dir("save", path)
         self.file_path = os.path.abspath(path)
-        self._sidebar.tree_follow(self.file_path)   # v3.31（#5）：目录树跟随 / 高亮
         if 0 <= self._cur < len(self._docs):
             self._docs[self._cur]["path"] = self.file_path
             self._refresh_tab_texts()
@@ -2378,6 +2389,36 @@ class MainWindow(QMainWindow):
         self._settings.setValue("outlineLevel", level)
         self._sidebar.set_outline_level(level)
         self.show_status(f"大纲显示级别：{level} 级")
+
+    def set_outline_words(self, on):
+        """v3.31.2（#3）：大纲分节字数后缀显示开关，持久化并原地刷新后缀。"""
+        self._outline_words = bool(on)
+        self._settings.setValue("outlineWords", self._outline_words)
+        self._sidebar.set_outline_words(self._outline_words)
+        self.show_status("大纲分节字数：" + ("已显示" if self._outline_words else "已隐藏"))
+
+    def set_para_indent(self, n):
+        """v3.31.2（#8）：段落首行缩进格数（0~4），持久化并全视图即时生效。"""
+        try:
+            n = max(0, min(4, int(n)))
+        except (TypeError, ValueError):
+            return
+        self._para_indent = n
+        self._settings.setValue("paraIndent", n)
+        for v in (self._view, self._view_src, self._view_prev):
+            if v is not None:
+                self._js_view(v, f"window.setParaIndent({n})")
+        self.show_status(f"段首缩进：{n} 格" if n else "段首缩进：无")
+
+    def set_h1_center(self, on):
+        """v3.31.2（#9）：标题 1 全局居中，持久化并全视图即时生效。"""
+        self._h1_center = bool(on)
+        self._settings.setValue("h1Center", self._h1_center)
+        s = str(self._h1_center).lower()
+        for v in (self._view, self._view_src, self._view_prev):
+            if v is not None:
+                self._js_view(v, f"window.setH1Center({s})")
+        self.show_status("标题 1 居中：" + ("开" if self._h1_center else "关"))
 
     def set_file_list_mode(self, mode):
         """设置文件列表显示模式：current=跟随当前文档（默认）/ blank=空白项。"""
