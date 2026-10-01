@@ -228,9 +228,9 @@ check("整表缩小 → 列宽等比缩放写入 colgroup（不再被固定列�
 ctxmenu("#editor .b-table table", 200, 200)
 wait(300)
 st = jj("window.__blkMenuState()")
-check("表格右键块菜单：删除在最前", (st.get("items") or [None])[0] == "del", st.get("items"))
-check("表格块菜单 = 删除/还原尺寸/复制块/上移/下移",
-      st.get("items") == ["del", "resetsize", "dup", "up", "down"], st.get("items"))
+check("表格右键块菜单：表格标注在最前（v3.31.3 移入，删除块上方）", (st.get("items") or [None])[0] == "cap", st.get("items"))
+check("表格块菜单 = 表格标注/删除/还原尺寸/复制块/上移/下移",
+      st.get("items") == ["cap", "del", "resetsize", "dup", "up", "down"], st.get("items"))
 click_act("#blkmenu", "resetsize")
 wait(500)
 r4 = raw()[0]

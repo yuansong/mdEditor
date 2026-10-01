@@ -51,12 +51,11 @@ def raw():
 
 
 def click_btn(title_part):
-    # v3.30.17：入口改为表格选中后的悬浮工具条（#objbar），按钮文本=「标注」
-    return js("(function(){var b=document.querySelectorAll('#objbar button');"
-              "for(var i=0;i<b.length;i++){if((b[i].textContent||'').indexOf('" + title_part + "')>=0){"
-              "b[i].dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));"
-              "b[i].dispatchEvent(new MouseEvent('click',{bubbles:true}));return 'ok'}}"
-              "return 'nobtn'})()")
+    # v3.37（TBL-F1）：objbar 表格分支下线 —— 标注入口改为命令面板通道：
+    # __rzPick 建立对象选中态 → __blkCmd('cap') 打开标注弹层（title_part 仅兼容签名）
+    return js("(function(){var r=window.__rzPick(0);"
+              "if(r!=='ok')return 'norz';"
+              "return window.__blkCmd('cap')})()")
 
 
 def cap_ok(text, top):
@@ -83,8 +82,8 @@ r = js("(function(){var cp=document.getElementById('cappop');"
        "return JSON.stringify({show:cp.classList.contains('show'),"
        "title:document.getElementById('cappop-title').textContent})})()")
 d = json.loads(r or "{}")
-check("点「标注」→ 弹层打开且标题为表格标注",
-      res == "ok" and d.get("show") is True and d.get("title") == "表格标注", str(d))
+check("标注入口（v3.37 __blkCmd）→ 弹层打开且标题为表格标注",
+      res == "OK" and d.get("show") is True and d.get("title") == "表格标注", str(d))
 
 # 2) 上方标注 → caption 写入源码并渲染
 cap_ok("表一：测试", True)

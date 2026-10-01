@@ -1,0 +1,38 @@
+NOTE | 1 titles | ['向上插入行', '向下插入行', '删除行', '向左插入列', '向右插入列', '删除列', '拆分单元格（选择行 × 列）', '下移该行', '左移该列', '右移该列', '左对齐', '居中', '右对齐', '清空内容']
+PASS | 菜单顺序 = 插入行列→删除行列→合并拆分→对齐→清空标注 | ['向上插入行', '向下插入行', '删除行', '向左插入列', '向右插入列', '删除列', '拆分单元格（选择行 × 列）', '下移该行', '左移该列', '右移该列', '左对齐', '居中', '右对齐', '清空内容']
+NOTE | 2 panel | {'show': True, 'hint': '拆分为 2 行 × 2 列'}
+PASS | 未合并格拆分面板打开且默认 2×2 | {'show': True, 'hint': '拆分为 2 行 × 2 列'}
+NOTE | 2 raw after split | <table class="md-tbl">
+  <thead>
+    <tr><th>甲</th><th colspan="2">乙</th><th>丙</th></tr>
+  </thead>
+  <tbody>
+    <tr><td rowspan="2">1</td><td>2</td><td></td><td rowspan="2">3</td></tr>
+    <tr><td></td><td></td></tr>
+    <tr><td>5</td><td colspan="2">6</td><td>7</td></tr>
+  </tbody>
+</table>
+PASS | 未合并格拆分 → 存储升级 HTML 表格 | <table class="md-tbl">
+  <thead>
+    <tr><th>甲</th><th colspan="2">乙</th><th>丙</
+NOTE | 3 grid | {'rows': 4, 'width': 4, 'complete': True, 'holes': [], 'counts': [3, 4, 2, 3]}
+PASS | 拆分后 4 行 × 4 列 | {'rows': 4, 'width': 4, 'complete': True, 'holes': [], 'counts': [3, 4, 2, 3]}
+PASS | 网格覆盖完整无空洞 | {'rows': 4, 'width': 4, 'complete': True, 'holes': [], 'counts': [3, 4, 2, 3]}
+PASS | 各行列数 = 3/4/2/3（邻格跨行补位） | [3, 4, 2, 3]
+PASS | 原内容 2 / 6 / 7 保留 | <table class="md-tbl">
+  <thead>
+    <tr><th>甲</th><th colspan="2">乙</th><th>丙</th></tr>
+  </thead>
+  <tbody>
+    <tr><td rowspan="2">1</td><td>2</td><td></td><td rowspan="2">3</td></tr>
+    <tr><td><
+PASS | 乙 / 6 跨两列（colspan=2） | 2
+NOTE | 4 max12 | {'has12': True, 'hint': '拆分为 12 行 × 12 列'}
+PASS | 未合并格拆分上限 12×12 | {'has12': True, 'hint': '拆分为 12 行 × 12 列'}
+NOTE | 5 small drag | {'small': '{"idx":0,"r0":1,"c0":1,"r1":1,"c1":1,"ar":1,"ac":1}'}
+PASS | 抖动 3px 不扩选（仍单格） | {'idx': 0, 'r0': 1, 'c0': 1, 'r1': 1, 'c1': 1, 'ar': 1, 'ac': 1}
+NOTE | 6 big drag | {'during': '{"idx":0,"r0":1,"c0":1,"r1":2,"c1":2,"ar":1,"ac":1}', 'after': '{"idx":0,"r0":1,"c0":1,"r1":2,"c1":2,"ar":1,"ac":1}'}
+PASS | 跨格拖选 → 矩形扩选 (1,1)-(2,2) | {'idx': 0, 'r0': 1, 'c0': 1, 'r1': 2, 'c1': 2, 'ar': 1, 'ac': 1}
+PASS | 松开后选区保留 | {'idx': 0, 'r0': 1, 'c0': 1, 'r1': 2, 'c1': 2, 'ar': 1, 'ac': 1}
+PASS | 全程无 JS 异常 | []
+DONE

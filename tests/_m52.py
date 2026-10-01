@@ -5,7 +5,7 @@ S2 右键菜单：合并/拆分两个独立项恒显示（不可用置灰），�
 S3 合并后拖合并格边线：只有被拖列变、总宽跟随、蓝框在
 S4 蓝框滚动同步：滚动后缩放框仍覆盖表格实际区域
 S5 单元格内文字选中与格式化（管道表 ** 标记 + HTML 表 <em> 标签，可切换）
-S6 列表格式组合状态：mark→link、bold→link、strike→mark、code→mark
+S6 列表格式组合状态：mark→link、bold→link、strike→mark、code→mark（末项 v3.31.2 起按 FMT-1 守卫「拒绝」）
 S7 代码块首行右上字母 C（::after 语言徽标已移除）"""
 import json, os, sys
 os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu"
@@ -230,10 +230,15 @@ s1 = jj(SNAP)
 js(UP); wait(600)
 s2 = jj(SNAP)
 log(f"S3 w {s0['tblW']}->{s2['tblW']} colW {s0['colW']}->{s2['colW']} drag={r}")
-ck("S3 总宽+50", abs(s2["tblW"] - s0["tblW"] - 50) <= 2, f"{s0['tblW']}->{s2['tblW']}")
+# v3.30.14 起内部列边线改为「宽度在 被拖列 ↔ 右邻列 之间转移，总宽不变」
+# （Typora / Word 语义；旧的「拖一条边线整表跟着伸缩」v3.30.6 语义已退役）
+ck("S3 内部边线总宽不变（v3.30.14 语义）", abs(s2["tblW"] - s0["tblW"]) <= 2,
+   f"{s0['tblW']}->{s2['tblW']}")
 diffs = [(i, (s2["colW"][i] or 0) - (s0["colW"][i] or 0)) for i in range(min(len(s0["colW"]), len(s2["colW"])))]
 moved = [d for d in diffs if abs(d[1]) > 2]
-ck("S3 只有一列变化且+50", len(moved) == 1 and abs(moved[0][1] - 50) <= 2, str(diffs))
+ck("S3 被拖列 +50 且右邻列 -50（宽度转移）",
+   len(moved) == 2 and moved[0][1] > 0 and abs(moved[1][1] + moved[0][1]) <= 2,
+   str(diffs))
 fs = jj("window.__rzShow ? window.__rzShow() : JSON.stringify({frame:'nohook'})")
 ck("S3 缩放框在", fs.get("frame") is True, str(fs))
 
@@ -308,7 +313,8 @@ r = js(SELTEXT + '("内容文字")')
 js("window.__applyFloat('code')"); wait(600)
 r = js(SELTEXT + '("内容文字")')
 js("window.__applyFloat('mark')"); wait(600)
-ck("S6 行内代码后高亮 `==文字==`", "`==内容文字==`" in raw0(), raw0()[:120])
+ck("S6 行内代码后高亮被拒（v3.31.2 FMT-1：行内码内拒绝叠加标记）",
+   raw0().strip() == "- 项目符号与`内容文字`", raw0()[:120])
 
 # ---------- S7: 代码块首行右上字母 C ----------
 setmd(MD_C)

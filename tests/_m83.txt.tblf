@@ -1,0 +1,21 @@
+PASS | B1.1 h1center 居中 → <h1 align="center"> 存储形态
+PASS | B1.2 渲染层 h1 带 align=center
+PASS | B1.3 tagForm 标题的大纲文本已剥壳
+PASS | B1.4 再次点击还原 # 形式
+PASS | B7.1 居中标题内加粗落位正确
+PASS | B7.2 toggle 取消还原居中裸标题
+PASS | B7.3 还原回 # 标题甲
+PASS | B2.1 尾部显示「标题 1，已选 N 字」
+PASS | B2.2 居中按钮在清除格式之前
+PASS | B2.3 段落尾部仍是「已选 N 字」（无标题标识）
+PASS | B2.4 段落无居中按钮
+PASS | B4.1 渲染段落 white-space:pre-wrap
+PASS | B4.2 行首空格存储保留
+PASS | B5.1 setParaIndent(2) → text-indent 2em（计算值 2×字号）
+PASS | B5.2 setParaIndent(0) 复位
+PASS | B6.1 h1Center 开 → h1 居中、段落不受影响
+PASS | B6.2 源码高亮层 h1 行居中（display:block + center）
+PASS | B6.3 关闭后恢复向左
+PASS | B3.1 首进双栏：左栏为源码层（无渲染块残留）
+
+TOTAL-BATCH DONE

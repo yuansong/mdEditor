@@ -2,27 +2,27 @@ PASS | A4 嵌套列表 | got="- 甲\n  - 甲1\n- 乙"
 PASS | A5 有序列表 | got="1. 一\n2. 二"
 PASS | A10 待办列表 | got="- [x] 做完\n- [ ] 没做"
 PASS | A11 混合段落列表 | got="前段\n\n1. 甲\n\n后段"
-FAIL | B1 插入标题3 | ["NOITEM:title", [""]]
-FAIL | B1a 标题渲染态加粗(格式栏链路) | [""]
-FAIL | B1b 标题渲染态斜体(cmd 快捷键链路/B13) | ["**"]
+PASS | B1 插入标题3 | ["OK", ["### "]]
+PASS | B1a 标题渲染态加粗(格式栏链路) | ["### **我的标题**"]
+PASS | B1b 标题渲染态斜体(cmd 快捷键链路/B13) | ["### ***我的标题***"]
 PASS | B2 插入有序列表 | ["OK", ["1. "]]
 PASS | B2a 插入无序列表 | ["OK", ["- "]]
 PASS | B2b 插入待办列表 | ["OK", ["- [ ] "]]
-FAIL | B3 插入表格(默认行列) | ["OK", [""]]
-FAIL | B3a 表格标注写入 | ["段落甲", "段落乙"]
-FAIL | B4 插入代码块 | ["```C\n\n```", ""]
+PASS | B3 插入表格(网格确认 3x4) | ["OK", {"_raw": "clicked"}, ["|  |  |  |  |\n| --- | --- | --- | --- |\n|  |  |  |  |\n|  |  |  |  |", ""]]
+PASS | B3a 表格标注写入 | [{"show": true, "inp": true}, ["<table class=\"md-tbl\">\n  <caption class=\"md-tblcap bottom\">表：测试</caption>\n  <thead>\n    <tr><th></th><th></th><th></th><th></th></tr>\n  </thead>\n  <tbody>\n    <tr><td></td><td></td><td></td><td></td></tr>\n    <tr><td></td><td></td><td></td><td></td></tr>\n  </tbody>\n</table>", ""]]
+PASS | B4 插入代码块 | ["```c\n\n```", ""]
 PASS | B5 插入分割线 | ["---", ""]
 PASS | B6 插入引用 | ["> "]
-FAIL | B6a 引用内插入表格(补 > 前缀) | ["NOMENU", ["> "]]
+PASS | B6a 引用内插入表格(网格确认，行补 > 前缀) | ["OK", {"_raw": "clicked"}, ["> 引用行\n> |  |  |  |  |\n> | --- | --- | --- | --- |\n> |  |  |  |  |\n> |  |  |  |  |"]]
 PASS | B7 插入图表流程图 | ["```mermaid\nflowchart TD\n  A[开始] --> B{是否继续?}\n  B -->|是| C[处理任务]\n  B -->|否| D[结束]\n  C --> D\n```", ""]
 PASS | B7a 图表下方DEL开源码框且图表保留 | {'ta': True, 'focused': True, 'mmd': True}
-FAIL | B8 脚注引用+自动定义块 | ["NOMENU", ["正文段落"]]
-FAIL | B8a 脚注编号递增 | ["正文段落"]
-PASS | B9 插入定义列表 | ["OK", ["术语\n: 定义内容"]]
-PASS | B10 一级菜单 11 项平铺 | {'n': 11, 'lbs': ['标题', '列表', '表格', '代码块', '分割线', '引用', '图片', '图表', '脚注', '定义列表', '公式']}
-PASS | B10a 无上标/下标项 | {'n': 11, 'lbs': ['标题', '列表', '表格', '代码块', '分割线', '引用', '图片', '图表', '脚注', '定义列表', '公式']}
+PASS | B8 脚注引用+自动定义块 | ["", ["[^1]正文段落", "[^1]:"]]
+PASS | B8a 脚注编号递增 | ["[^1]正文段落[^2]", "[^1]:", "[^2]:"]
+PASS | B9 插入术语定义（refs 子项） | ["OK", ["术语\n: "]]
+PASS | B10 一级菜单 10 项平铺（refs 合并后） | {'n': 10, 'lbs': ['标题', '列表', '表格', '代码块', '分割线', '引用', '图片', '图表', '脚注与定义', '公式']}
+PASS | B10a 无上标/下标项 | {'n': 10, 'lbs': ['标题', '列表', '表格', '代码块', '分割线', '引用', '图片', '图表', '脚注与定义', '公式']}
 PASS | B11 插入公式块 | ["OK", ["```math\nx^{2}\n```", ""]]
-PASS | B12 图片插入触发Qt面板 | ["OK", {"pick": false}]
-FAIL | C1 Ctrl+/ 打开块菜单且展开标题二级 | {'show': False, 'items': [], 'sub': False, 'subItems': []}
-FAIL | C2 合并格后编辑相邻段raw完整 | ["# 标题一", "正文段。追加文字", "<table class=\"md-tbl\">\n  <thead>\n    <tr><th>名称</th><th>数量</th></tr>\n  </thead>\n  <tbody>\n    <tr><td colspan=\"2\">苹果 3</td></tr>\n    <tr><td>香蕉</td><td>12</td></tr>\n  </tbody>\n</table>", "```python\nprint(1)\n```"]
+PASS | B12 图片插入触发Qt面板 | {"r": "OK", "pick": true}
+PASS | C1 Ctrl+/ 入口（openBlockMenu）打开菜单 | {"r": "ok", "sm": false, "st": "{\"show\":true,\"items\":[\"to-h\",\"to:p\",\"to-list\",\"to:fence\",\"to:quote\",\"dup\",\"up\",\"down\",\"del\"],\"sub\":true,\"subItems\":[\"标题 1\",\"标题 2\",\"标题 3\",\"标题 4\",\"标题 5\",\"标题 6\"]}"}
+PASS | C2 合并格后编辑相邻段raw完整（HTML 存储形态） | ["# 标题一", "正文段。追加文字", "<table class=\"md-tbl\">\n  <thead>\n    <tr><th>名称</th><th>数量</th></tr>\n  </thead>\n  <tbody>\n    <tr><td colspan=\"2\">苹果 3</td></tr>\n    <tr><td>香蕉</td><td>12</td></tr>\n  </tbody>\n</table>", "```python\nprint(1)\n```"]
 DONE

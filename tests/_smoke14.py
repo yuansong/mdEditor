@@ -152,11 +152,12 @@ check("slash last is 公式（v3.9 移到最后）", lbs and lbs[-1] == "公式"
 check("slash 引用 位于 分割线 之后、图片 之前",
       bool(lbs) and "引用" in lbs and lbs.index("分割线") < lbs.index("引用") < lbs.index("图片"), lbs)
 check("slash no 正文段落", "正文段落" not in lbs, lbs)
-# v3.30.3：移除 上标/下标 —— 脚注 / 定义列表 位于 图表 之后、公式 之前（公式固定最后）
-check("slash 含 脚注/定义列表 且都在 公式 之前（无上标/下标）",
-      bool(lbs) and "脚注" in lbs and "定义列表" in lbs and "上标 / 下标" not in lbs
-      and lbs.index("图表") < lbs.index("脚注") < lbs.index("定义列表")
-      < lbs.index("公式"), lbs)
+# v3.30.3：移除 上标/下标；v3.31.3：脚注/定义列表合并为「脚注与定义」，位于 图表 之后；
+# v3.32（P1-1）：新增「模板」位于 脚注与定义 之后、公式 之前
+check("slash 含 脚注与定义/模板 且在 公式 之前（无上标/下标、无独立脚注/定义列表）",
+      bool(lbs) and "脚注与定义" in lbs and "模板" in lbs and "上标 / 下标" not in lbs
+      and "脚注" not in lbs and "定义列表" not in lbs
+      and lbs.index("图表") < lbs.index("脚注与定义") < lbs.index("模板") < lbs.index("公式"), lbs)
 js("(function(){document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return 'e'})()")
 
 # ---------- 8) 行菜单：清除格式 ----------

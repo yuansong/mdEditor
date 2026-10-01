@@ -182,9 +182,9 @@ r = js("(function(){var ms=document.querySelectorAll('#slashmenu .si');var out=[
        "var act=document.querySelector('#slashmenu .si.act .lb');"
        "return JSON.stringify({items:out,act:act?act.textContent:''})})()")
 d = json.loads(r or "{}")
-check("slash menu order: 标题 列表 表格 代码块 分割线 引用 图片 图表 脚注 定义列表 公式（v3.30.3 去上标下标）",
+check("slash menu order: 标题 列表 表格 代码块 分割线 引用 图片 图表 脚注与定义 模板 公式（v3.31.3 refs 合并 + v3.32 tpl）",
       d.get("items") == ["标题", "列表", "表格", "代码块", "分割线", "引用", "图片", "图表",
-                         "脚注", "定义列表", "公式"],
+                         "脚注与定义", "模板", "公式"],
       d)
 check("slash menu default highlight is 标题", d.get("act") == "标题", d)
 key("Escape")
@@ -228,7 +228,7 @@ r = js("(function(){var ms=document.querySelectorAll('#slashmenu .si');var out=[
        "var act=document.querySelector('#slashmenu .si.act .lb');"
        "return JSON.stringify({first:out[0]||'',act:act?act.textContent:'',n:out.length})})()")
 d = json.loads(r or "{}")
-check("config: 用户顺序生效（公式首位）+ 新增项补齐，共 11 项",
+check("config: 用户顺序生效（公式首位）+ 新增项补齐，共 11 项（v3.32 tpl）",
       d.get("first") == "公式" and d.get("act") == "表格" and d.get("n") == 11, d)
 for _ in range(3):
     key("ArrowUp")     # 表格 → 公式（配置顺序 math 第 1 位）
@@ -258,7 +258,7 @@ saved = win._settings.value("slashMenuOrder", "")
 # 用户指定的 chart 仍在首位；未指定项按默认相对位置补齐（紧邻 chart 之后）；
 # v3.30.3：supsub 已移除，老配置里的 supsub 不再出现在补齐结果中
 check("menu order persisted to QSettings",
-      saved == "chart,footnote,deflist,math,heading,list,table,code,hr,quote,image",
+      saved == "chart,refs,tpl,math,heading,list,table,code,hr,quote,image",
       repr(saved))
 # 还原默认
 win.set_slash_menu_config(list(SLASH_ORDER_DEFAULT), "heading", dict(SLASH_SUB_DEFAULTS))
@@ -347,10 +347,11 @@ d = json.loads(r or "{}")
 check("normal text selection keeps full floatbar", d.get("show") is True and d.get("n") >= 6, d)
 
 # ---------- 9) 菜单顺序合并 merge_slash_order：老配置升级不丢项、不打乱用户排序 ----------
-# v3.30.3：supsub 已从默认顺序移除；merge 对老配置里的 supsub 过滤，9 项老配置补齐为 11 项
-_old9 = [x for x in SLASH_ORDER_DEFAULT if x not in ("footnote", "deflist")]
-check("merge: 老版 9 项顺序升级后 == 当前 11 项默认顺序",
-      merge_slash_order(_old9) == list(SLASH_ORDER_DEFAULT), merge_slash_order(_old9))
+# v3.30.3：supsub 已从默认顺序移除；v3.31.3：footnote/deflist 合并为 refs，
+# 老配置里的 footnote/deflist 被过滤，9 项老配置补齐为 10 项
+_old10 = [x for x in SLASH_ORDER_DEFAULT if x not in ("refs", "tpl")]
+check("merge: 老版 10 项顺序升级后 == 当前 11 项默认顺序",
+      merge_slash_order(_old10) == list(SLASH_ORDER_DEFAULT), merge_slash_order(_old10))
 check("merge: 从未保存过（空）== 当前默认顺序",
       merge_slash_order([]) == list(SLASH_ORDER_DEFAULT), "")
 check("merge: 传完整默认顺序幂等",
@@ -358,12 +359,16 @@ check("merge: 传完整默认顺序幂等",
 check("merge: 老配置含 supsub 被过滤（不复活已移除项）",
       "supsub" not in merge_slash_order(["supsub"] + list(SLASH_ORDER_DEFAULT)),
       merge_slash_order(["supsub"] + list(SLASH_ORDER_DEFAULT)))
+check("merge: 老配置含 footnote/deflist 被过滤（合并为 refs 不重复）",
+      "footnote" not in merge_slash_order(["footnote", "deflist"] + list(SLASH_ORDER_DEFAULT))
+      and "deflist" not in merge_slash_order(["footnote", "deflist"] + list(SLASH_ORDER_DEFAULT)),
+      merge_slash_order(["footnote", "deflist"] + list(SLASH_ORDER_DEFAULT)))
 _mf = merge_slash_order(["math", "heading", "list", "table", "code", "hr", "quote",
                          "image", "chart"])
 check("merge: 用户拖到首位的 公式 仍是第一项，且补齐为 11 项无重复",
       _mf[0] == "math" and len(_mf) == 11 and len(set(_mf)) == 11, _mf)
-check("merge: 公式仍固定在最后", merge_slash_order(_old9)[-1] == "math",
-      merge_slash_order(_old9))
+check("merge: 公式仍固定在最后", merge_slash_order(_old10)[-1] == "math",
+      merge_slash_order(_old10))
 
 # ---------- 收尾 ----------
 flush()

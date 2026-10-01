@@ -269,21 +269,22 @@ rr = raw()
 check("B8a 脚注编号递增", any("[^2]" in b for b in rr) and any(b.startswith("[^2]:") for b in rr),
       json.dumps(rr, ensure_ascii=False))
 
-# B9 定义列表（提示菜单 ： 触发）
+# B9 定义列表（v3.31.3：并入「脚注与定义」refs 子项第 3 项，插入即渲染态空定义）
 setmd("")
 open_slash()
-r = pick("deflist")
+r = pick("refs", 2)
 wait(400)
 rr = raw()
-check("B9 插入定义列表", r == "OK" and len(rr) == 1 and ": 定义内容" in rr[0], json.dumps([r, rr], ensure_ascii=False))
+check("B9 插入术语定义（refs 子项）", r == "OK" and any(x == "术语\n: " for x in rr),
+      json.dumps([r, rr], ensure_ascii=False))
 
-# B10 v3.30.3：一级菜单已移除「上标 / 下标」（supsub）——不应再出现在菜单里
+# B10 v3.30.3：一级菜单已移除「上标 / 下标」；v3.31.3：脚注/定义列表合并为「脚注与定义」
 setmd("")
 open_slash()
 d = jj("(function(){var m=document.getElementById('slashmenu');"
        "var lbs=[].map.call(m.querySelectorAll('.si .lb'),function(x){return x.textContent;});"
        "return JSON.stringify({n:lbs.length, lbs:lbs})})()")
-check("B10 一级菜单 11 项平铺", d.get("n") == 11, d)
+check("B10 一级菜单 11 项平铺（refs 合并 + v3.32 新增模板）", d.get("n") == 11, d)
 check("B10a 无上标/下标项", "上标 / 下标" not in (d.get("lbs") or []) and
       not any("上标" in x for x in (d.get("lbs") or [])), d)
 js("(function(){document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));return 'x'})()")

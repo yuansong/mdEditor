@@ -9,7 +9,8 @@ let code = m[1];
 function fakeEl() {
   var el = { className: '', innerHTML: '', textContent: '', children: [],
     appendChild() {}, removeChild() {}, replaceChild() {},
-    addEventListener() {}, setAttribute() {}, querySelector: () => null };
+    addEventListener() {}, setAttribute() {}, querySelector: () => null,
+    querySelectorAll: () => [] };   // v3.32：欢迎内容含列表/引用，块增强会遍历子元素
   el.classList = {
     add: function (c) { if (el.className.split(/\s+/).indexOf(c) === -1) el.className += ' ' + c; },
     remove: function (c) { el.className = el.className.split(/\s+/).filter(function (x) { return x !== c; }).join(' '); },
@@ -153,8 +154,8 @@ eq(core.blockHTML('H~2~O'), '<p>H<sub>2</sub>O</p>', 'v323: 下标 ~x~');
 eq(core.blockHTML('~~del~~'), '<p><del>del</del></p>', 'v323: 删除线优先于下标');
 eq(core.blockInfo('[^1]: 说明文字').type, 'fndef', 'v323: 脚注定义块类型');
 eq(core.blockHTML('[^1]: 说明文字'),
-  '<div class="fnbody"><div class="fnitem" id="fn-1"><span class="fnmark">[1]</span>说明文字</div></div>',
-  'v323: 脚注定义渲染（带 id 锚点）');
+  '<div class="fnbody"><div class="fnitem" id="fn-1"><span class="fnmark">[1]</span><span class="fnedit">说明文字</span></div></div>',
+  'v323: 脚注定义渲染（带 id 锚点；v3.31.3 正文包进 .fnedit 支持渲染态编辑）');
 eq(core.blockHTML('见[^1]').indexOf('<sup class="fnref"><a href="#fn-1" data-fn="1">[1]</a></sup>') !== -1,
   true, 'v323: 脚注引用渲染为上标链接');
 eq(core.blockInfo('术语\n: 定义内容').type, 'deflist', 'v323: 定义列表块类型');

@@ -3,18 +3,20 @@
 import base64
 import binascii
 import json
+import logging
 import os
 import re
 import shutil
 import subprocess
 import tempfile
 import time
+import zipfile
 
 from PySide6.QtCore import QEvent, QTimer, QUrl, QSize, Qt, QSettings, QMimeData
 from PySide6.QtGui import QAction, QActionGroup, QGuiApplication, QImage, QKeySequence
 from PySide6.QtWidgets import (
-    QApplication, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QMainWindow,
-    QMenu, QMessageBox, QSplitter, QStackedWidget, QTabBar, QToolBar,
+    QApplication, QDialog, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
+    QMainWindow, QMenu, QMessageBox, QSplitter, QStackedWidget, QTabBar, QToolBar,
     QToolButton, QVBoxLayout, QWidget,
 )
 from PySide6.QtWebEngineCore import (
@@ -23,16 +25,18 @@ from PySide6.QtWebEngineCore import (
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
 import exporters
-from config import APP_NAME, DEMO_MD, HERE, MD_EXTS, MODES, js
+from config import APP_NAME, APP_VERSION, BUILTIN_TEMPLATES, DEMO_MD, DRAFT_DIR, HERE, LOG_DIR, MD_EXTS, MMD_LEGACY, MMD_THEME_LABELS, MODES, TEMPLATE_FILE, TPL_FILE_VERSION, TPL_MAX_BYTES, TPL_NAME_MAX, UPDATE_URL, USER_DATA_DIR, js
 
 # 斜杠（/）菜单可配置项：一级菜单 id 集与默认顺序 / 默认项 / 二级默认下标
 # v3.30.3：按用户要求移除「上标 / 下标」（supsub）一级项；^x^ / ~x~ 语法仍可输入
+# v3.31.3：footnote / deflist 合并为 refs「脚注与定义」（旧配置 id 由 merge 自动插回）
+# v3.32（P1-1）：新增 tpl「模板」一级项（内置 6 个场景模板，插入即写）
 SLASH_IDS = ("heading", "list", "table", "code", "hr", "quote", "image", "chart",
-             "footnote", "deflist", "math")
+             "refs", "tpl", "math")
 SLASH_ORDER_DEFAULT = ["heading", "list", "table", "code", "hr", "quote", "image", "chart",
-                       "footnote", "deflist", "math"]
+                       "refs", "tpl", "math"]
 SLASH_SUB_DEFAULTS = {"heading": 2, "list": 1, "chart": 0, "math": 0,
-                      "footnote": 0}  # 标题默认H3 / 列表默认有序 / 图表默认流程图 / 公式默认上标
+                      "refs": 0, "tpl": 0}  # 标题默认H3 / 列表默认有序 / 图表默认流程图 / 公式默认上标
 
 
 def merge_slash_order(saved):
@@ -78,6 +82,50 @@ from icons import (
 )
 from sidebar import Sidebar
 import styles
+
+# v3.32（P0-5）：模块级日志器（main.setup_logging 已装配滚动文件输出）。
+_log = logging.getLogger("mdEditor.app")
+
+
+# ================= v3.35（TPL-D）「设为模板文件」名称规则 =================
+def normalize_template_name(name, max_len=None):
+    """归一化模板名称：空白折叠 → 去首尾 → 按显示上限截断；不可用时返回空串。
+
+    名称会显示在 / 菜单「模板」二级与悬浮栏模板菜单里，过长会撑破菜单宽度，
+    故与内核 window.setCustomTemplates 的截断规则同源（同为 TPL_NAME_MAX 个码点）——
+    这样「管理对话框里看到的名字」与「菜单里看到的名字」永远一致，
+    不会出现只在菜单被静默截断的错位。
+    """
+    limit = TPL_NAME_MAX if max_len is None else max(1, int(max_len))
+    s = re.sub(r"[\s\u200b\u200c\u200d\ufeff]+", " ", str(name or "")).strip()
+    return s[:limit]
+
+
+def normalize_template_icon(ic):
+    """v3.36（TPL-E）模板菜单图标：去空白 + 按码点截断到 4（容纳组合式 emoji）。
+
+    空串 = 无图标，内核渲染时回退为 ⭐（自建模板保持旧观感）。
+    """
+    s = str(ic or "").strip()
+    return "".join(list(s)[:4]) if s else ""
+
+
+def unique_template_name(name, existing, max_len=None):
+    """重名自动编号（同名模板在菜单里无法区分）："周报" → "周报 2" → "周报 3"…
+
+    编号后仍须满足显示上限，故先给序号留位再截断基名（否则 30 字满名加序号会
+    被截回原名，陷入永远重名）。
+    """
+    limit = TPL_NAME_MAX if max_len is None else max(1, int(max_len))
+    used = {str(n or "") for n in (existing or [])}
+    if name not in used:
+        return name
+    for k in range(2, 1000):
+        suf = " %d" % k
+        cand = name[:max(1, limit - len(suf))] + suf
+        if cand not in used:
+            return cand
+    return name
 
 
 class EditorPage(QWebEnginePage):
@@ -177,6 +225,8 @@ class MainWindow(QMainWindow):
         # 统计详情缓存（状态栏点击查看）与搜索结果跳转等待状态
         self._stats = {}
         self._outline_cache = []    # 最近一次大纲（导出 PDF 时生成书签）
+        # v3.32.2（TPL-C）：用户自定义模板（/ 菜单「模板」二级 + 悬浮栏 📄 共用）
+        self._custom_templates = self._load_custom_templates()
         self._pending_toc = None
         self._pending_goto = None
         self._pending_tries = 0
@@ -418,6 +468,14 @@ class MainWindow(QMainWindow):
         m_file.addSeparator()
         # P1-6 / P1-7：版本历史（v3.25：「资源管理器显示 / 外部程序打开」移入侧栏文件列表右键）
         self._reg_act("文件", "历史版本…", "Ctrl+Shift+H", self.show_history, menu=m_file)
+        # v3.32（P0-3）：命令面板同款「立即留档」在文件菜单也可见，主动打点
+        self._reg_act("文件", "立即留档（版本快照）", None, self.manual_snapshot, menu=m_file)
+        # v3.32（P0-7）：本地唯一副本的最低成本容灾出口
+        self._reg_act("文件", "归档整个工作区…", None, self.archive_workspace, menu=m_file)
+        # v3.32（P1-2②）：「复制为 HTML」是中文用户最高频交付动作，从编辑菜单提级
+        a = QAction("复制为 HTML（公众号 / Word 富文本）", self)
+        a.triggered.connect(self.copy_as_html)
+        m_file.addAction(a)
         m_file.addSeparator()
         self._reg_act("文件", "退出", "Ctrl+Q", self.close, menu=m_file)
 
@@ -434,10 +492,7 @@ class MainWindow(QMainWindow):
         a = QAction("全选", self)
         a.triggered.connect(lambda: self._page_action(QWebEnginePage.SelectAll))
         m_edit.addAction(a)
-        # v3.29d（UX #34）：复制为 HTML —— 粘进微信 / Word 等保留格式
-        a = QAction("复制为 HTML", self)
-        a.triggered.connect(self.copy_as_html)
-        m_edit.addAction(a)
+        # v3.32（P1-2②）：「复制为 HTML」已提级到文件菜单（此处不再重复）
         m_edit.addSeparator()
         self._reg_act("编辑", "查找…", "Ctrl+F", lambda: self.show_find(False), menu=m_edit)
         self._reg_act("编辑", "替换…", "Ctrl+H", lambda: self.show_find(True), menu=m_edit)
@@ -501,21 +556,9 @@ class MainWindow(QMainWindow):
         self._reg_act("视图", "展开全部标题", "Ctrl+Shift+]",
                       lambda: self.fold_all_headings(False), menu=m_view)
         m_view.addSeparator()
-        # v3.30.19（MMD-7）：全局图表主题（mermaid 主题；「跟随界面」= 空 = 自动）
-        m_mmd = m_view.addMenu("图表主题")
-        self._mmd_group = QActionGroup(self)
-        self._mmd_group.setExclusive(True)
-        for label, val in (("跟随界面主题", ""), ("默认（浅色）", "default"),
-                           ("深色", "dark"), ("森林", "forest"), ("中性", "neutral")):
-            a = QAction(label, self)
-            a.setCheckable(True)
-            a.setChecked((self._settings.value("mmdTheme", "") or "") == val)
-            a.triggered.connect(lambda _c=False, v=val: self._set_mmd_theme(v))
-            self._mmd_group.addAction(a)
-            m_mmd.addAction(a)
-        m_view.addSeparator()
         self._reg_act("视图", "全屏", "F11", self.toggle_fullscreen, menu=m_view)
-        # 主题入口统一收口到「设置 → 系统设置」（原视图→主题子菜单已取消）
+        # v3.34（MMD-11）：图表主题入口从视图菜单移到「设置 → 系统设置 → 外观」，
+        # 与界面主题 / 字号同处一页集中配置；切换逻辑仍走 _set_mmd_theme
         self._theme_acts = {}
 
         # ---- 设置 ----
@@ -526,13 +569,23 @@ class MainWindow(QMainWindow):
         # ---- 帮助（始终放最后）----
         m_help = self.menuBar().addMenu("帮助(&H)")
         self._reg_act("帮助", "快捷键一览", "F1", self._show_shortcuts, menu=m_help)
+        # v3.32（P0-6①）：检查更新（version.json 只提示不强升）
+        self._reg_act("帮助", "检查更新…", None, self.check_update, menu=m_help)
+        # v3.32（P0-5②）：复制诊断信息（版本 / 系统 / 依赖 / 最近日志）
+        self._reg_act("帮助", "复制诊断信息", None, self.copy_diagnostics, menu=m_help)
         self._reg_act("帮助", "关于", None, self._about, menu=m_help)
 
     def _set_mmd_theme(self, val):
-        """v3.30.19（MMD-7）：全局图表主题切换（持久化 + 下发全部已加载视图）。"""
+        """v3.30.19（MMD-7）/ v3.34（MMD-11）：全局图表主题切换。
+
+        持久化 QSettings.mmdTheme 并下发全部已加载视图；旧版原生主题值
+        （default/dark/forest/neutral）先归一化到新主题，保证升级无感。
+        设置面板下拉与图表块右键子菜单共用本方法，两处状态天然一致。"""
+        val = MMD_LEGACY.get(val, val) or ""
         self._settings.setValue("mmdTheme", val)
         self._js_all(f"window.setMmdTheme({js(val)})")
-        self.show_status("图表主题已更新" + ("" if val else "（跟随界面主题）"))
+        lbl = MMD_THEME_LABELS.get(val, "")
+        self.show_status(f"图表主题：{lbl or val}" if val else "图表主题已更新（跟随界面主题）")
 
     def _js_all(self, code):
         """对全部已加载的编辑器视图执行 JS。"""
@@ -668,13 +721,17 @@ class MainWindow(QMainWindow):
         self._js_view(view, f"window.setDefaultCodeLang({js(self._code_lang)})")
         self._js_view(view, f"window.setCodePrefs({{lnum: {str(self._code_lnum).lower()}, "
                             f"style: {js(self._code_style)}}})")
-        # v3.30.19（MMD-7）：全局图表主题随视图加载同步（空 = 跟随界面主题）
-        self._js_view(view, f"window.setMmdTheme({js(self._settings.value('mmdTheme', '') or '')})")
+        # v3.30.19（MMD-7）/ v3.34（MMD-11）：图表主题随视图加载同步（空 = 跟随界面主题；
+        # 旧版值归一化到新主题）
+        _mmd0 = self._settings.value('mmdTheme', '') or ''
+        self._js_view(view, f"window.setMmdTheme({js(MMD_LEGACY.get(_mmd0, _mmd0))})")
         # v3.31.2（#8/#9）：段首缩进 / 标题 1 居中随视图加载下发
         self._js_view(view, f"window.setParaIndent({int(getattr(self, '_para_indent', 0))})")
         self._js_view(view,
                       f"window.setH1Center({str(bool(getattr(self, '_h1_center', False))).lower()})")
         self._js_view(view, f"window.setSlashMenuConfig({js(json.dumps(self._slash_cfg()))})")
+        # v3.32.2（TPL-C）：自定义模板随视图加载下发
+        self._js_view(view, f"window.setCustomTemplates({self._custom_templates_js()})")
         self._install_drop_filter()
 
     def _push_text(self, text):
@@ -717,8 +774,21 @@ class MainWindow(QMainWindow):
 
     def _on_toast(self, res):
         msg = res if isinstance(res, str) else None
-        if msg:
-            self.show_status(msg)
+        if not msg:
+            return
+        # v3.34（MMD-11）：图表主题命令通道 —— 图表块右键子菜单切换后由编辑器侧
+        # 推来「##mmdtheme:<id>」，此处落 QSettings 并广播全部视图（RPC 复用 toast 槽）
+        if msg.startswith("##mmdtheme:"):
+            self._set_mmd_theme(msg[len("##mmdtheme:"):])
+            return
+        # v3.38（QUO-11）：引用操作一次性提示 —— 编辑器侧首次在引用内按键时
+        # 推来 ##quotetip，此处落 QSettings（每台机器只提示一次）
+        if msg == "##quotetip":
+            if not self._settings.value("quoteTipShown", False, type=bool):
+                self._settings.setValue("quoteTipShown", True)
+                self.show_status("提示：连续两次回车退出引用；Tab 嵌套 / Shift+Tab 减少嵌套")
+            return
+        self.show_status(msg)
 
     def _on_caret(self, res):
         try:
@@ -820,8 +890,20 @@ class MainWindow(QMainWindow):
              "enabled": True, "run": js_cmd('window.cmd && window.cmd("footnote")', "脚注")},
             {"group": "编辑", "name": "插入定义列表", "seq": "",
              "enabled": True, "run": js_cmd('window.cmd && window.cmd("deflist")', "定义列表")},
+            # v3.37（TBL-F3）：blkmenu 块级能力收录进命令面板 ——「想得起就搜得到」；
+            # 目标块由 window.__blkCmd 解析（对象选中态优先，否则光标所在块）
+            {"group": "编辑", "name": "表格标注…", "seq": "",
+             "enabled": True, "run": js_cmd('window.__blkCmd && window.__blkCmd("cap")', "表格标注")},
+            {"group": "编辑", "name": "表格还原尺寸", "seq": "",
+             "enabled": True, "run": js_cmd('window.__blkCmd && window.__blkCmd("resetsize")', "表格还原尺寸")},
+            {"group": "编辑", "name": "复制当前块", "seq": "",
+             "enabled": True, "run": js_cmd('window.__blkCmd && window.__blkCmd("dup")', "复制当前块")},
             {"group": "文件", "name": "历史版本", "seq": "Ctrl+Shift+H",
              "enabled": True, "run": self.show_history},
+            {"group": "文件", "name": "立即留档（版本快照）", "seq": "",
+             "enabled": True, "run": self.manual_snapshot},
+            {"group": "文件", "name": "归档整个工作区…", "seq": "",
+             "enabled": True, "run": self.archive_workspace},
         ]
         for t in styles.THEMES:
             rows.append({"group": "外观", "name": f"切换主题：{t['label']}", "seq": "",
@@ -912,6 +994,37 @@ class MainWindow(QMainWindow):
             self._hist_dlg = HistoryDialog(self)
         self._hist_dlg._apply_theme_qss(self._theme)
         self._hist_dlg.show_for(self.file_path)
+
+    def manual_snapshot(self):
+        """v3.32（P0-3）：「立即留档」—— 不等写盘节流，把当前内容直接存一份
+        快照（与自动快照不同：内容相同也保留，用户主动打点应有痕迹）。"""
+        if not self.file_path:
+            self.show_status("未命名文档暂不支持版本快照 · 保存到文件后可用")
+            return
+
+        def cb(md):
+            if md is None:
+                return
+            d = self._history_dir(self.file_path)
+            if not d:
+                return
+            try:
+                os.makedirs(d, exist_ok=True)
+                stamp = time.strftime("%Y%m%d-%H%M%S")
+                fp = os.path.join(d, f"{stamp}.md")
+                n = 1
+                while os.path.exists(fp):
+                    fp = os.path.join(d, f"{stamp}-{n}.md")
+                    n += 1
+                out = md if md.endswith("\n") else md + "\n"
+                with open(fp, "w", encoding="utf-8") as f:
+                    f.write(out)
+            except OSError as e:
+                QMessageBox.warning(self, "留档失败", str(e))
+                return
+            self.show_status(f"已留档 · {os.path.basename(fp)}")
+
+        self._js_active("window.getMarkdown()", cb)
 
     def restore_history(self, snap_path, mtime=None):
         """把某个历史快照内容恢复到当前编辑区（未保存状态）。"""
@@ -1127,13 +1240,16 @@ class MainWindow(QMainWindow):
 
     def _numbered_asset_name(self, name, ext):
         """v3.25：默认存储名 = 「assets 现有文件数 + 1」5 位编号 _ 名称。
-        （00011_我的图片.png —— 编号自动生成，重名再由 _unique_name 兜底）"""
+        （00011_我的图片.png —— 编号自动生成，重名再由 _unique_name 兜底）
+        v3.31.3（IMG-11）：名称里已带 5 位编号前缀（如「转相对路径」弹框的
+        默认名经二次编号）时先剥掉，杜绝 00001_00001_图片.png 双重编号。"""
         assets = self._assets_dir_for(self.file_path) if self.file_path else None
         count = 0
         if assets and os.path.isdir(assets):
             count = len([n for n in os.listdir(assets)
                          if os.path.isfile(os.path.join(assets, n))])
         stem = os.path.splitext(name)[0] or name      # 名称里带了扩展名则剥掉
+        stem = re.sub(r"^\d{5}_", "", stem)           # v3.31.3：剥已有编号前缀
         return f"{count + 1:05d}_{stem}{ext or '.png'}"
 
     def _insert_image_file(self, path, mode=None, name=None):
@@ -1370,7 +1486,9 @@ class MainWindow(QMainWindow):
         self.show_status(f"图片已重命名 · {new_name}")
 
     def _img_to_embed(self, idx, src):
-        """相对路径 → 内嵌：读文件转 data URL 写回（assets 文件保留不删）。"""
+        """相对路径 → 内嵌：读文件转 data URL 写回。
+        v3.31.3（IMG-12）：写回成功后删除 assets 里的原文件（避免留下
+        不再被引用的孤儿文件）；删除失败（占用 / 只读）仅提示、不影响转换。"""
         fp = self._img_local_path(src)
         if not fp or not os.path.isfile(fp):
             self.show_status("转为内嵌失败：找不到图片文件")
@@ -1385,7 +1503,21 @@ class MainWindow(QMainWindow):
             return
         data_url = f"data:{mime};base64,{b64}"
         self._js_active(f"window.imgReqDone && window.imgReqDone({int(idx)}, {js(data_url)})")
-        self.show_status("图片已转为内嵌 data URL（原文件保留在 assets 目录）")
+        removed = ""
+        try:
+            # 安全守卫：只删当前文档 assets 目录内的文件（绝对路径引用的
+            # 外部图片不删 —— 那可能是用户其它场景仍在用的源文件）
+            assets = self._assets_dir_for(self.file_path) if self.file_path else None
+            in_assets = bool(assets) and os.path.normcase(os.path.dirname(os.path.abspath(fp))) == \
+                os.path.normcase(os.path.abspath(assets))
+            if in_assets:
+                os.remove(fp)
+                removed = "，原文件已删除"
+            else:
+                removed = "（图片在 assets 目录外，原文件保留）"
+        except OSError as e:
+            removed = f"，原文件删除失败（{e}），请手动清理"
+        self.show_status(f"图片已转为内嵌 data URL{removed}")
 
     def _img_to_assets(self, idx, src):
         """内嵌 data URL / 网络图片 / 本地文件 → 相对路径落盘（弹框指定名称）。"""
@@ -1568,6 +1700,16 @@ class MainWindow(QMainWindow):
                     self.show_status(f"已自动保存 · {doc['path']}")
                 except OSError as e:
                     self._status.setText(f"自动保存失败：{e}")
+        # v3.32（P0-1）：未命名文档影子草稿 —— 10 秒节流写入 %APPDATA%/mdEditor/drafts/，
+        # 崩溃 / 断电后启动可恢复；内容清空即删草稿；保存到路径后由 save_file_as 收走。
+        if 0 <= self._cur < len(self._docs):
+            doc = self._docs[self._cur]
+            if not doc.get("path") and md is not None:
+                if md.strip():
+                    if dirty:
+                        self._save_draft(doc, md)
+                elif doc.get("draft"):
+                    self._remove_draft(doc)
         # 双栏：同步到预览
         if self._dual and md is not None and md != self._last_preview_md:
             self._last_preview_md = md
@@ -1675,6 +1817,8 @@ class MainWindow(QMainWindow):
                     if not self.save_file_as():
                         return
                     doc["path"] = self.file_path
+                elif btn == QMessageBox.Discard:
+                    self._remove_draft(doc)   # v3.32（P0-1）：明确丢弃 → 草稿一并删除
             self._docs.pop(idx)
             self._tabbar.removeTab(idx)
             if not self._docs:
@@ -1758,6 +1902,96 @@ class MainWindow(QMainWindow):
     def new_file(self):
         self._add_doc(path=None, text="")
 
+    # ================= v3.32（P0-1）未命名文档影子草稿 =================
+    def _save_draft(self, doc, md):
+        """未命名文档内容暂存为影子草稿（10 秒节流）。有路径的文档不走此路径。"""
+        if os.environ.get("MDEDITOR_SKIP_DRAFT"):
+            return   # 测试进程禁用（_runner.py 统一设置），避免污染用户草稿目录
+        try:
+            os.makedirs(DRAFT_DIR, exist_ok=True)
+        except OSError:
+            return
+        fp = doc.get("draft")
+        if not fp:
+            fp = os.path.join(DRAFT_DIR, "draft-%s-%d.md"
+                              % (time.strftime("%Y%m%d-%H%M%S"), abs(id(doc)) % 100000))
+            doc["draft"] = fp
+        now = time.time()
+        if now - doc.get("draft_ts", 0) < 10:
+            return
+        try:
+            out = md if md.endswith("\n") else md + "\n"
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(out)
+        except OSError:
+            return
+        doc["draft_ts"] = now
+        self.show_status("草稿已自动暂存（未命名文档，崩溃可恢复）")
+
+    def _remove_draft(self, doc):
+        """草稿收走 / 清空时删除对应草稿文件。"""
+        fp = doc.pop("draft", None)
+        doc.pop("draft_ts", None)
+        if fp:
+            try:
+                if os.path.exists(fp):
+                    os.remove(fp)
+            except Exception as e:   # noqa: BLE001 — 删除失败不影响主流程
+                _log.debug("草稿删除失败: %s (%s)", fp, e)
+
+    def check_draft_recovery(self):
+        """v3.32（P0-1）：启动时检测孤儿草稿（上次会话未保存的未命名文档），
+        弹窗展示预览与时间，问是否恢复；选择忽略则标记 .dismissed 不再打扰。"""
+        if os.environ.get("MDEDITOR_SKIP_DRAFT") or not os.path.isdir(DRAFT_DIR):
+            return
+        drafts = []
+        for name in os.listdir(DRAFT_DIR):
+            if not name.endswith(".md"):
+                continue
+            fp = os.path.join(DRAFT_DIR, name)
+            try:
+                if os.path.getsize(fp) > 0:
+                    drafts.append((fp, os.path.getmtime(fp)))
+            except OSError:
+                continue
+        if not drafts:
+            return
+        drafts.sort(key=lambda x: x[1], reverse=True)
+        try:
+            with open(drafts[0][0], "r", encoding="utf-8", errors="replace") as f:
+                head = f.read(200)
+        except OSError:
+            return
+        when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(drafts[0][1]))
+        detail = "\n".join(
+            "· %s（%s）" % (os.path.basename(fp),
+                            time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mt)))
+            for fp, mt in drafts)
+        btn = QMessageBox.question(
+            self, "发现未恢复内容",
+            f"检测到 {len(drafts)} 份未命名文档的自动暂存草稿，"
+            f"可能是上次异常退出遗留。\n\n"
+            f"最近一份预览（{when}）：\n「{head}」\n\n"
+            f"是否恢复到编辑器？\n\n{detail}",
+            QMessageBox.Yes | QMessageBox.No)
+        if btn != QMessageBox.Yes:
+            for fp, _mt in drafts:      # 忽略：改名归档，不再提示也不丢失
+                try:
+                    os.replace(fp, fp + ".dismissed")
+                except OSError:
+                    pass
+            return
+        for fp, _mt in drafts:
+            try:
+                with open(fp, "r", encoding="utf-8", errors="replace") as f:
+                    text = f.read()
+            except OSError:
+                continue
+            idx = self._add_doc(path=None, text=text)
+            if 0 <= idx < len(self._docs):
+                self._docs[idx]["draft"] = fp       # 草稿跟随文档继续更新，保存后收走
+        self.show_status("已恢复草稿内容 · 保存到文件后自动清理")
+
     def open_folder(self):
         """打开文件夹：左侧文件栏定位并显示该文件夹的一级内容。"""
         d = QFileDialog.getExistingDirectory(self, "打开文件夹", "")
@@ -1837,10 +2071,111 @@ class MainWindow(QMainWindow):
             self._docs[self._cur]["path"] = self.file_path
             self._refresh_tab_texts()
         self._push_doc_dir()
+        if 0 <= self._cur < len(self._docs):
+            self._remove_draft(self._docs[self._cur])   # v3.32（P0-1）：有路径后草稿收走
         self.save_file()
         return True
 
     # ================= 导出 =================
+    def _export_selfcheck(self, md, kinds):
+        """v3.32（P0-4③ / P1-10①）：导出前"交付自检"——扫描文档里会降级 /
+        需联网的元素，弹窗明示后果；返回 True 继续、False 取消。
+        kinds: 'docx'|'epub'（块级公式降源码、图表位图化）或 'html'|'pdf'。"""
+        if not md:
+            return True
+        math_n = len(re.findall(r"^```math\s*$", md, flags=re.M))
+        mmd_n = len(re.findall(r"^```mermaid\s*$", md, flags=re.M))
+        img_n = len(re.findall(r"!\[[^\]]*\]\((?:https?:)?//", md)) \
+            + len(re.findall(r"<img[^>]*\ssrc=[\"'](?:https?:)?//", md))
+        lines = []
+        if kinds in ("docx", "epub") and math_n:
+            lines.append(f"· {math_n} 处块级公式：导出后将保留 LaTeX 源码并加标注（暂不渲染）")
+        if kinds in ("docx", "epub") and mmd_n:
+            lines.append(f"· {mmd_n} 张 Mermaid 图表：将以已渲染的位图嵌入（不可再编辑）")
+        if img_n:
+            lines.append(f"· {img_n} 张网络图片：需联网才能显示（本地图片不受影响）")
+        if not lines:
+            return True
+        ret = QMessageBox.question(
+            self, "导出前自检",
+            "本文档包含以下导出时需要注意的元素：\n\n" + "\n".join(lines)
+            + "\n\n是否继续导出？",
+            QMessageBox.Yes | QMessageBox.No)
+        return ret == QMessageBox.Yes
+
+    def _export_selfcheck_remote(self, n):
+        """v3.32（P0-4③）：仅网络图片的自检（HTML / PDF 导出路径）。"""
+        ret = QMessageBox.question(
+            self, "导出前自检",
+            f"本文档包含 {n} 张网络图片（http/https），查看时需联网加载；"
+            "本地图片与公式 / 图表已内嵌，离线可用。\n\n是否继续导出？",
+            QMessageBox.Yes | QMessageBox.No)
+        return ret == QMessageBox.Yes
+
+    def _export_done(self, label, path):
+        """v3.32（P1-2①）：导出完成的收尾动作——打开该文件 / 打开所在文件夹。"""
+        box = QMessageBox(self)
+        box.setWindowTitle("导出完成")
+        box.setText(f"已导出 {label}：\n{path}")
+        b_open = box.addButton("打开该文件", QMessageBox.YesRole)
+        b_dir = box.addButton("打开所在文件夹", QMessageBox.ActionRole)
+        box.addButton("完成", QMessageBox.NoRole)
+        box.exec()
+        clicked = box.clickedButton()
+        try:
+            if clicked is b_open:
+                os.startfile(path)                     # noqa: S606
+            elif clicked is b_dir:
+                os.startfile(os.path.dirname(path) or ".")   # noqa: S606
+        except OSError:
+            self.show_status("无法打开：系统缺少关联程序")
+        return
+
+    def archive_workspace(self):
+        """v3.32（P0-7）：把当前工作区（当前文档所在目录或侧栏根目录）
+        打包为带时间戳的 zip —— 含全部 .md / assets / .mdeditor-history，
+        作为"本地唯一副本"的最低成本容灾出口。"""
+        root = ""
+        for cand in (self._doc_dir(), getattr(self._sidebar, "_cur_dir", "")):
+            if cand and os.path.isdir(cand):
+                root = os.path.abspath(cand)
+                break
+        if not root:
+            QMessageBox.information(
+                self, "归档工作区",
+                "当前没有已保存的文档或已打开的文件夹，没有可归档的工作区。")
+            return
+        default = os.path.join(os.path.dirname(root) or root,
+                               "%s-workspace-%s.zip"
+                               % (os.path.basename(root), time.strftime("%Y%m%d-%H%M%S")))
+        path, _ = QFileDialog.getSaveFileName(
+            self, "归档整个工作区", default, "压缩包 (*.zip)")
+        if not path:
+            return
+        n_file = 0
+        try:
+            with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for dirpath, dirnames, filenames in os.walk(root):
+                    dirnames[:] = [d for d in dirnames
+                                   if d not in ("__pycache__", "$RECYCLE.BIN")]
+                    for name in filenames:
+                        fp = os.path.join(dirpath, name)
+                        if os.path.abspath(fp) == os.path.abspath(path):
+                            continue        # 归档包自身落在工作区内时跳过
+                        try:
+                            zf.write(fp, os.path.relpath(fp, root))
+                            n_file += 1
+                        except OSError:
+                            continue
+        except (OSError, zipfile.BadZipFile) as e:
+            QMessageBox.warning(self, "归档失败", str(e))
+            return
+        self.show_status(f"已归档工作区 · {n_file} 个文件 → {path}")
+        QMessageBox.information(
+            self, "归档完成",
+            f"已归档 {n_file} 个文件（含历史快照与图片资产）：\n{path}\n\n"
+            "建议定期归档并复制到另一块磁盘 / 网盘，避免单点丢失。")
+
     # v3.29d（B7/UX #28）：按用途记忆文件对话框的上次目录（导出 / 另存 / 打开）
     def _dlg_dir(self, key):
         return getattr(self, "_dir_map", {}).get(key, "")
@@ -1862,6 +2197,10 @@ class MainWindow(QMainWindow):
         def cb(html):
             if not html:
                 return
+            # v3.32（P0-4③）：网络图片需查看端联网，先明示（本地图片已内嵌）
+            remote = len(re.findall(r"<img[^>]*\ssrc=[\"'](?:https?:)?//", html))
+            if remote and not self._export_selfcheck_remote(remote):
+                return
             path, _ = QFileDialog.getSaveFileName(
                 self, "导出 HTML",
                 self._dlg_start("html",
@@ -1880,6 +2219,7 @@ class MainWindow(QMainWindow):
                 f.write(html)
             self.show_status(f"已导出 HTML · {path}"
                              + (f"（内嵌 {n_img} 张图片）" if n_img else ""))
+            self._export_done("HTML", path)
         self._js_active("window.getExportHTML()", cb)
 
     def _embed_local_images(self, html):
@@ -2011,6 +2351,7 @@ class MainWindow(QMainWindow):
         else:
             n, msg = exporters.add_pdf_bookmarks(path, getattr(self, "_pending_toc", None))
             self.show_status(f"已导出 PDF · {path}" + (f"（{msg}）" if n else f"（{msg}）"))
+            self._export_done("PDF", path)
         self._pending_toc = None
         if self._pdf_view:
             self._pdf_view.deleteLater()
@@ -2036,6 +2377,9 @@ class MainWindow(QMainWindow):
 
         def cb(md):
             if md is None:
+                return
+            # v3.32（P0-4③/P1-10①）：导出前"交付自检"——明示降级项再让用户决定
+            if not self._export_selfcheck(md, kind):
                 return
             # v3.29d（B6/UX #33）：pandoc 未安装时导出前先预警（每会话只提示一次），
             # 说明降级影响并给出安装指引，不再静默回退内置转换
@@ -2115,6 +2459,8 @@ class MainWindow(QMainWindow):
         self.show_status(msg)
         if not ok:
             QMessageBox.warning(self, f"导出 {label} 失败", msg)
+        else:
+            self._export_done(label, path)
 
     def export_docx(self):
         self._export_document("docx")
@@ -2123,11 +2469,96 @@ class MainWindow(QMainWindow):
         self._export_document("epub")
 
     # ================= 杂项 =================
+    def check_update(self):
+        """v3.32（P0-6①）：检查更新 —— 拉取 version.json（{"version","url"}），
+        只提示不强升；URL 可在 QSettings.updateUrl 覆盖，留空提示未配置。"""
+        from PySide6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
+        from PySide6.QtCore import QUrl as _QUrl
+        url = str(self._settings.value("updateUrl", "") or "") or UPDATE_URL
+        if not url:
+            QMessageBox.information(
+                self, "检查更新",
+                f"当前版本 v{APP_VERSION}。\n\n尚未配置更新源（updateUrl）。\n"
+                "发布新版本时请到下载页获取最新安装包。")
+            return
+        if not url.startswith(("http://", "https://")):
+            QMessageBox.warning(self, "检查更新", "更新源地址无效（须为 http/https）。")
+            return
+        self.show_status("正在检查更新…")
+        nam = QNetworkAccessManager(self)
+
+        def _done(reply):
+            reply.deleteLater()
+            if reply.error() != QNetworkReply.NoError:
+                QMessageBox.warning(
+                    self, "检查更新",
+                    f"无法连接更新源：\n{reply.errorString()}\n\n"
+                    f"当前版本 v{APP_VERSION}。请检查网络后重试，或直接到下载页查看。")
+                return
+            try:
+                info = json.loads(bytes(reply.readAll()).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                QMessageBox.warning(self, "检查更新", "更新源返回内容不是有效的 version.json。")
+                return
+            remote = str(info.get("version") or "").strip()
+            if not remote:
+                QMessageBox.warning(self, "检查更新", "version.json 中缺少 version 字段。")
+                return
+            if self._ver_ge(remote, APP_VERSION):
+                QMessageBox.information(self, "检查更新",
+                                        f"已是最新版本（v{APP_VERSION}）。")
+                return
+            btn = QMessageBox.question(
+                self, "发现新版本",
+                f"当前版本 v{APP_VERSION}\n最新版本 v{remote}\n"
+                f"{info.get('note') or ''}\n\n是否前往下载页？",
+                QMessageBox.Yes | QMessageBox.No)
+            if btn == QMessageBox.Yes and info.get("url"):
+                from PySide6.QtGui import QDesktopServices
+                QDesktopServices.openUrl(_QUrl(str(info["url"])))
+
+        nam.finished.connect(_done)
+        nam.get(QNetworkRequest(_QUrl(url)))
+
+    @staticmethod
+    def _ver_ge(a, b):
+        """版本号比较：a >= b（按 . 分段数值比较，长度不齐补 0）。"""
+        pa = [int(x) for x in re.findall(r"\d+", a)] or [0]
+        pb = [int(x) for x in re.findall(r"\d+", b)] or [0]
+        n = max(len(pa), len(pb))
+        pa += [0] * (n - len(pa))
+        pb += [0] * (n - len(pb))
+        return pa >= pb
+
+    def copy_diagnostics(self):
+        """v3.32（P0-5②）：把版本 / 系统 / 依赖 / 最近日志拼成诊断文本复制到剪贴板，
+        用户报障时一次给全信息。"""
+        import platform
+        import PySide6
+        pandoc = self._pandoc_exe()
+        lines = [
+            f"版本: mdEditor v{APP_VERSION}",
+            f"系统: {platform.platform()}",
+            f"Python: {platform.python_version()}　PySide6: {PySide6.__version__}",
+            f"主题: {self._theme}　自动保存: {'开' if self._autosave else '关'}",
+            f"pandoc: {pandoc or '未检测到（导出 Word/EPUB 将用内置转换）'}",
+        ]
+        try:
+            log_fp = os.path.join(LOG_DIR, "mdEditor.log")
+            with open(log_fp, "r", encoding="utf-8", errors="replace") as f:
+                tail = [ln.rstrip() for ln in f.readlines()[-50:]]
+            lines.append("--- 最近日志（50 行）---")
+            lines.extend(tail or ["（日志为空）"])
+        except OSError:
+            lines.append("（日志文件不可读）")
+        QApplication.clipboard().setText("\n".join(lines))
+        self.show_status("诊断信息已复制到剪贴板，可粘贴给开发者")
+
     def _about(self):
         """v3.29d（UX #29）：关于页显示版本号，并提供「查看更新日志」入口。"""
         ret = QMessageBox.question(
             self, "关于",
-            f"<b>{APP_NAME}</b>　<span style='color:#888;'>v3.30</span><br>"
+            f"<b>{APP_NAME}</b>　<span style='color:#888;'>v{APP_VERSION}</span><br>"
             "Typora 风格的所见即所得 Markdown 编辑器<br>"
             "支持多文件标签页、双栏（源码 / 预览）模式、数学公式<br>"
             "基于 Python + PySide6 (QtWebEngine) 构建。<br><br>"
@@ -2164,6 +2595,22 @@ class MainWindow(QMainWindow):
                     "空行输入 / 唤起插入菜单（也可点块手柄或 Ctrl+/）· 选中文字浮现行菜单 · "
                     "悬停块左侧 ⠿ 块菜单（空块直接唤起插入菜单）· "
                     "Ctrl+Enter 跳出代码块/引用。</p>")
+        # v3.31.3（QUO-6）：引用块 / 代码块常用按键说明（含退出方式）
+        # v3.38（QUO-11）：按键说明对齐《引用模块交互规范-v3.37》
+        rows.append("<p style='margin:10px 0 4px;'><b>引用块常用按键</b></p>"
+                    "<div style='margin:2px 0 2px 12px;'>回车 —— 延续引用（自动补 &gt; 前缀）</div>"
+                    "<div style='margin:2px 0 2px 12px;'>末行空行再按回车 —— 引用保留，其后新建空段落</div>"
+                    "<div style='margin:2px 0 2px 12px;'>Tab / Shift+Tab —— 嵌套加 / 减一级</div>"
+                    "<div style='margin:2px 0 2px 12px;'>行首退格 —— 逐级降级；顶层行仅当前行脱离引用</div>"
+                    "<div style='margin:2px 0 2px 12px;'>Esc —— 失焦退出编辑（内容不动）；Ctrl+Enter —— 跳出引用</div>"
+                    "<p style='margin:10px 0 4px;'><b>代码块常用按键</b></p>"
+                    "<div style='margin:2px 0 2px 12px;'>Tab / Shift+Tab —— 插入 2 空格缩进 / 反缩进（跨行选区批量处理）</div>"
+                    # v3.38（CODE-9/10/11/12/13）：按键与入口说明对齐《代码块模块交互规范-v3.37》
+                    "<div style='margin:2px 0 2px 12px;'>Esc 或 Ctrl+Enter —— 退出编辑跳到下一块；已是末块则在其后新建空段落</div>"
+                    "<div style='margin:2px 0 2px 12px;'>复制：悬停代码块 → 顶栏 ⧉ 复制全部代码（或右键语言栏）</div>"
+                    "<div style='margin:2px 0 2px 12px;'>顶栏「风格」弹层：4 种风格 + 行数显示 + 自动换行开关</div>"
+                    "<div style='margin:2px 0 2px 12px;'>长代码（&gt;20 行）顶栏 ▾ 可折叠；⛶ 全屏编辑（Esc 退出全屏）</div>"
+                    "<div style='margin:2px 0 2px 12px;'>顶栏「命令」/ 空块命令条：按语言插入安装依赖、构建、运行、测试、格式化命令</div>")
         QMessageBox.information(self, "快捷键一览", "".join(rows))
 
     # ---- 最近文件 ----
@@ -2459,9 +2906,205 @@ class MainWindow(QMainWindow):
         self._js_active(f"window.setSlashMenuConfig({js(json.dumps(self._slash_cfg()))})")
         self.show_status("斜杠菜单设置已保存")
 
-    def show_settings(self):
+    # ================= v3.32.2（TPL-C）自定义模板 =================
+    # v3.36（TPL-E）：模板体系统一 —— 内置模板也落 templates.json，与自建模板
+    # 同等管理（/ 菜单「模板」二级的内容即这份列表）
+    def _tpl_entry(self, name, content, ic=""):
+        """构造一条模板记录（ic 为空时不写该键，保持与旧数据的字典形态一致）。"""
+        it = {"name": name, "content": content}
+        ic = normalize_template_icon(ic)
+        if ic:
+            it["ic"] = ic
+        return it
+
+    def _templates_from_data(self, data):
+        """templates.json 内容 → (模板列表, 结构版本号)。
+
+        v2 = {"v": 2, "templates": [...]}；v1 = 早期纯数组 [{name, content}]；
+        0 = 缺失 / 损坏（按首次运行处理）。
+        """
+        if isinstance(data, dict):
+            raw = data.get("templates")
+            try:
+                ver = int(data.get("v", 0) or 0)
+            except (TypeError, ValueError):
+                ver = 0
+        elif isinstance(data, list):
+            raw, ver = data, 1
+        else:
+            raw, ver = [], 0
+        items = []
+        for t in raw or []:
+            if not isinstance(t, dict):
+                continue
+            name = normalize_template_name(t.get("name", ""))
+            content = str(t.get("content", ""))
+            if name and content.strip():
+                items.append(self._tpl_entry(name, content, t.get("ic", "")))
+        return items, ver
+
+    def _merge_builtin_templates(self, items):
+        """并入内置模板：同名保留用户版本（位置不动），缺失的按内置顺序补在末尾。"""
+        have = set(t.get("name") for t in items or [])
+        out = [dict(t) for t in items or []]
+        for b in BUILTIN_TEMPLATES:
+            if b["name"] in have:
+                continue
+            out.append(self._tpl_entry(b["name"], b["content"], b.get("ic", "")))
+        return out
+
+    def _reorder_builtin_templates(self, items):
+        """v3.38（TPL-F）：内置模板重排到默认顺序（自建模板保持相对顺序排其后）。
+
+        仅在结构版本 < 3 的一次性迁移中执行 —— 此后用户在设置页调整的顺序
+        落在 templates.json（ver=3）里，不会再被改动。"""
+        rank = {b["name"]: i for i, b in enumerate(BUILTIN_TEMPLATES)}
+        bi = sorted((t for t in items if t.get("name") in rank),
+                    key=lambda t: rank[t["name"]])
+        us = [t for t in items if t.get("name") not in rank]
+        return bi + us
+
+    def _write_template_file(self, templates):
+        """按 v2 结构写盘（"v" 同时是「内置模板已并入」的迁移标记）。"""
+        try:
+            os.makedirs(USER_DATA_DIR, exist_ok=True)
+            with open(TEMPLATE_FILE, "w", encoding="utf-8") as f:
+                json.dump({"v": TPL_FILE_VERSION, "templates": templates}, f,
+                          ensure_ascii=False, indent=2)
+            return True
+        except OSError as e:
+            self.show_status(f"模板保存失败：{e}")
+            return False
+
+    def _load_custom_templates(self):
+        """读取模板列表（templates.json）。
+
+        v3.36（TPL-E）：内置模板并入统一列表 ——
+          · 文件缺失 / 损坏 → 以内置模板初始化（首次运行）；
+          · 旧格式（v1 纯数组）→ 合并缺失的内置模板后写回 v2（一次性迁移，
+            用户既有模板保持原顺序，内置补在末尾）；
+          · v2 → v3：内置模板重排为默认顺序（TPL-F，一次性迁移；自建模板
+            保持相对顺序排其后），写回 v3；
+          · 已是 v3 → 原样返回。
+        名称统一过 normalize_template_name —— 手改过 json 或历史遗留的超长名称
+        在这里被收回到显示上限，菜单与列表展示始终一致。
+        """
+        data = None
+        try:
+            with open(TEMPLATE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            data = None
+        items, ver = self._templates_from_data(data)
+        if ver >= TPL_FILE_VERSION:
+            return items
+        merged = self._merge_builtin_templates(items)
+        merged = self._reorder_builtin_templates(merged)   # v3.38（TPL-F）
+        self._write_template_file(merged)
+        return merged
+
+    def _custom_templates_js(self):
+        """模板列表序列化为下发参数（json 字符串字面量）。"""
+        return js(json.dumps(self._custom_templates, ensure_ascii=False))
+
+    def _sync_custom_templates(self, view=None):
+        """把自定义模板下发给编辑器（缺省 = 当前活跃视图）。"""
+        code = f"window.setCustomTemplates({self._custom_templates_js()})"
+        if view is not None:
+            self._js_view(view, code)
+        else:
+            self._js_active(code)
+
+    def save_custom_templates(self, templates):
+        """保存模板列表（模板设置页 / 设为模板文件共用）：写盘并即时下发。
+
+        返回 True 表示已写盘并下发；False 表示写盘失败（调用方可据此决定是否再提示）。
+        """
+        cleaned, seen = [], set()
+        for t in templates or []:
+            name = normalize_template_name((t or {}).get("name", ""))
+            content = str((t or {}).get("content", ""))
+            if name and content.strip() and name not in seen:
+                seen.add(name)
+                cleaned.append(self._tpl_entry(name, content, (t or {}).get("ic", "")))
+        self._custom_templates = cleaned
+        if not self._write_template_file(cleaned):
+            return False
+        self._sync_custom_templates()
+        self.show_status(f"模板已保存（{len(cleaned)} 个）")
+        return True
+
+    def make_template_from_file(self, path):
+        """v3.35（TPL-D）：把文件列表里的某个文档收编为自定义模板。
+
+        流程：读磁盘内容（体积 / 空内容 / 编码兜底）→ 弹输入框填名称（输入层硬限
+        TPL_NAME_MAX 字）→ 归一化 + 重名自动编号 → 追加到列表末尾（= 菜单末尾）
+        → 写 templates.json 并即时下发编辑器。
+        """
+        p = str(path or "")
+        try:
+            size = os.path.getsize(p)
+        except OSError as e:
+            QMessageBox.warning(self, "设为模板", f"无法读取该文件：{e}")
+            return
+        if size > TPL_MAX_BYTES:
+            QMessageBox.warning(
+                self, "设为模板",
+                f"文件过大（{size / 1024:.0f} KB）。\n"
+                f"模板内容上限为 {TPL_MAX_BYTES // 1024} KB，请先精简后再试。")
+            return
+        try:
+            with open(p, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+        except OSError as e:
+            QMessageBox.warning(self, "设为模板", f"无法读取该文件：{e}")
+            return
+        if not content.strip():
+            QMessageBox.warning(self, "设为模板", "该文件内容为空，无法作为模板。")
+            return
+
+        base = os.path.splitext(os.path.basename(p))[0]
+        default = normalize_template_name(base) or "新模板"
+        label = f"模板名称（最多 {TPL_NAME_MAX} 字，将显示在 / 菜单与悬浮模板菜单中）："
+        if (os.path.abspath(p) == os.path.abspath(self.file_path or "")
+                and getattr(self, "_dirty", False)):
+            label += "\n注意：该文件有未保存的修改，模板内容取磁盘上的版本（可先 Ctrl+S）。"
+        dlg = QInputDialog(self)
+        dlg.setWindowTitle("设为模板")
+        dlg.setLabelText(label)
+        dlg.setTextValue(default)
+        le = dlg.findChild(QLineEdit)
+        if le is not None:
+            le.setMaxLength(TPL_NAME_MAX)   # 输入层硬限：手动输入 / 粘贴超长都会被截住
+            le.selectAll()
+        if dlg.exec() != QDialog.Accepted:
+            return
+
+        name = normalize_template_name(dlg.textValue())
+        if not name:
+            self.show_status("模板名称为空，未创建")
+            return
+        renamed = unique_template_name(name, [t.get("name") for t in self._custom_templates])
+        self._custom_templates.append({"name": renamed, "content": content})
+        if self.save_custom_templates(self._custom_templates):
+            self.show_status(f"已设为模板：{renamed}" + ("（名称重复，已自动编号）" if renamed != name else ""))
+        else:
+            self._custom_templates.pop()   # 落盘失败：撤销内存追加，避免与磁盘不一致
+
+    def open_template_manager(self):
+        """打开「系统设置 → 模板」页。
+
+        v3.36（TPL-E）：模板管理从独立对话框提升为设置面板的一级页（与外观 /
+        编辑器 / 通用同级），这里保留入口便于侧栏 / 菜单 / 命令面板复用。
+        """
+        self.show_settings("模板")
+
+    def show_settings(self, page=None):
+        """打开系统设置；page 给定时定位到该页（如 "模板"）。"""
         if not hasattr(self, "_set_dlg"):
             self._set_dlg = SettingsDialog(self)
+        if page:
+            self._set_dlg.select_page(page)
         self._set_dlg.show()
         self._set_dlg.raise_()
 
@@ -2579,6 +3222,8 @@ class MainWindow(QMainWindow):
         if btn == QMessageBox.Cancel:
             e.ignore()
             return
+        if btn == QMessageBox.Discard and 0 <= self._cur < len(self._docs):
+            self._remove_draft(self._docs[self._cur])   # v3.32（P0-1）：明确丢弃 → 删草稿
         if btn == QMessageBox.Save:
             from PySide6.QtCore import QEventLoop
             res = {}

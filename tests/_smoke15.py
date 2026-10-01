@@ -263,8 +263,8 @@ win.show_settings()
 wait(400)
 check("settings dialog created", hasattr(win, "_set_dlg"), "")
 dlg = win._set_dlg
-check("settings nav 3 pages (v3.29 写作与历史并入通用)", dlg.nav.count() == 3, dlg.nav.count())
-check("settings pages 3", dlg.pages.count() == 3, dlg.pages.count())
+check("settings nav 4 pages (v3.36 模板提升为一级页)", dlg.nav.count() == 4, dlg.nav.count())
+check("settings pages 4", dlg.pages.count() == 4, dlg.pages.count())
 # 切换到外观页并点击主题行
 dlg.nav.setCurrentRow(0)
 wait(200)

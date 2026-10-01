@@ -7,7 +7,7 @@ import os
 import re
 from datetime import datetime
 
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QGroupBox, QHBoxLayout, QLabel,
@@ -16,19 +16,23 @@ from PySide6.QtWidgets import (
     QTextBrowser, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
-from config import js
+from config import BUILTIN_TEMPLATES, MMD_LEGACY, MMD_THEMES, TPL_NAME_MAX, js
 from sidebar import GlobalSearchPanel
 from styles import THEMES, dialog_qss, palette
 
 # 斜杠（/）菜单可配置项（与 editor.html 中 SLASH_DEFS 对应）
 # v3.30.3：移除「上标 / 下标」（supsub）一级项
+# v3.31.3：footnote / deflist 合并为 refs「脚注与定义」
+# v3.32（P1-1）：新增 tpl「模板」一级项
 MENU_ITEMS = [("heading", "标题"), ("list", "列表"), ("table", "表格"), ("code", "代码块"),
               ("hr", "分隔线"), ("quote", "引用"), ("image", "图片"), ("chart", "图表"),
-              ("footnote", "脚注"), ("deflist", "定义列表"),
+              ("refs", "脚注与定义"), ("tpl", "模板"),
               ("math", "公式")]
 SUB_HEADING = ["标题 1", "标题 2", "标题 3", "标题 4", "标题 5", "标题 6"]  # v3.31.1 移除标题7
 SUB_LIST = ["无序列表", "有序列表", "待办事项"]
 SUB_CHART = ["流程图", "时序图", "类图", "状态图", "E-R 图", "甘特图", "饼图"]
+# v3.36（TPL-E）：SUB_TPL（内置模板名硬编码清单）已删除 —— 模板清单由
+# templates.json 承载（config.BUILTIN_TEMPLATES 为初始内容），不再静态枚举
 SUB_MATH = ["上标", "下标", "分式", "根式", "求和", "积分", "极限", "导数", "偏导数", "向量",
             "向量箭头", "矩阵", "希腊字母", "无穷", "约等于", "垂直", "平行", "因为所以",
             "属于", "并集交集", "加减", "乘", "度数", "圆周率"]
@@ -492,8 +496,9 @@ class SettingsDialog(_ThemedDialog):
         self.nav = QListWidget(self)
         self.nav.setObjectName("navList")
         self.nav.setFixedWidth(150)
-        # v3.29：「写作与历史」已并入「通用」页；「编辑器」页含图片 / 代码块 / 斜杠菜单 —— 共三页
-        for name in ("外观", "编辑器", "通用"):
+        # v3.29：「写作与历史」已并入「通用」页；「编辑器」页含图片 / 代码块 / 斜杠菜单
+        # v3.36（TPL-E）：模板管理提升为一级页「模板」（与外观 / 编辑器 / 通用同级）
+        for name in ("外观", "编辑器", "通用", "模板"):
             QListWidgetItem(name, self.nav)
         self.nav.setCurrentRow(0)
 
@@ -502,6 +507,7 @@ class SettingsDialog(_ThemedDialog):
         self.pages.addWidget(self._page_appearance())
         self.pages.addWidget(self._page_editor_fmt())
         self.pages.addWidget(self._page_general())
+        self.pages.addWidget(TemplatePage(win, self))
         self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
 
         b_close = QPushButton("关闭")
@@ -524,6 +530,14 @@ class SettingsDialog(_ThemedDialog):
         lay.addWidget(wrap, 1)
         b_close.clicked.connect(self.accept)
 
+    def select_page(self, name):
+        """按页名定位左侧导航（v3.36：供「设置 → 模板」直达入口使用）。"""
+        for i in range(self.nav.count()):
+            if self.nav.item(i).text() == name:
+                self.nav.setCurrentRow(i)
+                return True
+        return False
+
     # ================= 外观 =================
     def _page_appearance(self):
         page = QWidget(self)
@@ -534,7 +548,7 @@ class SettingsDialog(_ThemedDialog):
         title = QLabel("外观")
         title.setObjectName("pageTitle")
         lay.addWidget(title)
-        hint = QLabel("选择主题（即时生效，自动记住）；拖动滑块调整编辑区显示字号。")
+        hint = QLabel("选择主题（即时生效，自动记住）；拖动滑块调整编辑区显示字号；下方可另选图表主题。")
         hint.setObjectName("pageHint")
         hint.setWordWrap(True)
         lay.addWidget(hint)
@@ -561,7 +575,28 @@ class SettingsDialog(_ThemedDialog):
         zrow.addWidget(self.zoom_slider, 1)
         zrow.addWidget(self.zoom_lbl)
         lay.addLayout(zrow)
+
+        # v3.34（MMD-11）：图表（mermaid）主题 —— 原「视图 → 图表主题」菜单移入此处，
+        # 与界面主题同页集中配置；与图表块右键「图表主题」子菜单共用 QSettings.mmdTheme
+        lay.addWidget(QLabel("图表主题"))
+        self.mmd_box = QComboBox(page)
+        for label, val in MMD_THEMES:
+            self.mmd_box.addItem(label, val)
+        _cur_mmd = MMD_LEGACY.get(self._win._settings.value("mmdTheme", "") or "",
+                                  self._win._settings.value("mmdTheme", "") or "")
+        _ids = [v for _l, v in MMD_THEMES]
+        self.mmd_box.setCurrentIndex(_ids.index(_cur_mmd) if _cur_mmd in _ids else 0)
+        self.mmd_box.currentIndexChanged.connect(self._on_mmd_theme)
+        lay.addWidget(self.mmd_box)
+        mmd_hint = QLabel("图表主题对所有 mermaid 图表即时生效（含右键图表块直接切换）；"
+                          "「跟随界面主题」会随深 / 浅色界面自动切换。")
+        mmd_hint.setObjectName("pageHint")
+        mmd_hint.setWordWrap(True)
+        lay.addWidget(mmd_hint)
         return page
+
+    def _on_mmd_theme(self, _idx=0):
+        self._win._set_mmd_theme(self.mmd_box.currentData() or "")
 
     def _on_theme_clicked(self, item):
         t = THEMES[self.theme_list.row(item)]
@@ -750,6 +785,9 @@ class SettingsDialog(_ThemedDialog):
         self.sub_chart_box.currentIndexChanged.connect(lambda _: self._push_menu_cfg())
         self.sub_math_box.currentIndexChanged.connect(lambda _: self._push_menu_cfg())
 
+        # v3.36（TPL-E）：原「自定义模板（⭐，插入文档即用）→ 管理…」入口已提升为
+        # 独立的「模板」一级页；斜杠菜单组内不再重复入口
+
         lay.addWidget(gb_menu)
 
         lay.addStretch(1)
@@ -800,6 +838,8 @@ class SettingsDialog(_ThemedDialog):
         self.menu_list.setCurrentItem(it)
         self._fill_def_box()
         self._push_menu_cfg()
+
+    # ---- v3.36（TPL-E）：模板管理入口已移至「模板」一级页（TemplatePage） ----
 
     def _push_menu_cfg(self):
         order = [self.menu_list.item(k).data(Qt.UserRole) for k in range(self.menu_list.count())]
@@ -1578,7 +1618,11 @@ class HistoryDialog(_ThemedDialog):
         self.listw.clear()
         self.preview.setPlainText("")
         if not self._items:
-            self.listw.addItem(QListWidgetItem("（暂无历史版本）"))
+            # v3.32（P0-3）：空态说明触发规则 —— 让用户知道"为什么没有快照"
+            hint = "（未保存文档没有版本历史，保存后可用）" if not path else \
+                "（本文档尚未产生快照 · 快照在保存 / 自动保存写盘时生成）"
+            self.listw.addItem(QListWidgetItem(hint))
+            self.listw.addItem(QListWidgetItem("提示：文件菜单 / 命令面板可「立即留档」手动打点"))
             self.b_restore.setEnabled(False)
             self.b_folder.setEnabled(False)
             self.b_diff_cur.setEnabled(False)
@@ -1682,3 +1726,210 @@ class HistoryDialog(_ThemedDialog):
     def showEvent(self, ev):
         super().showEvent(ev)
         self._apply_theme_qss(getattr(self._win, "_theme", "light"))
+
+
+class TemplatePage(QWidget):
+    """v3.36（TPL-E）：模板管理页（系统设置 → 模板，与外观 / 编辑器 / 通用同级）。
+
+    统一管理全部模板（内置 + 自建）：左侧列表（顺序 = / 菜单「模板」二级的排列），
+    右侧名称 + Markdown 内容编辑。「新建 / 删除 / 上移 / 下移 / 恢复内置」调整列表，
+    改动即时写盘（templates.json）并下发编辑器 —— 文本类改动做 400ms 防抖，
+    结构类改动立即落盘，不再需要「保存并生效」动作。
+    删除不弹确认（项目约定：删除操作直接执行）。"""
+
+    def __init__(self, win, parent=None):
+        super().__init__(parent)
+        self._win = win
+        self._templates = [dict(t) for t in getattr(win, "_custom_templates", []) or []]
+        self._loading = False   # 程序性填充编辑框时抑制 _on_edited 回写
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(400)
+        self._save_timer.timeout.connect(self._save)
+        self._build()
+        self._fill_list(0 if self._templates else -1)
+
+    def _build(self):
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(10)
+
+        title = QLabel("模板")
+        title.setObjectName("pageTitle")
+        lay.addWidget(title)
+        hint = QLabel(
+            "这里就是 / 菜单「模板」里的全部条目（内置 %d 个 + 你自建的），"
+            "列表顺序即菜单顺序。内容为纯 Markdown，按空行分块插入；"
+            "名称上限 %d 字（菜单里显示的就是它），同一名称只保留一个。\n"
+            "改动即时生效并保存，关掉设置即已写盘。"
+            % (len(BUILTIN_TEMPLATES), TPL_NAME_MAX), self)
+        hint.setObjectName("pageHint")
+        hint.setWordWrap(True)
+        lay.addWidget(hint)
+
+        body = QHBoxLayout()
+        body.setSpacing(12)
+
+        list_col = QVBoxLayout()
+        list_col.addWidget(QLabel("模板列表", self))
+        self.list_w = QListWidget(self)
+        self.list_w.setObjectName("themeList")
+        self.list_w.currentRowChanged.connect(self._on_row_changed)
+        list_col.addWidget(self.list_w, 1)
+        btn_row = QHBoxLayout()
+        self.b_new = QPushButton("新建", self)
+        self.b_del = QPushButton("删除", self)
+        self.b_up = QPushButton("上移", self)
+        self.b_down = QPushButton("下移", self)
+        for b in (self.b_new, self.b_del, self.b_up, self.b_down):
+            btn_row.addWidget(b)
+        list_col.addLayout(btn_row)
+        self.b_restore = QPushButton("恢复内置", self)
+        self.b_restore.setToolTip(
+            "把 %d 个内置模板按原始内容写回（同名覆盖、缺失追加），自建模板不受影响"
+            % len(BUILTIN_TEMPLATES))
+        list_col.addWidget(self.b_restore)
+        body.addLayout(list_col, 1)
+
+        edit_col = QVBoxLayout()
+        edit_col.addWidget(QLabel("模板名称", self))
+        self.name_edit = QLineEdit(self)
+        self.name_edit.setMaxLength(TPL_NAME_MAX)   # v3.35：与菜单显示上限同源，输入层硬限
+        self.name_edit.setPlaceholderText("（显示在菜单里的名字，必填，最多 %d 字）" % TPL_NAME_MAX)
+        edit_col.addWidget(self.name_edit)
+        edit_col.addWidget(QLabel("模板内容（Markdown，空行 = 插入时的分块边界）", self))
+        self.content_edit = QPlainTextEdit(self)
+        self.content_edit.setPlaceholderText("# 标题\n\n正文…")
+        edit_col.addWidget(self.content_edit, 1)
+        body.addLayout(edit_col, 2)
+        lay.addLayout(body, 1)
+
+        self.b_new.clicked.connect(self._on_new)
+        self.b_del.clicked.connect(self._on_del)
+        self.b_up.clicked.connect(lambda: self._on_move(-1))
+        self.b_down.clicked.connect(lambda: self._on_move(1))
+        self.b_restore.clicked.connect(self._on_restore)
+        self.name_edit.textEdited.connect(self._on_edited)
+        self.content_edit.textChanged.connect(self._on_edited)
+
+    def showEvent(self, ev):
+        """每次显示时回读 —— 模板可能被其它入口（侧栏「设为模板…」）改动过。"""
+        super().showEvent(ev)
+        self.reload()
+
+    def reload(self):
+        items = [dict(t) for t in getattr(self._win, "_custom_templates", []) or []]
+        if items == self._templates:
+            return
+        self._templates = items
+        self._fill_list(0 if items else -1)
+
+    # ---- 列表与编辑框同步 ----
+    def _label_of(self, t):
+        """列表项显示文本：图标（若有）+ 名称。"""
+        ic = str((t or {}).get("ic") or "").strip()
+        return (ic + " " if ic else "") + str((t or {}).get("name") or "")
+
+    def _fill_list(self, sel_row):
+        """按 self._templates 重建列表并选中 sel_row（触发编辑框回填）。"""
+        self._loading = True
+        self.list_w.blockSignals(True)
+        self.list_w.clear()
+        for t in self._templates:
+            it = QListWidgetItem(self._label_of(t))
+            it.setToolTip(t["content"][:160])
+            self.list_w.addItem(it)
+        self.list_w.blockSignals(False)
+        if 0 <= sel_row < self.list_w.count():
+            self.list_w.setCurrentRow(sel_row)
+        self._loading = False
+        self._load_edit(self.list_w.currentRow())
+
+    def _load_edit(self, row):
+        self._loading = True
+        if 0 <= row < len(self._templates):
+            self.name_edit.setText(self._templates[row]["name"])
+            self.content_edit.setPlainText(self._templates[row]["content"])
+        else:
+            self.name_edit.clear()
+            self.content_edit.clear()
+        self._loading = False
+
+    def _on_row_changed(self, _row):
+        if not self._loading:
+            self._load_edit(self.list_w.currentRow())
+
+    def _on_edited(self, *_):
+        """编辑框输入实时回写当前模板（名称同步到列表项），并防抖落盘。"""
+        if self._loading:
+            return
+        row = self.list_w.currentRow()
+        if not (0 <= row < len(self._templates)):
+            return
+        name = self.name_edit.text().strip()
+        if name:
+            self._templates[row]["name"] = name
+        self._templates[row]["content"] = self.content_edit.toPlainText()
+        it = self.list_w.item(row)
+        if it is not None and it.text() != self._label_of(self._templates[row]):
+            it.setText(self._label_of(self._templates[row]))
+        self._save_timer.start()   # 400ms 防抖：连续输入只在停笔后写一次盘
+
+    # ---- 管理操作（结构类改动立即落盘） ----
+    def _on_new(self):
+        names = {t["name"] for t in self._templates}
+        base, k = "新模板", 2
+        name = base
+        while name in names:
+            name = f"{base}{k}"
+            k += 1
+        self._templates.append({"name": name, "content": f"# {name}\n\n"})
+        self._fill_list(len(self._templates) - 1)
+        self._save()
+        self.name_edit.setFocus()
+        self.name_edit.selectAll()
+
+    def _on_del(self):
+        row = self.list_w.currentRow()
+        if not (0 <= row < len(self._templates)):
+            return
+        del self._templates[row]
+        self._fill_list(min(row, len(self._templates) - 1))
+        self._save()
+
+    def _on_move(self, delta):
+        row = self.list_w.currentRow()
+        new_row = row + delta
+        if not (0 <= row < len(self._templates)) or not (0 <= new_row < len(self._templates)):
+            return
+        self._templates[row], self._templates[new_row] = \
+            self._templates[new_row], self._templates[row]
+        self._fill_list(new_row)
+        self._save()
+
+    def _on_restore(self):
+        """恢复内置模板：同名覆盖为原始内容，缺失的追加到末尾（自建模板不动）。"""
+        idx = dict((t["name"], k) for k, t in enumerate(self._templates))
+        added = 0
+        for b in BUILTIN_TEMPLATES:
+            ent = {"name": b["name"], "content": b["content"], "ic": b.get("ic", "")}
+            if b["name"] in idx:
+                self._templates[idx[b["name"]]] = ent
+            else:
+                self._templates.append(ent)
+                added += 1
+        self._fill_list(0)
+        self._save()
+        self._win.show_status("内置模板已恢复（%d 个%s）"
+                              % (len(BUILTIN_TEMPLATES), "，新增 %d 个" % added if added else ""))
+
+    def _save(self):
+        """写盘 + 下发编辑器（文本改动经防抖触发，结构改动直接调用）。"""
+        self._save_timer.stop()
+        items = [dict(t) for t in self._templates]
+        self._win.save_custom_templates(items)
+        saved = [dict(t) for t in getattr(self._win, "_custom_templates", []) or []]
+        if len(saved) != len(items):
+            # 归一化丢弃了无效项（空名 / 重名 / 空内容）—— 列表回读真实存盘结果
+            self._templates = saved
+            self._fill_list(min(self.list_w.currentRow(), len(saved) - 1))

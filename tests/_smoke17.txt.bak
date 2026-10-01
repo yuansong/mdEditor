@@ -6,38 +6,38 @@ PASS | no placeholder text in header | {'rows': 3, 'cols': 2, 'ph': '', 'focused
 PASS | cursor in cell r0c0 (contenteditable focused) | {'rows': 3, 'cols': 2, 'ph': '', 'focused': True, 'editable': 'plaintext-only', 'raw': '|  |  |'}
 PASS | table raw synced | {'rows': 3, 'cols': 2, 'ph': '', 'focused': True, 'editable': 'plaintext-only', 'raw': '|  |  |'}
 PASS | cell typing syncs markdown | | 姓名 |  |
-PASS | toolbar shown with cell-case buttons | ['向上插入行', '向下插入行', '删除行', '向左插入列', '向右插入列', '删除列', '拆分单元格（选择行 × 列）', '下移该行', '右移该列', '左对齐', '居中', '右对齐', '清空内容', '表格标注（上方 / 下方）']
-PASS | cell case: 合并单元格 hidden（v3.30.2 上下文过滤，单格不可合并） | ['向上插入行', '向下插入行', '删除行', '向左插入列', '向右插入列', '删除列', '拆分单元格（选择行 × 列）', '下移该行', '右移该列', '左对齐', '居中', '右对齐', '清空内容', '表格标注（上方 / 下方）']
-PASS | cell case: 删除行/删除列 enabled | ['向上插入行', '向下插入行', '删除行', '向左插入列', '向右插入列', '删除列', '拆分单元格（选择行 × 列）', '下移该行', '右移该列', '左对齐', '居中', '右对齐', '清空内容', '表格标注（上方 / 下方）']
-PASS | menu has 清空内容 / 表格标注 | ['向上插入行', '向下插入行', '删除行', '向左插入列', '向右插入列', '删除列', '拆分单元格（选择行 × 列）', '下移该行', '右移该列', '左对齐', '居中', '右对齐', '清空内容', '表格标注（上方 / 下方）']
-PASS | v3.22 T1 补回「向上插入行」按钮 | ['向上插入行', '向下插入行', '删除行', '向左插入列', '向右插入列', '删除列', '拆分单元格（选择行 × 列）', '下移该行', '右移该列', '左对齐', '居中', '右对齐', '清空内容', '表格标注（上方 / 下方）']
-PASS | v3.24 悬浮栏不再有「还原尺寸」（移入块菜单） | ['向上插入行', '向下插入行', '删除行', '向左插入列', '向右插入列', '删除列', '拆分单元格（选择行 × 列）', '下移该行', '右移该列', '左对齐', '居中', '右对齐', '清空内容', '表格标注（上方 / 下方）']
+PASS | toolbar shown with cell-case buttons | ['向上插入行', '向下插入行', '删除行', '向左插入列', '向右插入列', '删除列', '拆分单元格（选择行 × 列）', '下移该行', '右移该列', '左对齐', '居中', '右对齐', '清空内容']
+PASS | cell case: 合并单元格隐藏（v3.30.10 动态菜单，单格不可合并不显示） | ['向上插入行', '向下插入行', '删除行', '向左插入列', '向右插入列', '删除列', '拆分单元格（选择行 × 列）', '下移该行', '右移该列', '左对齐', '居中', '右对齐', '清空内容']
+PASS | cell case: 删除行/删除列 enabled | ['向上插入行', '向下插入行', '删除行', '向左插入列', '向右插入列', '删除列', '拆分单元格（选择行 × 列）', '下移该行', '右移该列', '左对齐', '居中', '右对齐', '清空内容']
+PASS | menu has 清空内容（v3.30.17：表格标注迁至悬浮工具条，右键菜单不再有） | ['向上插入行', '向下插入行', '删除行', '向左插入列', '向右插入列', '删除列', '拆分单元格（选择行 × 列）', '下移该行', '右移该列', '左对齐', '居中', '右对齐', '清空内容']
+PASS | v3.22 T1 补回「向上插入行」按钮 | ['向上插入行', '向下插入行', '删除行', '向左插入列', '向右插入列', '删除列', '拆分单元格（选择行 × 列）', '下移该行', '右移该列', '左对齐', '居中', '右对齐', '清空内容']
+PASS | v3.24 悬浮栏不再有「还原尺寸」（移入块菜单） | ['向上插入行', '向下插入行', '删除行', '向左插入列', '向右插入列', '删除列', '拆分单元格（选择行 × 列）', '下移该行', '右移该列', '左对齐', '居中', '右对齐', '清空内容']
 PASS | whole column: rowDown item stays (v3.29 菜单常驻) | shown
 PASS | whole column selected keeps colR | shown
 PASS | whole column selected: 删除列 enabled | shown
 PASS | delete whole column removes it | | b | c |
 PASS | whole row: colR item stays (v3.29 菜单常驻) | shown
 PASS | whole row selected keeps rowDown | shown
-PASS | dbg tblSel before row delete | {"idx":0,"r0":1,"c0":1,"r1":1,"c1":1,"ar":1,"ac":1}
-PASS | dbg tblSel after row delete | {"idx":0,"r0":1,"c0":1,"r1":1,"c1":1,"ar":1,"ac":1}
+PASS | dbg tblSel before row delete | {"idx":0,"r0":1,"c0":0,"r1":1,"c1":1,"ar":1,"ac":0}
+PASS | dbg tblSel after row delete | {"idx":0,"r0":1,"c0":0,"r1":1,"c1":1,"ar":1,"ac":0}
 PASS | delete whole row removes it | | b | c |
 | --- | --- |
 | 5 | 6 |
 | 8 | 9 |
 PASS | whole table: 删除行 enabled / 删除列 hidden（须保留 ≥1 列，v3.30.2 过滤） | shown dc_dis=none
-PASS | whole table diagonal trail: merge hidden（轨迹非矩形，v3.30.2 过滤） | none
+PASS | whole table diagonal drag: merge shown（v3.30.4 矩形语义，对角=整表矩形） | shown
 PASS | whole table rect select: merge shown（矩形选区可合并） | shown
 PASS | whole table delete removes block | 
 PASS | code block rendered with lang bar (default C preselected) | {'hasBar': True, 'lang': 'C', 'focused': False, 'editable': 'plaintext-only'}
 PASS | cursor waits in lang pop (v3.17) | {'hasBar': True, 'lang': 'C', 'focused': False, 'editable': 'plaintext-only'}
-PASS | code typing syncs markdown | ```C
+PASS | code typing syncs markdown | ```c
 print(1)
 ```
 
 
 PASS | lang picker opens | open
 PASS | lang list filters by input | Python
-PASS | language set to Python | {'btn': 'Python', 'md': '```Python'}
+PASS | language set to Python（源码小写化） | {'btn': 'Python', 'md': '```python'}
 PASS | image insert → 请求 Qt 统一面板（__wantPick） | pick
 PASS | url image inserted as markdown | ![图片](https://example.com/a.png)
 

@@ -1,0 +1,19 @@
+NOTE ========== T1：格式栏「删除整个块」==========
+NOTE   T1 格式栏={"show": true, "btns": "删除整个块", "cnt": "已选 5 字"}
+PASS T1 点格式栏删除 → 整块删除 + toast（可撤销） raw=["段落乙"] toast=["已删除块，Ctrl+Z 可撤销"]
+NOTE ========== T2：空代码块 ==========
+PASS T2 空代码块可直接输入并回写 raw=["```C\nint x=1;\n```"]
+NOTE ========== T3：代码块内触发加粗 ==========
+NOTE   T3 命中加粗 QAction 数=1
+NOTE   T3 before="```python\nprint('hi')\n```\n段落乙"
+NOTE   T3 after ="```python\nprint('hi')\n```\n段落乙"
+PASS T3 代码块内加粗：代码内容不被插入 ** 标记（安全） diff="```python\nprint('hi')\n```\n段落乙"
+NOTE ========== T4：末尾块 Ctrl+Enter ==========
+NOTE   T4-1 {"isCode": true, "ae": "CODE", "n": 2}
+NOTE   T4-2 {"isCode": true, "ae": "CODE", "n": 2}
+PASS T4 末尾块 Ctrl+Enter 观察（见 NOTE） 见 NOTE
+NOTE ========== T5：代码块内粘贴多行 ==========
+NOTE   T5 raw=["```python\nprint('hi')\na=1\nb=2\n```", "段落乙"]
+PASS T5 代码块内粘贴（记录行为） 见 NOTE
+
+===== 汇总：5 断言，0 FAIL =====

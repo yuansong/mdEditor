@@ -1,0 +1,13 @@
+[A] typeEnd return="asfdsafdafdXY" raw="- asfdsafdafdXY"
+PASS | A1 列表项末尾打字落盘正确
+[B] 叠加后 raw="- **==asfdsafdafd==**" blkHTML="<ul><li contenteditable=\"plaintext-only\" spellcheck=\"false\" data-line=\"0\"><strong><mark>asfdsafdafd</mark></strong></li></ul>"
+[B] 打字后 return="asfdsafdafdXY" raw="- **==asfdsafdafdXY==**" isRaw=False
+[B] 打字后 blkHTML="<ul><li contenteditable=\"plaintext-only\" spellcheck=\"false\" data-line=\"0\"><strong><mark>asfdsafdafdXY</mark></strong></li></ul>"
+PASS | B1 叠加格式后打字不产生字面标记/畸形标记
+PASS | B1b 叠加格式后打字：标记仍成对且文字完整
+[C] 打字后再点粗体 raw="- ==asfdsafdafdXY==" blkHTML="<ul><li contenteditable=\"plaintext-only\" spellcheck=\"false\" data-line=\"0\"><mark>asfdsafdafdXY</mark></li></ul>"
+PASS | C1 打字后再点粗体不产生畸形标记
+[D] 输入后="- asfdsafdafd" → 粗体="- **asfdsafdafd**" → 高亮="- **==asfdsafdafd==**"
+[D] blkHTML="<ul><li contenteditable=\"plaintext-only\" spellcheck=\"false\" data-line=\"0\"><strong><mark>asfdsafdafd</mark></strong></li></ul>" isRaw=False
+PASS | D1 用户场景复现：raw 为 **==asfdsafdafd==** 形态
+PASS | D2 该形态在渲染层正常（非源码态、无字面标记外露）

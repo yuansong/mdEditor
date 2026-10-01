@@ -83,11 +83,10 @@ CLICK_CELL = ("(function(){var td=document.querySelector('#editor .b-table td');
 js(CLICK_CELL)
 wait(200)
 d = parse(js("(function(){var ob=document.getElementById('objbar');"
-             "var btns=[].map.call(ob.querySelectorAll('button'),function(x){return x.textContent});"
-             "return JSON.stringify({show:ob.classList.contains('show'),btns:btns})})()"))
+             "return JSON.stringify({show:ob.classList.contains('show')})})()"))
 log("1 objbar = %s" % json.dumps(d))
-check("点击选中表格 → 悬浮工具条出现且含「标注」",
-      d.get("show") is True and "标注" in (d.get("btns") or []), json.dumps(d))
+check("点击选中表格 → 不再浮现 objbar（v3.37 TBL-F1，标注收进块菜单/命令面板）",
+      d.get("show") is False, json.dumps(d))
 
 # 右键菜单不再含「表格标注」
 js("(function(){var td=document.querySelector('#editor .b-table td');"
@@ -105,16 +104,15 @@ check("右键菜单已无「表格标注」项",
 # 点「标注」→ 弹层打开（标题=表格标注）→ 上方标注落盘
 js(CLICK_CELL)
 wait(300)
-d = parse(js("(function(){var ob=document.getElementById('objbar');"
-             "var b=[].filter.call(ob.querySelectorAll('button'),function(x){return x.textContent==='标注'})[0];"
-             "b.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));"
-             "b.dispatchEvent(new MouseEvent('click',{bubbles:true}));"
+js("window.__rzPick(0)")
+wait(300)
+d = parse(js("(function(){var r=window.__blkCmd('cap');"
              "var cp=document.getElementById('cappop');"
-             "return JSON.stringify({show:cp.classList.contains('show'),"
+             "return JSON.stringify({ret:r,show:cp.classList.contains('show'),"
              "title:(document.getElementById('cappop-title')||{}).textContent||''})})()"))
 wait(200)
-check("点「标注」→ 弹层打开且标题=表格标注",
-      d.get("show") is True and d.get("title") == "表格标注", json.dumps(d))
+check("标注入口（v3.37 __blkCmd）→ 弹层打开且标题=表格标注",
+      d.get("ret") == "OK" and d.get("show") is True and d.get("title") == "表格标注", json.dumps(d))
 js("(function(){document.getElementById('cap-input').value='表A';"
    "var rs=document.querySelectorAll('#cappop input[name=cappos]');rs[1].checked=true;"
    "document.getElementById('cap-ok').click();return 'x'})()")
@@ -122,11 +120,9 @@ wait(500)
 r = raw()[0]
 check("上方标注落盘（md-tblcap top）", '<caption class="md-tblcap top">表A</caption>' in r, r[:160])
 # 下方切换仍可用
-js(CLICK_CELL)
+js("window.__rzPick(0)")
 wait(300)
-js("(function(){var ob=document.getElementById('objbar');"
-   "var b=[].filter.call(ob.querySelectorAll('button'),function(x){return x.textContent==='标注'})[0];"
-   "b.click();return 'x'})()")
+js("window.__blkCmd('cap')")
 wait(300)
 js("(function(){document.getElementById('cap-input').value='表A';"
    "var rs=document.querySelectorAll('#cappop input[name=cappos]');rs[0].checked=true;"

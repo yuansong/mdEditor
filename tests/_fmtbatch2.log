@@ -1,0 +1,84 @@
+===== _m106 =====
+-- run --
+[1364:29428:1001/003506.077:ERROR:../../../qtwebengine/src/3rdparty/chromium/gpu/ipc/service/gpu_channel_manager.cc:931] ContextResult::kFatalFailure: Failed to create shared context for virtualization.
+PASS=32 FAIL=3
+FAIL | F2[列表/下→高→粗→斜] raw 无畸形标记对 | mark→raw=- <u>==asfdsafdafd==</u> ; bold→raw=- <u>==**asfdsafdafd**==</u> ; italic→raw=- <u>==***asfdsafdafd***==</u>
+FAIL | F2[段落/下→高→粗→斜] raw 无畸形标记对 | mark→raw=<u>==asfdsafdafd==</u> ; bold→raw=<u>==**asfdsafdafd**==</u> ; italic→raw=<u>==***asfdsafdafd***==</u>
+FAIL | F8 T× 一次清除三重叠加回裸文本 | {"before": "- **==<u>asfdsafdafd</u>==**", "after": "- **==asfdsafdafd==**"}
+-- res --
+---------- F9 单元格内下划线 ----------
+PASS | F9a 单元格内下划线生效（<u> 落进该格）
+PASS | F9b 单元格内下划线二次点击取消（toggle）
+PASS | F9c 单元格内 T× 连标签一并清除===== _m104 =====
+-- run --
+[19308:20532:0930/235230.472:ERROR:../../../qtwebengine/src/3rdparty/chromium/gpu/ipc/service/gpu_channel_manager.cc:920] Failed to create GLES3 context, fallback to GLES2.
+[19308:20532:0930/235230.472:ERROR:../../../qtwebengine/src/3rdparty/chromium/gpu/ipc/service/gpu_channel_manager.cc:931] ContextResult::kFatalFailure: Failed to create shared context for virtualization.
+[19308:20532:0930/235230.473:ERROR:../../../qtwebengine/src/3rdparty/chromium/gpu/ipc/service/gpu_channel_manager.cc:920] Failed to create GLES3 context, fallback to GLES2.
+[19308:20532:0930/235230.473:ERROR:../../../qtwebengine/src/3rdparty/chromium/gpu/ipc/service/gpu_channel_manager.cc:931] ContextResult::kFatalFailure: Failed to create shared context for virtualization.
+DONE
+-- res --
+PASS | N12 列表 留白点击仍保持渲染态 | {"isRaw": false}
+PASS | N12 引用 留白点击仍保持渲染态 | {"isRaw": false}
+PASS | N12 定义列表 留白点击仍保持渲染态 | {"isRaw": false}
+RESULT PASS=22 FAIL=4===== _m105 =====
+-- run --
+-- res --
+            isRaw=False text="术语asfdsafdafd"
+            hostHTML=""
+PASS | E1[定义列表] 叠加后无字面标记外露
+PASS | F1 T× 一次清除叠加格式回到裸文本===== _m105c =====
+-- run --
+-- res --
+[D] 输入后="- asfdsafdafd" → 粗体="- **asfdsafdafd**" → 高亮="- **==asfdsafdafd==**"
+[D] blkHTML="<ul><li contenteditable=\"plaintext-only\" spellcheck=\"false\" data-line=\"0\"><strong><mark>asfdsafdafd</mark></strong></li></ul>" isRaw=False
+PASS | D1 用户场景复现：raw 为 **==asfdsafdafd==** 形态
+PASS | D2 该形态在渲染层正常（非源码态、无字面标记外露）===== _m71 =====
+-- run --
+-- res --
+PASS S5 单行高亮正确 ["- ==项目内容=="]
+
+===== RESULT: 12/13 passed, 1 failed =====
+DONE===== _m89 =====
+-- run --
+DONE TOTAL=26 FAIL=2
+-- res --
+NOTE ========== G8 #20 ==========
+PASS G8 术语定义插入：光标进 dd + 空定义 data-ph ["术语\n: "] | {"ddPh": "\u5b9a\u4e49\u5185\u5bb9", "focusDD": true}
+NOTE TOTAL=26 FAIL=2
+DONE TOTAL=26 FAIL=2===== _m96 =====
+-- run --
+[27968:28864:1001/002348.267:ERROR:../../../qtwebengine/src/3rdparty/chromium/gpu/ipc/service/gpu_channel_manager.cc:920] Failed to create GLES3 context, fallback to GLES2.
+[27968:28864:1001/002348.267:ERROR:../../../qtwebengine/src/3rdparty/chromium/gpu/ipc/service/gpu_channel_manager.cc:931] ContextResult::kFatalFailure: Failed to create shared context for virtualization.
+[27968:28864:1001/002348.267:ERROR:../../../qtwebengine/src/3rdparty/chromium/gpu/ipc/service/gpu_channel_manager.cc:920] Failed to create GLES3 context, fallback to GLES2.
+[27968:28864:1001/002348.267:ERROR:../../../qtwebengine/src/3rdparty/chromium/gpu/ipc/service/gpu_channel_manager.cc:931] ContextResult::kFatalFailure: Failed to create shared context for virtualization.
+DONE
+-- res --
+FAIL | S6 点击富标题转源码态(前置确认) | {"isRaw": false, "hasH": true, "aeInH": true, "txt": "已加粗和普通"}
+PASS | S6 源码态clearfmt raw | '# 已加粗和普通'
+PASS | S6 源码态clearfmt 回渲染态 | {"isRaw": false, "hasH": true, "aeInH": true, "txt": "已加粗和普通"}
+RESULT PASS=11 FAIL=1===== _m86_bi =====
+-- run --
+-- res --
+===== _m52 =====
+-- run --
+[23704:30648:1001/003119.823:ERROR:../../../qtwebengine/src/3rdparty/chromium/gpu/ipc/service/gpu_channel_manager.cc:920] Failed to create GLES3 context, fallback to GLES2.
+[23704:30648:1001/003119.823:ERROR:../../../qtwebengine/src/3rdparty/chromium/gpu/ipc/service/gpu_channel_manager.cc:931] ContextResult::kFatalFailure: Failed to create shared context for virtualization.
+[23704:30648:1001/003119.823:ERROR:../../../qtwebengine/src/3rdparty/chromium/gpu/ipc/service/gpu_channel_manager.cc:920] Failed to create GLES3 context, fallback to GLES2.
+[23704:30648:1001/003119.823:ERROR:../../../qtwebengine/src/3rdparty/chromium/gpu/ipc/service/gpu_channel_manager.cc:931] ContextResult::kFatalFailure: Failed to create shared context for virtualization.
+done
+-- res --
+[PASS] S8 无 SVG（未静默成功） 
+[PASS] S8 合法图表正常渲染不受影响 {'hasSvg': True, 'src': False}
+SUMMARY PASS=30 FAIL=3
+DONE===== _m53 =====
+-- run --
+[21796:27312:1001/003147.898:ERROR:../../../qtwebengine/src/3rdparty/chromium/gpu/ipc/service/gpu_channel_manager.cc:920] Failed to create GLES3 context, fallback to GLES2.
+[21796:27312:1001/003147.898:ERROR:../../../qtwebengine/src/3rdparty/chromium/gpu/ipc/service/gpu_channel_manager.cc:931] ContextResult::kFatalFailure: Failed to create shared context for virtualization.
+[21796:27312:1001/003147.898:ERROR:../../../qtwebengine/src/3rdparty/chromium/gpu/ipc/service/gpu_channel_manager.cc:920] Failed to create GLES3 context, fallback to GLES2.
+[21796:27312:1001/003147.898:ERROR:../../../qtwebengine/src/3rdparty/chromium/gpu/ipc/service/gpu_channel_manager.cc:931] ContextResult::kFatalFailure: Failed to create shared context for virtualization.
+done
+-- res --
+| A2 | B2 | C2 | D2 |
+| A3 | B3 
+SUMMARY PASS=39 FAIL=0
+DONEALLDONE

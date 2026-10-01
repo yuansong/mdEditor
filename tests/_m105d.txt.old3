@@ -1,0 +1,95 @@
+===== S1 粗→斜→高→删→下 / 列表 =====
+  [0  None     ] raw="- asfdsafdafd"                                txt="asfdsafdafd"
+  [1  bold     ] raw="- **asfdsafdafd**"                            txt="asfdsafdafd"
+  [2  italic   ] raw="- ***asfdsafdafd***"                          txt="asfdsafdafd"
+  [3  mark     ] raw="- ***==asfdsafdafd==***"                      txt="asfdsafdafd"
+  [4  strike   ] raw="- ***==~~asfdsafdafd~~==***"                  txt="asfdsafdafd"
+  [5  underline] raw="- ***==~~<u>asfdsafdafd</u>~~==***"           txt="asfdsafdafd"
+
+===== S1 粗→斜→高→删→下 / 段落 =====
+  [0  None     ] raw="asfdsafdafd"                                  txt="asfdsafdafd"
+  [1  bold     ] raw="**asfdsafdafd**"                              txt="asfdsafdafd"
+  [2  italic   ] raw="***asfdsafdafd***"                            txt="asfdsafdafd"
+  [3  mark     ] raw="***==asfdsafdafd==***"                        txt="asfdsafdafd"
+  [4  strike   ] raw="***==~~asfdsafdafd~~==***"                    txt="asfdsafdafd"
+  [5  underline] raw="***==~~<u>asfdsafdafd</u>~~==***"             txt="asfdsafdafd"
+
+===== S2 下→高→粗→斜 / 列表 =====
+  [0  None     ] raw="- asfdsafdafd"                                txt="asfdsafdafd"
+  [1  underline] raw="- <u>asfdsafdafd</u>"                         txt="asfdsafdafd"
+  [2  mark     ] raw="- <u>==asfdsafdafd==</u>"                     txt="asfdsafdafd"
+  [3  bold     ] raw="- <u>==**asfdsafdafd**==</u>"                 txt="asfdsafdafd"
+  [4  italic   ] raw="- <u>==***asfdsafdafd***==</u>"               txt="asfdsafdafd"
+
+===== S2 下→高→粗→斜 / 段落 =====
+  [0  None     ] raw="asfdsafdafd"                                  txt="asfdsafdafd"
+  [1  underline] raw="<u>asfdsafdafd</u>"                           txt="asfdsafdafd"
+  [2  mark     ] raw="<u>==asfdsafdafd==</u>"                       txt="asfdsafdafd"
+  [3  bold     ] raw="<u>==**asfdsafdafd**==</u>"                   txt="asfdsafdafd"
+  [4  italic   ] raw="<u>==***asfdsafdafd***==</u>"                 txt="asfdsafdafd"
+
+===== S3 粗→高→下→高→粗 / 列表 =====
+  [0  None     ] raw="- asfdsafdafd"                                txt="asfdsafdafd"
+  [1  bold     ] raw="- **asfdsafdafd**"                            txt="asfdsafdafd"
+  [2  mark     ] raw="- **==asfdsafdafd==**"                        txt="asfdsafdafd"
+  [3  underline] raw="- **==<u>asfdsafdafd</u>==**"                 txt="asfdsafdafd"
+  [4  mark     ] raw="- **<u>asfdsafdafd</u>**"                     txt="asfdsafdafd"
+  [5  bold     ] raw="- <u>asfdsafdafd</u>"                         txt="asfdsafdafd"
+
+===== S3 粗→高→下→高→粗 / 段落 =====
+  [0  None     ] raw="asfdsafdafd"                                  txt="asfdsafdafd"
+  [1  bold     ] raw="**asfdsafdafd**"                              txt="asfdsafdafd"
+  [2  mark     ] raw="**==asfdsafdafd==**"                          txt="asfdsafdafd"
+  [3  underline] raw="**==<u>asfdsafdafd</u>==**"                   txt="asfdsafdafd"
+  [4  mark     ] raw="**<u>asfdsafdafd</u>**"                       txt="asfdsafdafd"
+  [5  bold     ] raw="<u>asfdsafdafd</u>"                           txt="asfdsafdafd"
+
+===== S4 粗→下→粗→下 / 列表 =====
+  [0  None     ] raw="- asfdsafdafd"                                txt="asfdsafdafd"
+  [1  bold     ] raw="- **asfdsafdafd**"                            txt="asfdsafdafd"
+  [2  underline] raw="- **<u>asfdsafdafd</u>**"                     txt="asfdsafdafd"
+  [3  bold     ] raw="- <u>asfdsafdafd</u>"                         txt="asfdsafdafd"
+  [4  underline] raw="- asfdsafdafd"                                txt="asfdsafdafd"
+
+===== S4 粗→下→粗→下 / 段落 =====
+  [0  None     ] raw="asfdsafdafd"                                  txt="asfdsafdafd"
+  [1  bold     ] raw="**asfdsafdafd**"                              txt="asfdsafdafd"
+  [2  underline] raw="**<u>asfdsafdafd</u>**"                       txt="asfdsafdafd"
+  [3  bold     ] raw="<u>asfdsafdafd</u>"                           txt="asfdsafdafd"
+  [4  underline] raw="asfdsafdafd"                                  txt="asfdsafdafd"
+
+===== S5 高→粗→高→粗→高→粗 / 列表 =====
+  [0  None     ] raw="- asfdsafdafd"                                txt="asfdsafdafd"
+  [1  mark     ] raw="- ==asfdsafdafd=="                            txt="asfdsafdafd"
+  [2  bold     ] raw="- ==**asfdsafdafd**=="                        txt="asfdsafdafd"
+  [3  mark     ] raw="- **asfdsafdafd**"                            txt="asfdsafdafd"
+  [4  bold     ] raw="- asfdsafdafd"                                txt="asfdsafdafd"
+  [5  mark     ] raw="- ==asfdsafdafd=="                            txt="asfdsafdafd"
+  [6  bold     ] raw="- ==**asfdsafdafd**=="                        txt="asfdsafdafd"
+
+===== S5 高→粗→高→粗→高→粗 / 段落 =====
+  [0  None     ] raw="asfdsafdafd"                                  txt="asfdsafdafd"
+  [1  mark     ] raw="==asfdsafdafd=="                              txt="asfdsafdafd"
+  [2  bold     ] raw="==**asfdsafdafd**=="                          txt="asfdsafdafd"
+  [3  mark     ] raw="**asfdsafdafd**"                              txt="asfdsafdafd"
+  [4  bold     ] raw="asfdsafdafd"                                  txt="asfdsafdafd"
+  [5  mark     ] raw="==asfdsafdafd=="                              txt="asfdsafdafd"
+  [6  bold     ] raw="==**asfdsafdafd**=="                          txt="asfdsafdafd"
+
+===== S6 粗→高→斜→删→下→粗 / 列表 =====
+  [0  None     ] raw="- asfdsafdafd"                                txt="asfdsafdafd"
+  [1  bold     ] raw="- **asfdsafdafd**"                            txt="asfdsafdafd"
+  [2  mark     ] raw="- **==asfdsafdafd==**"                        txt="asfdsafdafd"
+  [3  italic   ] raw="- **==*asfdsafdafd*==**"                      txt="asfdsafdafd"
+  [4  strike   ] raw="- **==*~~asfdsafdafd~~*==**"                  txt="asfdsafdafd"
+  [5  underline] raw="- **==*~~<u>asfdsafdafd</u>~~*==**"           txt="asfdsafdafd"
+  [6  bold     ] raw="- ==*~~<u>asfdsafdafd</u>~~*=="               txt="asfdsafdafd"
+
+===== S6 粗→高→斜→删→下→粗 / 段落 =====
+  [0  None     ] raw="asfdsafdafd"                                  txt="asfdsafdafd"
+  [1  bold     ] raw="**asfdsafdafd**"                              txt="asfdsafdafd"
+  [2  mark     ] raw="**==asfdsafdafd==**"                          txt="asfdsafdafd"
+  [3  italic   ] raw="**==*asfdsafdafd*==**"                        txt="asfdsafdafd"
+  [4  strike   ] raw="**==*~~asfdsafdafd~~*==**"                    txt="asfdsafdafd"
+  [5  underline] raw="**==*~~<u>asfdsafdafd</u>~~*==**"             txt="asfdsafdafd"
+  [6  bold     ] raw="==*~~<u>asfdsafdafd</u>~~*=="                 txt="asfdsafdafd"

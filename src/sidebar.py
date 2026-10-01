@@ -9,7 +9,7 @@ import re
 import tempfile
 
 from PySide6.QtCore import QEvent, Qt, QPointF
-from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QPolygonF
+from PySide6.QtGui import QBrush, QColor, QPainter, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QApplication, QAbstractItemView, QButtonGroup, QCheckBox, QComboBox,
     QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
@@ -345,6 +345,9 @@ class Sidebar(QWidget):
         self.outline.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.outline.setDragDropMode(QAbstractItemView.InternalMove)
         self.outline.itemClicked.connect(self._on_outline_clicked)
+        # v3.32.2（OUT-2）：大纲右键 —— 展开 / 折叠子节点（递归全部嵌套子级）
+        self.outline.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.outline.customContextMenuRequested.connect(self._on_outline_menu)
 
         # v3.31.2：树形「目录」页已移除（与文件页重合，管理操作迁文件页右键）
         # 全局搜索面板（v3.24 起移入「查找」对话框的「全局搜索」页签）：
@@ -362,39 +365,53 @@ class Sidebar(QWidget):
 
     # ---- v3.26：大纲树展开/收拢箭头 ----
     def set_tree_arrows(self, theme_id="light"):
-        """用运行时绘制的加粗三角形替换 QTreeWidget 默认的细小分支箭头。
+        """用运行时绘制的 chevron 折线箭头替换 QTreeWidget 默认的细小分支箭头。
 
-        箭头 16×16 px（约为系统默认的 2 倍），颜色取当前主题文字色，
-        换肤时由 mainwindow.apply_theme 再次调用。"""
+        v3.31.3（#21 美化）：实心三角 → 细线 chevron（› / ˅，2.2px 圆头折线，
+        VS Code 风格），16×16 px；颜色取主题次级文字色，选中行箭头换主题强调色
+        （:selected 变体）。换肤时由 mainwindow.apply_theme 再次调用。"""
         from styles import palette
         try:
-            col = QColor(palette(theme_id)["text_muted"])
+            pal = palette(theme_id)
+            col = QColor(pal["text_muted"])
+            col_sel = QColor(pal.get("accent") or pal.get("text") or "#3b82f6")
         except Exception:
             col = QColor("#6b7280")
+            col_sel = QColor("#3b82f6")
         cache = os.path.join(tempfile.gettempdir(), "mdEditor_arrows")
         os.makedirs(cache, exist_ok=True)
-        shapes = (
-            # closed：右向实心三角（收拢状态）；open：下向实心三角（展开状态）
-            ("closed", ((4, 2), (13, 8), (4, 14))),
-            ("open",   ((2, 4), (14, 4), (8, 13))),
-        )
-        qss = []
-        for name, pts in shapes:
+
+        def _draw(name, kind, color):
+            """kind: closed=右向 ›（收拢）/ open=下向 ˅（展开）。
+            细线 chevron：圆头折线，居中绘制在 16×16 画布。"""
             pm = QPixmap(16, 16)
             pm.fill(Qt.transparent)
             p = QPainter(pm)
             p.setRenderHint(QPainter.Antialiasing)
-            p.setPen(Qt.NoPen)
-            p.setBrush(col)
-            p.drawPolygon(QPolygonF([QPointF(x, y) for x, y in pts]))
+            pen = QPen(color, 2.2)
+            pen.setCapStyle(Qt.RoundCap)
+            pen.setJoinStyle(Qt.RoundJoin)
+            p.setPen(pen)
+            p.setBrush(Qt.NoBrush)
+            if kind == "closed":
+                pts = [QPointF(6.0, 3.5), QPointF(11.0, 8.0), QPointF(6.0, 12.5)]
+            else:
+                pts = [QPointF(3.5, 6.0), QPointF(8.0, 11.0), QPointF(12.5, 6.0)]
+            p.drawPolyline(QPolygonF(pts))
             p.end()
             fp = os.path.join(cache, f"{name}_{theme_id}.png")
             pm.save(fp, "PNG")
-            url = fp.replace("\\", "/")
+            return fp
+
+        qss = []
+        for name, kind in (("closed", "closed"), ("open", "open")):
             sel = ":has-children:closed" if name == "closed" else ":open"
-            qss.append(
-                f"QTreeWidget::branch{sel} {{ image: url({url}); }}"
-            )
+            for variant, color in (("", col), (":selected", col_sel)):
+                fp = _draw(f"{name}{variant.replace(':', '_')}", kind, color)
+                url = fp.replace("\\", "/")
+                qss.append(
+                    f"QTreeWidget::branch{sel}{variant} {{ image: url({url}); }}"
+                )
         self.outline.setStyleSheet("\n".join(qss))
 
     # ---- 行为 ----
@@ -418,7 +435,7 @@ class Sidebar(QWidget):
 
     def _on_file_menu(self, pos):
         """v3.31.2：文件列表右键菜单（v3.25 两项 + v3.31.2 自「目录」页迁入的管理操作）。
-        文件：打开 / 资源管理器 / 外部打开 / 重命名 / 删除（回收站）；
+        文件：打开 / 资源管理器 / 外部打开 / 设为模板（v3.35）/ 重命名 / 删除（回收站）；
         文件夹：进入 / 资源管理器 / 重命名 / 删除（回收站）；
         空白处：新建 Markdown 文件 / 新建文件夹（当前所在文件夹）。"""
         item = self.file_list.itemAt(pos)
@@ -446,6 +463,8 @@ class Sidebar(QWidget):
         menu.addAction("在资源管理器中显示", lambda: self._win.show_in_explorer(p))
         if kind == "file":
             menu.addAction("用外部程序打开", lambda: self._win.open_external(p))
+            # v3.35（TPL-D）：把该文档收编为自定义模板（追加到 / 菜单与悬浮模板菜单）
+            menu.addAction("设为模板…", lambda: self._win.make_template_from_file(p))
         menu.addSeparator()
         menu.addAction("重命名", lambda: self._file_rename(p))
         menu.addAction("删除（移入回收站）", lambda: self._file_delete(p))
@@ -547,6 +566,31 @@ class Sidebar(QWidget):
 
     def _on_outline_clicked(self, item, _col=0):
         self._win.jump_to_heading(item.data(0, Qt.UserRole))
+
+    # ================= v3.32.2（OUT-2）大纲右键：展开 / 折叠子节点 =================
+    def _on_outline_menu(self, pos):
+        """大纲节点右键菜单：展开 / 折叠子节点（递归作用于全部嵌套子级，
+        不影响其他分支）；无子节点时不弹菜单。"""
+        item = self.outline.itemAt(pos)
+        if item is None or item.childCount() == 0:
+            return
+        self.outline.setCurrentItem(item)
+        menu = QMenu(self)
+        act_exp = menu.addAction("展开子节点")
+        act_col = menu.addAction("折叠子节点")
+        act = menu.exec(self.outline.viewport().mapToGlobal(pos))
+        if act is act_exp:
+            self._set_children_expanded(item, True)
+        elif act is act_col:
+            self._set_children_expanded(item, False)
+
+    def _set_children_expanded(self, item, expanded):
+        """递归设置 item 全部嵌套子级的展开态（不改动 item 自身）。"""
+        for i in range(item.childCount()):
+            ch = item.child(i)
+            ch.setExpanded(expanded)
+            if ch.childCount():
+                self._set_children_expanded(ch, expanded)
 
     def select_tab(self, tab):
         """切换侧栏标签页（文件 / 大纲）。"""

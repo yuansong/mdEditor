@@ -64,13 +64,20 @@ if '"FAIL"' in out:
     fail.append("probe25-fail")
 
 # 探针脚本名约定为 _<tag>.py；少数探针带后缀，在此显式登记
-PROBE_SCRIPT = {"m84": "_m84_toggle.py", "m85": "_m85_toggle2.py"}
+PROBE_SCRIPT = {"m84": "_m84_toggle.py", "m85": "_m85_toggle2.py",
+                "m86": "_m86_bi.py", "m87": "_m87_hdr.py", "m88": "_m88_hdr.py"}
+# 结果文件名 ≠ _<tag>.txt 的探针（_m86_bi.py 自带 _m86_bi.txt，避免与 _m86.py 撞名）
+RESULT_FILE = {"m86": "_m86_bi.txt"}
 for m in ("m29a", "m29b", "m30a", "m30b", "m31", "m33", "m34", "m35", "m39",
-          "m83", "m84", "m85"):
+          "m83", "m84", "m85", "m86", "m87", "m88",
+          # v3.37 起纳入：m104 = 图标块交互收口（代码块顶栏 / 图表留白 / 图表自然尺寸 / 七模板）
+          #              m106 = FMT-11/12/13 行内格式叠加回归（字面外露 / LIFO / T× / 单元格下划线）
+          #              m107 = DOCGEN-1 换文档时旧渲染态失焦回写脏写（含正常回写不误伤）
+          "m104", "m106", "m107"):
     subprocess.run([VENV, "_runner.py", PROBE_SCRIPT.get(m, "_%s.py" % m)], cwd=HERE,
                    capture_output=True, text=True)
     time.sleep(5)
-    rc_txt = os.path.join(HERE, "_%s.txt" % m)
+    rc_txt = os.path.join(HERE, RESULT_FILE.get(m, "_%s.txt" % m))
     pass_n, fail_n = count_result(rc_txt)
     if fail_n > 0:
         fail.append("%s-fail(%d)" % (m, fail_n))

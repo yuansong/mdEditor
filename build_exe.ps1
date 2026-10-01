@@ -1,4 +1,4 @@
-﻿# mdEditor 一键打包脚本（v3.31.2 行内格式卫生批 FMT-1/2/3 + 9 项优化批次 → dist55）
+﻿# mdEditor 一键打包脚本（v3.38 批次：格式渲染/toggle 双修 + 单元格列表占位 + 表格三浮层职责重构 → dist62）
 $ErrorActionPreference = "Stop"
 $pyi = "C:\Users\Administrator\.workbuddy\binaries\python\envs\default\Scripts\pyinstaller.exe"
 $root = $PSScriptRoot
@@ -9,7 +9,7 @@ Set-Location $root
 # （首行 INFO 即中断）→ 调用 PyInstaller 期间必须临时 EAP=Continue
 $ErrorActionPreference = "Continue"
 & $pyi --noconfirm --windowed --name mdEditor `
-    --distpath dist55 --workpath build55 --specpath spec55 `
+    --distpath dist62 --workpath build62 --specpath spec62 `
     --icon "$root\src\mdeditor.ico" `
     --add-data "$root\src\editor.html;." `
     --add-data "$root\src\mdeditor.ico;." `
@@ -19,6 +19,3 @@ $ErrorActionPreference = "Continue"
     --add-data "C:\Users\Administrator\.workbuddy\binaries\python\envs\default\Lib\site-packages\PySide6\translations\qtbase_zh_CN.qm;translations" `
     src\main.py *>&1 | Out-String | Out-File "$root\_build_log.txt" -Encoding utf8
 Write-Output "exit=$LASTEXITCODE"
-
-
-

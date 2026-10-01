@@ -1,0 +1,33 @@
+NOTE ========== R1 引用块甄别 ==========
+NOTE   R1 sel={"hit": 0, "err": "no-el"}
+NOTE   R1 fb={"show": false}
+NOTE   R1b blockquote 整体 sel={"hit": 1, "sel": "提示：有", "txt": "提示：有路径的文档会自动保存；未命名文档的内容会自动暂存为草稿，\n下次启动时可恢复。拖拽 .md 文件到窗口即可打开。"}
+NOTE   R1b fb={"show": true, "btns": ["粗体", "斜体", "下划线", "删除线", "高亮", "行内代码", "链接", "清除格式"], "tail": "已选 4 字"}
+PASS R1 引用块浮条全套 ['粗体', '斜体', '下划线', '删除线', '高亮', '行内代码', '链接', '清除格式']
+NOTE ========== R2 代码块甄别 ==========
+NOTE   R2 sel={"hit": 1, "sel": "", "txt": "print('hello')"}
+NOTE   R2 fb={"show": false}
+NOTE   R2b .codeblock 整体 sel={"hit": 1, "sel": "pytho", "txt": "python风格1\n2print('hello')"}
+NOTE   R2b fb={"show": true, "btns": ["删除整个块"], "tail": "已选 5 字"}
+PASS R2 代码块浮条仅删除 ['删除整个块']
+PASS R2 delblk 生效 [""]
+NOTE ========== R3 单元格组复验（整块 raw 取数） ==========
+NOTE R3a toggle 取消（已加粗再点粗体）
+PASS R3a 取消加粗回裸文字 blk="| 表头 |\n| --- |\n| 甲乙 |"
+NOTE R3b 管道码内加粗（FMT-1 单元格路径守卫缺失？）
+NOTE   R3b sel={"hit": 1, "sel": "码甲", "txt": "前码甲后"}
+NOTE   R3b blk="| 表头 |\n| --- |\n| 前`码甲`后 |"
+PASS R3b 码内加粗拒绝（与正文 FMT-1 一致） 码内包 **："| 表头 |\n| --- |\n| 前`码甲`后 |"
+NOTE R3c 管道单元格下划线（FMT-12）
+PASS R3c 下划线走 <u> blk="| 表头 |\n| --- |\n| <u>甲乙</u> |"
+NOTE R3d 单元格清除格式
+FAIL R3d 清除后无标记 blk="| 表头 |\n| --- |\n| 甲和*乙* |"
+NOTE R3e 单元格链接
+PASS R3e 链接写入 blk="| 表头 |\n| --- |\n| [甲乙](https://ex.com/doc) |"
+NOTE R3f HTML 表重复文字首现错位（B1 缺陷的 HTML 表对照）
+NOTE   R3f sel={"hit": 1, "sel": "甲", "txt": "甲乙甲乙"}
+NOTE   R3f md="<table class=\"md-tbl\">\n  <tbody>\n    <tr><th>名称</th></tr>\n    <tr><td>甲乙<strong>甲</strong>乙</td></tr>\n  </tbody>\n</table>"
+PASS R3f HTML 单元格第二处加粗精确 "<table class=\"md-tbl\">\n  <tbody>\n    <tr><th>名称</th></tr>\n    <tr><td>甲乙<strong>甲</strong>乙</td></tr>\n  </tbody>\n</table>"
+NOTE ========== 汇总 ==========
+SUMMARY total=9 fail=1
+ABN R3d 清除后无标记 || blk="| 表头 |\n| --- |\n| 甲和*乙* |"

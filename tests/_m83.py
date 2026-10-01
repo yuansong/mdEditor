@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """m83：v3.31.2 功能批次探针（9 项改动点回归）
 B1 h1 居中按钮 toggle + <h1 align="center"> 持久化 + 渲染/大纲/映射贯通
-B2 浮动栏尾部「标题 1 · 已选 N 字」+ 居中按钮出现在清除格式之前
+B2 浮动栏尾部「已选标题 1，已选 N 字」（v3.36 改文案）+ 居中按钮出现在清除格式之前
 B3 双栏首进源码层守卫（rebuild 不再摧毁 src-wrap）
 B4 行首空格可见（pre-wrap）
 B5 段首缩进 setParaIndent
@@ -121,8 +121,9 @@ return JSON.stringify({cnt:c?c.textContent:'', titles:btns})})()""")
         fbj = json.loads(fb or "{}")
     except Exception:
         fbj = {}
-    check("B2.1 尾部显示「标题 1 · 已选 N 字」",
-          (fbj.get("cnt") or "").startswith("标题 1 · 已选 "), fbj.get("cnt"))
+    # v3.36：尾部文案改为「已选标题 1，已选 N 字」；v3.37 微调为「标题 1，已选 N 字」
+    check("B2.1 尾部显示「标题 1，已选 N 字」",
+          (fbj.get("cnt") or "").startswith("标题 1，已选 "), fbj.get("cnt"))
     ti = fbj.get("titles") or []
     check("B2.2 居中按钮在清除格式之前",
           "标题居中" in ti and "清除格式" in ti and ti.index("标题居中") < ti.index("清除格式"),

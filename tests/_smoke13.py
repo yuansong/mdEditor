@@ -85,9 +85,10 @@ r = js("(function(){var m=document.getElementById('slashmenu');"
        "return JSON.stringify({show:m.classList.contains('show'),items:m.querySelectorAll('.si').length,"
        "subs:m.querySelectorAll('.has-sub').length})})()")
 d = json.loads(r or "{}")
-# v3.30.3 一级菜单 12 → 11 项（按需求移除 上标/下标），带二级的项 6 → 5
-check("slash opens with 11 top items", d.get("show") is True and d.get("items") == 11, d)
-check("slash has 5 submenus (标题/列表/图表/公式/脚注)", d.get("subs") == 5, d)
+# v3.30.3 一级菜单 12 → 11 项（移除 上标/下标）；v3.31.3 refs 合并 → 10 项；
+# v3.32（P1-1）新增「模板」→ 11 项，带二级 6 项
+check("slash opens with 11 top items (refs merged + tpl)", d.get("show") is True and d.get("items") == 11, d)
+check("slash has 6 submenus (标题/列表/图表/公式/脚注/模板)", d.get("subs") == 6, d)
 # 修饰键不关闭
 js("(function(){document.dispatchEvent(new KeyboardEvent('keydown',{key:'Shift',bubbles:true}));return 's'})()")
 wait(200)

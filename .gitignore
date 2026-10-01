@@ -24,3 +24,10 @@ __pycache__/
 
 # ---- 编辑器版本历史目录（若在项目内打开过文档）----
 .mdeditor-history/
+
+# ---- 补丁脚本 / 临时备份（一次性产物，不入库）----
+_patch_*.py
+_bak_*
+_TO_DELETE/
+tmp_mmd/
+_tpl_js.json

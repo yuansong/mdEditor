@@ -1,0 +1,18 @@
+[A] ret=ok {"obShow":false,"obHtml":"","bhShow":"flex","bhPulse":true,"bhTitle":"块菜单（Ctrl+/）","tblSel":false}
+PASS | A1 点击单元格不再弹出「标注」浮条（TBL-F1）
+[A] __rzPick=ok {"sel":true,"obShow":false}
+PASS | A2 表格选中态保留（.sel 边框）
+PASS | A2b selectTblFrame 路径同样不弹 objbar
+PASS | A3 手柄脉冲提示出现（TBL-F3）
+PASS | A4 脉冲 1.6s 后自动退场
+PASS | B1 objbar 表格分支零按钮输出
+[C] floatbar={"show": true, "btns": ["B", "I", "U", "S", "A", "</>", "🔗", "T×"]}
+PASS | C1 单元格内格式栏无「＋」且行内按钮齐全（TBL-F2）
+[D] {"phEmpty": "输入 / 插入列表、图片、图表", "phFull": null, "ceEmpty": "plaintext-only"}
+PASS | D1 空格盖章 data-ph（TBL-F2）
+PASS | D2 非空格无 data-ph
+[E] cap=OK cappop=True dup=OK resetsize=OK unknown=UNKNOWN
+PASS | E1 表格标注入口可用
+PASS | E2 复制块可用（raw 出现重复表）
+PASS | E3 还原尺寸入口可用
+PASS | E4 未知命令安全返回

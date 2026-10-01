@@ -235,9 +235,11 @@ check("DL-3 Tab 新增定义", len(rr) == 1 and rr[0] == "术语\n: 甲\n: ", st
 setmd("术语\n: \n: 甲")
 wait(300)
 r = js("(function(){var dds=document.querySelectorAll('#editor dl dd');"
-       "return JSON.stringify({n:dds.length,nbsp:dds.length?dds[0].innerHTML.indexOf('nbsp')>=0:false});})()")
+       "return JSON.stringify({n:dds.length,ph:dds.length?(dds[0].getAttribute('data-ph')||''):null,"
+       "empty:dds.length?(dds[0].textContent||'').trim()==='':false});})()")
 d = json.loads(r or "{}")
-check("DL-4 空定义渲染 nbsp 占位", d.get("n") == 2 and d.get("nbsp") is True, r)
+check("DL-4 空定义渲染 data-ph 隐藏提示（v3.31.3：不再 nbsp 占位）",
+      d.get("n") == 2 and d.get("ph") == "定义内容" and d.get("empty") is True, r)
 rr = "\n".join(raw())
 check("DL-4 空定义存储往返不漂移", ": \n: 甲" in rr, rr[:60])
 r = js("(function(){var dds=document.querySelectorAll('#editor dl dd');"
@@ -259,17 +261,13 @@ wait(300)
 r = js("(function(){var bm=document.getElementById('blkmenu');"
        "return JSON.stringify({size:!!bm.querySelector('.mi[data-act=imgsize]'),"
        "align:!!bm.querySelector('.mi[data-act=imgalign-sub]'),"
+       "align1:!!bm.querySelector('.mi[data-act=\"imgalign:l\"]'),"
        "local:!!bm.querySelector('.mi[data-act=imglocalall]')});})()")
 d = json.loads(r or "{}")
-check("IMG 菜单含精确尺寸 / 对齐 / 批量本地化",
-      d.get("size") and d.get("align") and d.get("local"), r)
-r = js("(function(){var mi=document.querySelector('#blkmenu .mi[data-act=imgalign-sub]');"
+check("IMG 菜单含大小设置 / 对齐一级化 / 批量本地化（v3.31.3 IMG-8/9）",
+      d.get("size") and d.get("align1") and d.get("local") and not d.get("align"), r)
+r = js("(function(){var mi=document.querySelector('#blkmenu .mi[data-act=\"imgalign:l\"]');"
        "mi.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));"
-       "return 'OK';})()")
-wait(300)
-r = js("(function(){var sis=document.querySelectorAll('#submenu .si');"
-       "if(sis.length<2)return 'NOSUB:'+sis.length;"
-       "sis[1].dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true}));"
        "return 'OK';})()")
 wait(400)
 rr = "\n".join(raw())
@@ -290,12 +288,12 @@ r = js("(function(){var p=document.getElementById('imgsizepop');"
        "return 'OK';})()")
 wait(400)
 rr = "\n".join(raw())
-check("IMG-7 精确尺寸写回 width:120px", "width:120px" in rr, rr[:100])
+check("IMG-7 大小设置写回 width:120px", "width:120px" in rr, rr[:100])
 
-# ---------- MMD-7：图表主题 API ----------
+# ---------- MMD-7→MMD-11：图表主题 API（v3.34 起旧值自动映射到新主题） ----------
 js("window.setMmdTheme('forest')")
 r = js("(function(){return window.__mmdThemeOverride || '';})()") or ""
-check("MMD-7 setMmdTheme 生效", r == "forest", r)
+check("MMD-11 setMmdTheme 旧值 forest 映射为 mint", r == "mint", r)
 js("window.setMmdTheme('')")
 
 # ---------- U1：非空块行首 / 触发 ----------

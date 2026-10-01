@@ -145,8 +145,8 @@ wait(300)
 st = jj("window.__blkMenuState()")
 check("R1 图片块右键被接管（不再只给系统复制菜单）", r == "prevented", r)
 check("R1 图片块右键弹出自定义块菜单", st.get("show") is True, st)
-check("R1 图片块菜单项 = 图注/重置尺寸/精确尺寸/对齐/全部转本地/显示图片/复制图片/上移/下移/删除块（v3.30.17 右键菜单化；v3.30.19 增 IMG-5/6/7 项，未存文档无存储项）",
-      st.get("items") == ["edit", "imgreset", "imgsize", "imgalign-sub", "imglocalall", "viewimg", "copyimg", "up", "down", "del"], st.get("items"))
+check("R1 图片块菜单项 = 图注/重置尺寸/大小设置/对齐×3/全部转本地/显示图片/复制图片/上移/下移/删除块（v3.31.3 IMG-9 对齐一级化）",
+      st.get("items") == ["edit", "imgreset", "imgsize", "imgalign:l", "imgalign:c", "imgalign:r", "imglocalall", "viewimg", "copyimg", "up", "down", "del"], st.get("items"))
 
 res = click_act("#blkmenu", "edit")
 wait(400)
@@ -171,8 +171,9 @@ wait(1400)
 r = ctxmenu("#editor .mermaidblock", 200, 200)
 wait(300)
 st = jj("window.__blkMenuState()")
-check("R1 图表块右键弹出块菜单（编辑源码 + v3.30.10 MMD-5 复制块）",
-      r == "prevented" and st.get("items") == ["edit", "dup", "up", "down", "del"], [r, st.get("items")])
+# v3.34（MMD-11）：图表菜单新增「图表主题」二级入口，项数 5 → 6
+check("R1 图表块右键弹出块菜单（编辑源码 + v3.34 图表主题 + 复制块）",
+      r == "prevented" and st.get("items") == ["edit", "mmd-theme-sub", "dup", "up", "down", "del"], [r, st.get("items")])
 close_pops()
 
 # R1 普通段落仍保留系统右键菜单
@@ -204,7 +205,8 @@ select_block_text("#editor .b-p")
 d = jj("(function(){return JSON.stringify({fb:document.getElementById('floatbar').classList.contains('show'),"
        "n:document.querySelectorAll('#floatbar button').length})})()")
 # v3.25：浮动格式栏新增「高亮」按钮，按钮数 6 → 7
-check("F1 选中正文 → 格式栏出现", d.get("fb") is True and d.get("n") == 7, d)
+# v3.33：正文浮动栏新增「📄 插入模板」按钮，按钮数 7 → 8
+check("F1 选中正文 → 格式栏出现", d.get("fb") is True and d.get("n") == 8, d)
 
 res = click_btn("#floatbar", "链接")
 wait(400)
