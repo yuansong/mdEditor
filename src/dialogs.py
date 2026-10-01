@@ -25,7 +25,7 @@ from styles import THEMES, dialog_qss, palette
 # v3.31.3：footnote / deflist 合并为 refs「脚注与定义」
 # v3.32（P1-1）：新增 tpl「模板」一级项
 MENU_ITEMS = [("heading", "标题"), ("list", "列表"), ("table", "表格"), ("code", "代码块"),
-              ("hr", "分隔线"), ("quote", "引用"), ("image", "图片"), ("chart", "图表"),
+              ("hr", "分割线"), ("quote", "引用"), ("image", "图片"), ("chart", "图表"),
               ("refs", "脚注与定义"), ("tpl", "模板"),
               ("math", "公式")]
 SUB_HEADING = ["标题 1", "标题 2", "标题 3", "标题 4", "标题 5", "标题 6"]  # v3.31.1 移除标题7

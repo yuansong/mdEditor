@@ -1396,6 +1396,32 @@ class MainWindow(QMainWindow):
             self._img_to_assets(idx, src)
         elif act == "imgCopy":
             self._img_copy(idx, src)
+        elif act == "imgReplace":
+            self._img_replace(idx, str(req.get("mode") or "assets"))   # v3.38
+
+    def _img_replace(self, idx, mode):
+        """v3.38（图片报告 §四#9）：右键「替换图片」—— 选图后按当前存储形态替换 src。"""
+        from PySide6.QtWidgets import QFileDialog
+        path, _ = QFileDialog.getOpenFileName(
+            self, "替换图片", "",
+            "图片文件 (*.png *.jpg *.jpeg *.gif *.bmp *.webp *.svg);;所有文件 (*)")
+        if not path:
+            return
+        name = os.path.basename(path)
+        new_src = None
+        if mode == "assets":
+            new_src = self._save_image_to_assets(src_path=path, filename=name)
+        if not new_src:
+            try:
+                with open(path, "rb") as f:
+                    raw = f.read()
+            except OSError as e:
+                self.show_status(f"替换图片失败：{e}")
+                return
+            mime = IMG_MIME.get(os.path.splitext(name)[1].lower() or ".png", "image/png")
+            new_src = f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+        self._js_active(f"window.__doImgReplace({int(idx)}, {js(new_src)})")
+        self.show_status(f"已替换图片 · {name}")
 
     def _img_bytes(self, src):
         """v3.30.16：把图片块的 src 取成字节（本地文件 / data URL / 网络图）。"""
@@ -1670,6 +1696,8 @@ class MainWindow(QMainWindow):
             self._handle_pasted_image(data.get("img"))
         if data.get("req"):
             self._handle_img_req(data.get("req"))
+        if data.get("border"):
+            self._theme_border = str(data.get("border"))   # v3.38（HR-8②）
         if data.get("outline") is not None:
             self._outline_cache = data.get("outline") or []
             self._sidebar.set_outline(data.get("outline"))
@@ -2455,7 +2483,9 @@ class MainWindow(QMainWindow):
         if kind == "docx":
             ok, msg = exporters.write_docx(md, path, base_dir, title, mmd_png=mmd_png)
         else:
-            ok, msg = exporters.write_epub(md, path, base_dir, title, mmd_png=mmd_png)
+            ok, msg = exporters.write_epub(
+                md, path, base_dir, title, mmd_png=mmd_png,
+                border_color=getattr(self, "_theme_border", "") or "#ddd")   # v3.38（HR-8②）
         self.show_status(msg)
         if not ok:
             QMessageBox.warning(self, f"导出 {label} 失败", msg)
@@ -2610,7 +2640,14 @@ class MainWindow(QMainWindow):
                     "<div style='margin:2px 0 2px 12px;'>复制：悬停代码块 → 顶栏 ⧉ 复制全部代码（或右键语言栏）</div>"
                     "<div style='margin:2px 0 2px 12px;'>顶栏「风格」弹层：4 种风格 + 行数显示 + 自动换行开关</div>"
                     "<div style='margin:2px 0 2px 12px;'>长代码（&gt;20 行）顶栏 ▾ 可折叠；⛶ 全屏编辑（Esc 退出全屏）</div>"
-                    "<div style='margin:2px 0 2px 12px;'>顶栏「命令」/ 空块命令条：按语言插入安装依赖、构建、运行、测试、格式化命令</div>")
+                    "<div style='margin:2px 0 2px 12px;'>顶栏「命令」/ 空块命令条：按语言插入安装依赖、构建、运行、测试、格式化命令</div>"
+                    "<div style='margin:2px 0 2px 12px;'>代码区右键 —— 复制代码 / 复制（选区）/ 粘贴 / 删除块</div>"
+                    # v3.38（HR-11）：分割线使用指引（正向用法 + 慎用约束）
+                    "<p style='margin:10px 0 4px;'><b>分割线（hr）使用指引</b></p>"
+                    "<div style='margin:2px 0 2px 12px;'>插入：空行输入 / → 分割线；点击选中（Delete / Backspace 删除，Esc 取消）</div>"
+                    "<div style='margin:2px 0 2px 12px;'>↑ / ↓ 键跨过分割线时自动建立选中态，可直接键盘删除</div>"
+                    "<div style='margin:2px 0 2px 12px;'>用途：章节级内容分隔（把文章切成章节）</div>"
+                    "<div style='margin:2px 0 2px 12px;'>慎用：不要连续使用或用分割线替代标题 / 留白 —— 过度分割会产生视觉噪音（Material Design 建议）</div>")
         QMessageBox.information(self, "快捷键一览", "".join(rows))
 
     # ---- 最近文件 ----

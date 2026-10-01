@@ -1,31 +1,30 @@
-NOTE | 0a btns (unsaved+embed) | ['图注', '重置尺寸']
-PASS | 未保存文档 + 内嵌图 → 无存储类按钮 | ['图注', '重置尺寸']
-NOTE | 0b btns (unsaved+local) | ['图注', '重置尺寸']
-PASS | 未保存文档 + 本地图 → 无存储类按钮 | ['图注', '重置尺寸']
-NOTE | 0c btns (saved+embed) | ['图注', '转化为相对路径存储', '重置尺寸']
-PASS | 已保存文档 + 内嵌图 → 显示「转化为相对路径存储」 | ['图注', '转化为相对路径存储', '重置尺寸']
-NOTE | 1 objbar | {'img': True, 'bar': True, 'btns': ['图注', '转化为相对路径存储', '重置尺寸']}
-PASS | 点击图片 → 操作条浮现且按钮齐全 | {'img': True, 'bar': True, 'btns': ['图注', '转化为相对路径存储', '重置尺寸']}
+NOTE | 0a acts (unsaved+embed) | {'sel': {'kind': 'img', 'idx': 0}, 'bar': False, 'acts': ['edit', 'imgreset', 'viewimg', 'copyimg', 'up', 'down', 'del']}
+PASS | 未保存文档 + 内嵌图 → 无存储类菜单项 | {'sel': {'kind': 'img', 'idx': 0}, 'bar': False, 'acts': ['edit', 'imgreset', 'viewimg', 'copyimg', 'up', 'down', 'del']}
+NOTE | 0b acts (unsaved+local) | {'sel': {'kind': 'img', 'idx': 0}, 'bar': False, 'acts': ['edit', 'imgreset', 'viewimg', 'copyimg', 'up', 'down', 'del']}
+PASS | 未保存文档 + 本地图 → 无存储类菜单项 | {'sel': {'kind': 'img', 'idx': 0}, 'bar': False, 'acts': ['edit', 'imgreset', 'viewimg', 'copyimg', 'up', 'down', 'del']}
+NOTE | 0c acts (saved+embed) | {'sel': {'kind': 'img', 'idx': 0}, 'bar': False, 'acts': ['edit', 'imgreset', 'imgmode', 'viewimg', 'copyimg', 'up', 'down', 'del']}
+PASS | 已保存文档 + 内嵌图 → 显示「转化为相对路径存储」 | {'sel': {'kind': 'img', 'idx': 0}, 'bar': False, 'acts': ['edit', 'imgreset', 'imgmode', 'viewimg', 'copyimg', 'up', 'down', 'del']}
+NOTE | 1 select | {'img': True, 'sel': {'kind': 'img', 'idx': 0}, 'bar': False}
+PASS | 点击图片 → 选中且不再浮现操作条（v3.30.17） | {'img': True, 'sel': {'kind': 'img', 'idx': 0}, 'bar': False}
 NOTE | 2 cappop | {'show': True, 'title': '图片图注'}
-PASS | objbar「图注」→ 图注弹层打开 | {'show': True, 'title': '图片图注'}
+PASS | 菜单「图注」→ 图注弹层打开 | ok{'show': True, 'title': '图片图注'}
 NOTE | 2 raw after cap | <figure class="md-fig">
 <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQ
 PASS | 确认图注 → raw 升级 figure 且图注渲染 | {'fig': True, 'cap': '这是图注'} | <figure class="md-fig">
 <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA
-NOTE | 3 reselect | {'bar': True, 'btns': ['图注', '转化为相对路径存储', '重置尺寸']}
 NOTE | 3 raw after reset | <figure class="md-fig">
 <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQ
 PASS | 重置尺寸 → 保留图注（仅清尺寸样式） | <figure class="md-fig">
 <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ
-NOTE | 4 blkmenu | {'show': True, 'items': ['✎编辑图注', '⬆上移', '⬇下移', '🗑删除块']}
-PASS | 右键图片块 → 菜单含「编辑图注」 | {'show': True, 'items': ['✎编辑图注', '⬆上移', '⬇下移', '🗑删除块']}
-PASS | 块菜单「编辑图注」→ 图注弹层打开 | {'show': True}
-NOTE | 5 local objbar | {'bar': True, 'btns': ['修改存储文件名', '转化为内嵌存储', '图注', '重置尺寸']}
-PASS | 本地图片：操作条含存储类按钮 | {'bar': True, 'btns': ['修改存储文件名', '转化为内嵌存储', '图注', '重置尺寸']}
+NOTE | 4 blkmenu | {'sel': {'kind': 'img', 'idx': 0}, 'bar': False, 'acts': ['edit', 'imgreset', 'imgmode', 'viewimg', 'copyimg', 'up', 'down', 'del']}
+PASS | 右键图片 → 菜单含「图注」(edit) | {'sel': {'kind': 'img', 'idx': 0}, 'bar': False, 'acts': ['edit', 'imgreset', 'imgmode', 'viewimg', 'copyimg', 'up', 'down', 'del']}
+PASS | 菜单「图注」→ 图注弹层打开 | {'show': True}
+NOTE | 5 local menu | {'sel': {'kind': 'img', 'idx': 0}, 'bar': False, 'acts': ['edit', 'imgreset', 'imgmode', 'imgrename', 'viewimg', 'copyimg', 'up', 'down', 'del']}
+PASS | 本地图片：菜单含存储类项（转内嵌 + 改名） | {'sel': {'kind': 'img', 'idx': 0}, 'bar': False, 'acts': ['edit', 'imgreset', 'imgmode', 'imgrename', 'viewimg', 'copyimg', 'up', 'down', 'del']}
 NOTE | 5 renpop | {'show': True, 'val': '00001_shot'}
-PASS | 「修改存储文件名」→ 弹层打开且预填当前名 | {'show': True, 'val': '00001_shot'}
+PASS | 「修改图片名称」→ 弹层打开且预填当前名 | {'show': True, 'val': '00001_shot'}
 PASS | 二次编辑图注 → 弹层预填现有图注 | {'cur': '第二版图注'}
-NOTE | 6 raw after cap cleared | ![本地图](笔记.assets/00001_shot.png)
-PASS | 清空图注 → raw 回退原生 Markdown 图片 | ![本地图](笔记.assets/00001_shot.png)
+NOTE | 6 raw after cap cleared | ![shot](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5Erk
+PASS | 清空图注 → raw 回退原生 Markdown 图片 | ![shot](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQ
 PASS | 全程无 JS 异常 | []
 DONE

@@ -7,9 +7,9 @@ PASS R2a Esc 退出 → toast 提示已退出 toast=["已退出代码块编辑�
 NOTE   R2a 落点={"ae": "DIV:blk raw-edit t-p", "isCode": false, "sel": ""}
 PASS R2b Ctrl+Enter 退出 → toast 提示 toast=["已退出代码块编辑（提示：Esc 也可跳出）"]
 NOTE ========== R3：代码块是最后一块时 Esc ==========
-NOTE   R3-1 isCode=True ae=CODE editIdx=-1 toast=["已退出代码块编辑（提示：Ctrl+Enter 也可跳出）"]
-NOTE   R3-2 isCode=True ae=CODE editIdx=-1 toast=["已退出代码块编辑（提示：Ctrl+Enter 也可跳出）"]
-NOTE   R3-3 isCode=True ae=CODE editIdx=-1 toast=["已退出代码块编辑（提示：Ctrl+Enter 也可跳出）"]
+NOTE   R3-1 isCode=False ae=DIV editIdx=2 toast=["已退出代码块编辑（提示：Ctrl+Enter 也可跳出）"]
+NOTE   R3-2 isCode=False ae=DIV editIdx=2 toast=["已退出代码块编辑（提示：Ctrl+Enter 也可跳出）"]
+NOTE   R3-3 isCode=False ae=DIV editIdx=2 toast=["已退出代码块编辑（提示：Ctrl+Enter 也可跳出）"]
 PASS R3 末尾块 Esc 观察（记录 3 次，见 NOTE） 见 NOTE
 NOTE ========== R4：代码区选区 → 格式栏 ==========
 NOTE   R4 诊断={"cls": "pop show", "show": true, "html": "<button title=\"删除整个块\">🗑</button><span class=\"fbcnt\">已选 5 字</span>", "acts": "", "sel": "print", "inCode": true, "ae": "CODE", "locked": false}

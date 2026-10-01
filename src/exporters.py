@@ -456,7 +456,7 @@ table{border-collapse:collapse;width:100%;margin:1em 0}
 th,td{border:1px solid #d0d7de;padding:.4em .6em;text-align:left}
 th{background:#f5f6f8}
 img{max-width:100%;height:auto}
-hr{border:none;border-top:1px solid #ddd;margin:1.6em 0}
+hr{border:none;border-top:1px solid __HR_BORDER__;margin:1.6em 0}
 .tip{color:#8a8a8a;font-style:italic}
 sup.fnref a{text-decoration:none;font-size:.75em}
 p.fndef{font-size:.88em;color:#444;margin:.3em 0}
@@ -577,7 +577,8 @@ def _blocks_to_xhtml(blocks, base_dir, images, mmd_png=None):
     return "\n".join(out)
 
 
-def write_epub(md, out_path, base_dir="", title=None, author="mdEditor", mmd_png=None):
+def write_epub(md, out_path, base_dir="", title=None, author="mdEditor", mmd_png=None,
+               border_color="#ddd"):
     """Markdown → EPUB 3。返回 (是否成功, 提示信息)。（MMD-2：mmd_png 见 write_docx）"""
     blocks = parse_blocks(md)
     # 按一级标题分章（无 h1 则整篇一章）
@@ -659,7 +660,10 @@ def write_epub(md, out_path, base_dir="", title=None, author="mdEditor", mmd_png
             z.writestr("META-INF/container.xml", container, zipfile.ZIP_DEFLATED)
             z.writestr("OEBPS/content.opf", opf, zipfile.ZIP_DEFLATED)
             z.writestr("OEBPS/nav.xhtml", nav, zipfile.ZIP_DEFLATED)
-            z.writestr("OEBPS/style.css", _EPUB_CSS, zipfile.ZIP_DEFLATED)
+            # v3.38（HR-8②）：hr 配色按当前主题 --border 注入（默认回落 #ddd）
+            z.writestr("OEBPS/style.css",
+                       _EPUB_CSS.replace("__HR_BORDER__", border_color or "#ddd"),
+                       zipfile.ZIP_DEFLATED)
             for cname, ctitle, body in bodies:
                 page = (f'<?xml version="1.0" encoding="utf-8"?>\n'
                         f'<html xmlns="http://www.w3.org/1999/xhtml" lang="zh-CN">\n'

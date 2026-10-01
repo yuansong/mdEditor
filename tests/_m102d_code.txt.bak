@@ -9,8 +9,8 @@ NOTE   T3 before="```python\nprint('hi')\n```\n段落乙"
 NOTE   T3 after ="```python\nprint('hi')\n```\n段落乙"
 PASS T3 代码块内加粗：代码内容不被插入 ** 标记（安全） diff="```python\nprint('hi')\n```\n段落乙"
 NOTE ========== T4：末尾块 Ctrl+Enter ==========
-NOTE   T4-1 {"isCode": true, "ae": "CODE", "n": 2}
-NOTE   T4-2 {"isCode": true, "ae": "CODE", "n": 2}
+NOTE   T4-1 {"isCode": false, "ae": "DIV", "n": 3}
+NOTE   T4-2 {"isCode": false, "ae": "DIV", "n": 3}
 PASS T4 末尾块 Ctrl+Enter 观察（见 NOTE） 见 NOTE
 NOTE ========== T5：代码块内粘贴多行 ==========
 NOTE   T5 raw=["```python\nprint('hi')\na=1\nb=2\n```", "段落乙"]

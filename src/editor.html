@@ -682,6 +682,16 @@ body[data-theme="dark"] .blk .codeblock pre.fence .tk-num { color: #f78c6c; }
 }
 #mathpop button:hover { background: #eef2f7; }
 #mathpop button.primary { background: #0052d9; border-color: #0052d9; color: #fff; }
+/* v3.38（MMD-14）：单元格内图表源码编辑弹层（与 mathpop 同构） */
+#mmdcellpop { width: 360px; padding: 11px 13px; }
+#mmdcellpop .cap { font-size: 12px; color: #8b949e; margin-bottom: 8px; }
+#mmdcellpop textarea { width: 100%; height: 130px; box-sizing: border-box; resize: vertical;
+  font-family: Consolas, Menlo, monospace; font-size: 12px; border: 1px solid #d0d7de;
+  border-radius: 6px; padding: 6px 8px; background: #fff; color: #1f2328; }
+#mmdcellpop .row { display: flex; gap: 6px; margin-top: 9px; justify-content: flex-end; }
+#mmdcellpop button { padding: 3px 12px; border: 1px solid #d0d7de; background: transparent;
+  border-radius: 6px; cursor: pointer; color: #1f2328; }
+#mmdcellpop button.primary { background: #0052d9; border-color: #0052d9; color: #fff; }
 #mathpop button.primary:hover { background: #0043b8; }
 
 /* 二级菜单（斜杠菜单 / 块菜单共用） */
@@ -1118,6 +1128,11 @@ img.img-broken { display: none; }
 <div id="mathpop" class="pop">
   <div class="cap">编辑单元格公式（LaTeX，留空移除）</div>
   <div class="row"><input id="math-tex" placeholder="如 x^{2} + y^{2} = z^{2}"><button type="button" id="math-ok" class="primary">确定</button></div>
+</div>
+<div id="mmdcellpop" class="pop">
+  <div class="cap">编辑单元格图表（mermaid，留空移除）</div>
+  <textarea id="mmdcell-src" spellcheck="false" placeholder="flowchart TD&#10;  A --&gt; B"></textarea>
+  <div class="row"><button type="button" id="mmdcell-cancel">取消</button><button type="button" id="mmdcell-ok" class="primary">确定</button></div>
 </div>
 <div id="rzframe">
   <div class="rbox"></div>
@@ -2827,7 +2842,28 @@ img.img-broken { display: none; }
     for (var k = 0; k < els.length; k++) {
         var el = els[k];
         var tex = el.getAttribute('data-tex') || '';
-        /* v3.30.11（MATH-4）：空公式渲染「空公式」虚框占位（katex.render('')
+        /* v3.38（图片报告 §四 #9）：替换图片落点 —— figure 走 writeFigure，
+     原生 ![]() 保留 alt 只换 src（存储形态由 Python 侧按当前图片模式决定） */
+  window.__doImgReplace = function (idx, src) {
+    var old = String(state.raw[idx] || '');
+    var spec = figFromRaw(old);
+    if (spec) {
+      spec.src = src;
+      writeFigure(idx, spec);
+      markDirty(); scheduleSnapshot();
+      toastStatus('已替换图片');
+      return;
+    }
+    var m = old.match(/^!\[([^\]]*)\]\(([^\s)]+)\)$/);
+    if (m) {
+      state.raw[idx] = '![' + m[1] + '](' + src + ')';
+      markDirty(); scheduleSnapshot(); rebuild();
+      toastStatus('已替换图片');
+      return;
+    }
+    toastStatus('替换图片失败：无法解析该图片块');
+  };
+  /* v3.30.11（MATH-4）：空公式渲染「空公式」虚框占位（katex.render('')
            输出空内容会导致块高≈0 点不中），保持可单击重新打开源码框 */
         if (!tex.trim()) {
           el.classList.add('math-empty');
@@ -3407,6 +3443,7 @@ img.img-broken { display: none; }
        分割线切成 --- 源码态；连续多条分割线依次跳过 */
     if (inf.type === 'hr') {
       commitEditSilent();
+      selectHr(i, true);   /* v3.38（HR-10）：键盘跨过分割线 → 建立选中态（可 DEL 删除） */
       if (i + 1 >= state.raw.length) {
         state.raw.push('');
         ED.appendChild(blockEl(state.raw.length - 1));
@@ -6099,14 +6136,15 @@ img.img-broken { display: none; }
     if (h) h.classList.remove('hrsel');
     hrSelIdx = -1;
   }
-  function selectHr(idx) {
+  function selectHr(idx, silent) {
     clearHrSel();
     var b = ED.children[idx];
     var h = b && b.querySelector ? b.querySelector('hr') : null;
     if (!h) return;
     hrSelIdx = idx;
     h.classList.add('hrsel');
-    toastStatus('已选中分割线，Delete / Backspace 删除');
+    /* v3.38（HR-11）：选中反馈补「Esc 取消」；键盘跨块路径（HR-10）静默 */
+    toastStatus(silent ? '已选中分割线' : '已选中分割线，Delete / Backspace 删除 · Esc 取消');
   }
 
   ED.addEventListener('mousedown', function (e) {
@@ -6263,8 +6301,29 @@ img.img-broken { display: none; }
         return;
       }
     }
+    /* v3.38（CODE-10）：代码区右键 → 自定义菜单（复制代码 / 复制（选区）/ 粘贴 / 删除块），
+       不再整块 return 交系统菜单；图表源码框（.mmd-src）与输入框仍保留系统菜单 */
+    var cbCtx = e.target.closest ? e.target.closest('#editor .codeblock') : null;
+    if (cbCtx && !(e.target.closest && e.target.closest('#editor .mmd-src'))) {
+      var cbBlk = cbCtx.closest('.blk');
+      var cbIdx = cbBlk ? blockIndexOf(cbBlk) : -1;
+      if (cbIdx >= 0) {
+        e.preventDefault(); e.stopPropagation();
+        hidePops();
+        handleIdx = cbIdx;
+        BM.innerHTML = '<div class="cap">代码块</div>' +
+          '<div class="mi" data-act="codecpl"><span style="width:18px;text-align:center">⧉</span>复制代码</div>' +
+          '<div class="mi" data-act="codecpsel"><span style="width:18px;text-align:center">📋</span>复制（选区）</div>' +
+          '<div class="mi" data-act="codepaste"><span style="width:18px;text-align:center">📌</span>粘贴</div>' +
+          '<div class="sep"></div>' +
+          '<div class="mi danger" data-act="del"><span style="width:18px;text-align:center">🗑</span>删除块</div>';
+        activePop = 'block';
+        placePop(BM, e.clientX, e.clientY);
+        return;
+      }
+    }
     if (e.target.closest && e.target.closest(
-        '#editor .codebar, #editor .codeblock, #editor .mmd-src, #editor input')) return;
+        '#editor .codebar, #editor .mmd-src, #editor input')) return;
     var blk = e.target.closest ? e.target.closest('.blk') : null;
     if (blk) {
       var bi = blockIndexOf(blk);
@@ -6395,6 +6454,10 @@ img.img-broken { display: none; }
     state.raw = splitBlocks(md);
     srcEl = null; srcText = '';
     rebuild();
+    /* v3.38（SYN-2）：预览侧 DOM 禁编辑 —— 剥离 contenteditable，
+       防止 focus + 键盘输入污染预览显示（raw 不受影响、退出预览即重建） */
+    var _ceL = ED.querySelectorAll('[contenteditable]');
+    for (var _ci = 0; _ci < _ceL.length; _ci++) _ceL[_ci].removeAttribute('contenteditable');
     updateStats();
     window.scrollTo(y, x2);
     return 'ok';
@@ -6427,7 +6490,9 @@ img.img-broken { display: none; }
     if (!tn || tn.nodeType !== 3) return JSON.stringify({ idx: null });
     var starts = [], off = 0;
     for (var k = 0; k < state.raw.length; k++) { starts.push(off); off += state.raw[k].length + 2; }
-    var probe = window.scrollY + Math.min(48, (window.innerHeight || 800) * 0.08);
+    /* v3.38（SYN-1）：yOf 返回视口相对坐标，probe 不再混入绝对 scrollY
+       （此前 scrollY 越大二分越饱和，中后段预览跳到文档尾） */
+    var probe = Math.min(48, (window.innerHeight || 800) * 0.08);
     function yOf(o) {
       var r = document.createRange();
       r.setStart(tn, Math.min(o, tn.length));
@@ -7177,7 +7242,9 @@ img.img-broken { display: none; }
           }
           /* 落盘模式：先把图片交给 Python 写入「文档名.assets/」，
              写好后 Python 回调 insertImageMarkdown 传入相对路径 */
-          window.__imgPending = { url: u, name: (f && f.name) || '粘贴图片.png' };
+          /* v3.38（IMG-14）：单槽位改队列 —— 700ms 轮询窗口内连贴多张不丢帧 */
+          (window.__imgPendingList = window.__imgPendingList || []).push(
+            { url: u, name: (f && f.name) || '粘贴图片.png' });
         };
         rd.readAsDataURL(f);
         return;
@@ -7187,8 +7254,9 @@ img.img-broken { display: none; }
   window.collect = function () {
     var d = state.dirty;
     state.dirty = false;
-    var img = window.__imgPending || null;
-    window.__imgPending = null;   // 只上报一次，避免重复落盘
+    /* v3.38（IMG-14）：队列逐张带出，未处理完的留在队里（不再覆盖丢失） */
+    var img = (window.__imgPendingList && window.__imgPendingList.length)
+      ? window.__imgPendingList.shift() : null;
     var req = window.__req || null;
     window.__req = null;          // v3.25：图片存储操作请求只上报一次
     return JSON.stringify({
@@ -7198,6 +7266,7 @@ img.img-broken { display: none; }
       outline: window.getOutline(),
       pick: !!window.__wantPick,
       img: img,
+      border: (function () { try { return (getComputedStyle(document.documentElement).getPropertyValue('--border') || '').trim(); } catch (e3) { return ''; } })(),
       req: req
     });
   };
@@ -7652,6 +7721,9 @@ img.img-broken { display: none; }
     var rp = document.getElementById('renpop'); fadeOutPop(rp);
     /* v3.30.11（MATH-5）：单元格公式编辑弹层一并收起 */
     var mpp = document.getElementById('mathpop'); fadeOutPop(mpp);
+    /* v3.38（MMD-14）：单元格图表编辑弹层一并收起 */
+    var mcp2 = document.getElementById('mmdcellpop'); fadeOutPop(mcp2);
+    mmdCellCtx = null;
     /* v3.30.19（IMG-7）：精确尺寸弹层一并收起 */
     var isp = document.getElementById('imgsizepop'); fadeOutPop(isp);
     mathCellCtx = null;
@@ -7748,6 +7820,13 @@ img.img-broken { display: none; }
     if (cmk) {
       e.preventDefault(); e.stopPropagation();
       openCellMathPop(cmk);
+      return;
+    }
+    /* v3.38（MMD-14）：双击单元格图表 → 弹层编辑源码（此前零入口，占位文案死链） */
+    var cmm = e.target.closest ? e.target.closest('#editor .cell-mmd') : null;
+    if (cmm) {
+      e.preventDefault(); e.stopPropagation();
+      openCellMmdPop(cmm);
       return;
     }
     /* v3.30.10（MMD-4）：双击图表块打开源码编辑 —— 空图占位提示写着
@@ -8027,7 +8106,9 @@ img.img-broken { display: none; }
     if (!info || !info.el || !info.el.querySelector) return false;
     if (mmdCtx && mmdCtx.idx === info.idx) return true;
     if (mathCtx && mathCtx.idx === info.idx) return true;
-    return !!info.el.querySelector('.codeblock, .mermaidblock, .mathblock') ||
+    /* v3.38（MMD-15）：图表上下文不再出 delOnly 浮条 —— 图表选中已有 objbar
+       承接、操作收进块菜单，双删除钮冗余；源码框态（mmdCtx）仍保留删除入口 */
+    return !!info.el.querySelector('.codeblock, .mathblock') ||
            isImageRaw(state.raw[info.idx]);
   }
   /* v3.30.9：选区是否完整落在一个表格单元格内（单元格格式化入口） */
@@ -8694,6 +8775,71 @@ img.img-broken { display: none; }
     MINPUT.select();
   }
   function closeCellMathPop() { MPOP.classList.remove('show'); mathCellCtx = null; }
+  /* v3.38（MMD-14）：单元格内图表（.cell-mmd）双击 → 弹层编辑源码（回写 data-src）。
+     此前 dblclick 只认块级 .mermaidblock，格内图表零编辑入口、两处占位文案是死链 */
+  var mmdCellCtx = null;
+  var MCPOP = document.getElementById('mmdcellpop');
+  var MCSRC = document.getElementById('mmdcell-src');
+  function openCellMmdPop(span) {
+    var cell = span.closest('td,th');
+    var blk = span.closest('.blk');
+    var tbl = span.closest('table');
+    if (!cell || !blk || !tbl) return;
+    var idx = blockIndexOf(blk);
+    if (idx < 0) return;
+    mmdCellCtx = { idx: idx, rc: cellRC(tbl, cell),
+                   ord: Array.prototype.indexOf.call(cell.querySelectorAll('.cell-mmd'), span) };
+    MCSRC.value = span.getAttribute('data-src') || '';
+    activePop = 'mmdcell';
+    var r = span.getBoundingClientRect();
+    placePop(MCPOP, r.left, Math.max(8, Math.min(window.innerHeight - 190, r.bottom + 6)));
+    MCSRC.focus();
+  }
+  function closeCellMmdPop() { MCPOP.classList.remove('show'); mmdCellCtx = null; }
+  function applyCellMmdOk() {
+    var cctx = mmdCellCtx;
+    var srcCode = (MCSRC.value || '').replace(/\u00a0/g, ' ').replace(/\s+$/, '');
+    closeCellMmdPop();
+    if (!cctx) return;
+    var idx = cctx.idx, rc = cctx.rc;
+    var tbl = ED.children[idx] && ED.children[idx].querySelector('table');
+    if (!tbl) return;
+    var m = tblModel(idx, tbl);
+    if (!m) return;
+    var cd = null;
+    for (var ci = 0; ci < m.rows.length && !cd; ci++) {
+      for (var cj = 0; cj < m.rows[ci].cells.length; cj++) {
+        if (m.rows[ci].cells[cj].r === rc.r && m.rows[ci].cells[cj].c === rc.c) { cd = m.rows[ci].cells[cj]; break; }
+      }
+    }
+    if (!cd) return;
+    /* 参照 MATH-5：临时 DOM 改写该格 html，按序号定位 cell-mmd 回写 data-src、
+       清掉渲染产物（提交干净占位，渲染交给提交后的块重建） */
+    var box = document.createElement('div');
+    box.innerHTML = cd.html;
+    var spans = box.querySelectorAll('.cell-mmd');
+    var sp = spans[cctx.ord] || spans[0];
+    if (!sp) { toastStatus('未在该单元格中找到图表'); return; }
+    if (!srcCode) {
+      if (sp.parentNode) sp.parentNode.removeChild(sp);
+    } else {
+      sp.setAttribute('data-src', srcCode);
+      sp.innerHTML = '';
+    }
+    cd.html = box.innerHTML;
+    commitTblModel(m, { keepSel: { r0: rc.r, c0: rc.c, r1: rc.r, c1: rc.c } });
+    var tbl2 = ED.children[idx] && ED.children[idx].querySelector('table');
+    var cel2 = tbl2 ? cellElAt(tbl2, rc.r, rc.c) : null;
+    if (cel2) { cel2.focus(); setCaret(cel2, 1e9); }
+    toastStatus(srcCode ? '图表源码已更新' : '已移除单元格图表');
+  }
+  document.getElementById('mmdcell-ok').addEventListener('click', applyCellMmdOk);
+  document.getElementById('mmdcell-cancel').addEventListener('click', closeCellMmdPop);
+  MCSRC.addEventListener('keydown', function (e) {
+    e.stopPropagation();
+    if (e.key === 'Escape') { e.preventDefault(); closeCellMmdPop(); }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); applyCellMmdOk(); }
+  });
   function applyCellMathOk() {
     var cctx = mathCellCtx;
     var tex = (MINPUT.value || '').replace(/\u00a0/g, ' ').trim();
@@ -9559,6 +9705,16 @@ img.img-broken { display: none; }
         rebuild();
         markDirty(); scheduleSnapshot();
         return;
+      } else if (e.key === 'Delete') {
+        /* v3.38（HR-10）：键盘跨块建立的选中态优先 —— 焦点落在后续编辑块时，
+           前向 Delete 仍删除选中的分割线（Backspace 保留字符删除，避免误删） */
+        e.preventDefault(); e.stopPropagation();
+        commitEditSilent();
+        state.raw.splice(hrSelIdx, 1);
+        hrSelIdx = -1;
+        rebuild();
+        markDirty(); scheduleSnapshot();
+        return;
       }
     }
     /* v3.29d（S1）：块菜单键盘导航（↑↓ 移动高亮 / Enter 应用 / Esc 关闭） */
@@ -9917,6 +10073,43 @@ img.img-broken { display: none; }
     if (keepEdit) commitEditSilent();
     /* R1：特殊块菜单的「编辑」入口（图片图注 / 图表源码 / 公式源码） */
     if (act === 'edit') { openBlockEditor(i); return; }
+    /* v3.38（CODE-10）：代码区右键「复制代码」—— 剥围栏行、保留缩进与格式原样 */
+    if (act === 'codecpl') {
+      hidePops();
+      var cpl = String(state.raw[i] || '').split('\n');
+      if (cpl.length && /^```/.test(cpl[0].trim())) cpl.shift();
+      if (cpl.length && /^```/.test(cpl[cpl.length - 1].trim())) cpl.pop();
+      copyTextToClipboard(cpl.join('\n'));
+      return;
+    }
+    /* v3.38（CODE-10）：代码区右键「复制（选区）/ 粘贴」—— 与系统菜单对齐；
+       QWebEngine file:// 下 navigator.clipboard 不可靠，走 execCommand，
+       粘贴受限时明确提示用 Ctrl+V（不静默失败） */
+    if (act === 'codecpsel') {
+      hidePops();
+      var okCp = false;
+      try { okCp = document.execCommand('copy'); } catch (e1c) { okCp = false; }
+      toastStatus(okCp ? '已复制选中内容' : '复制失败，请用 Ctrl+C');
+      return;
+    }
+    if (act === 'codepaste') {
+      hidePops();
+      var okPs = false;
+      try { okPs = document.execCommand('paste'); } catch (e2c) { okPs = false; }
+      if (!okPs) toastStatus('右键粘贴受 WebView 安全限制，请用 Ctrl+V');
+      return;
+    }
+    /* v3.38（MMD-16）：图表 blkmenu「图注 / 重置尺寸」—— 与 objbar 收缩配套，
+       操作位置与图片（右键菜单）对称 */
+    if (act === 'mmdcap') { hidePops(); editCaption('mmd', i); return; }
+    if (act === 'mmdreset') { hidePops(); resetObjSize('mmd', i); return; }
+    /* v3.38（图片报告 §四 #9）：「替换图片」—— 交主程序选图，按当前存储形态替换 src */
+    if (act === 'imgreplace') {
+      hidePops();
+      window.__req = { act: 'imgReplace', idx: i, src: imgRawSrc(i),
+                       mode: (window.__imgMode === 'embed' ? 'embed' : 'assets') };
+      return;
+    }
     /* v3.30.16：图片块右键「复制图片」—— 只写剪贴板，不改文档、不入撤销历史 */
     if (act === 'copyimg') { hidePops(); copyImgToClipboard(i); return; }
     /* v3.30.16：图片块「显示图片」—— 应用内大图预览 */
@@ -9949,9 +10142,17 @@ img.img-broken { display: none; }
     if (act.indexOf('to:') === 0) {
       state.raw[i] = transformTo(state.raw[i], act.slice(3));
     } else if (act === 'up' && i > 0) {
+      /* v3.38（BQ-2）：脚注定义必须保持在文末连续区 —— 涉及定义块的移动一律拦截
+         （fnbody 解析只识别文末连续区，移出即退化为字面源码、编号断裂） */
+      if (blockInfo(state.raw[i]).type === 'fndef' || blockInfo(state.raw[i - 1]).type === 'fndef') {
+        hidePops(); toastStatus('脚注定义需位于文末，已取消移动'); return;
+      }
       var a = state.raw[i - 1]; state.raw[i - 1] = state.raw[i]; state.raw[i] = a;
       i--;
     } else if (act === 'down' && i < state.raw.length - 1) {
+      if (blockInfo(state.raw[i]).type === 'fndef' || blockInfo(state.raw[i + 1]).type === 'fndef') {
+        hidePops(); toastStatus('脚注定义需位于文末，已取消移动'); return;
+      }
       var b = state.raw[i + 1]; state.raw[i + 1] = state.raw[i]; state.raw[i] = b;
       i++;
     } else if (act === 'dup') {
@@ -10020,6 +10221,7 @@ img.img-broken { display: none; }
         ? BH.getBoundingClientRect()
         : (ED.children[idx] ? ED.children[idx].getBoundingClientRect() : BH.getBoundingClientRect());
       activePop = 'block';
+      markBlockMenuBoundary(idx);   /* v3.38（BQ-1）：fence 精简菜单同样边界置灰 */
       placePop(BM, fr.right + 6, fr.top - 6);
       return;
     }
@@ -10043,6 +10245,7 @@ img.img-broken { display: none; }
       ? BH.getBoundingClientRect()
       : (ED.children[idx] ? ED.children[idx].getBoundingClientRect() : BH.getBoundingClientRect());
     activePop = 'block';
+    markBlockMenuBoundary(idx);   /* v3.38（BQ-1）：通用块菜单上移 / 下移边界置灰 */
     placePop(BM, r.right + 6, r.top - 6);
     expandHeadingSub();     /* G5：三个入口统一默认展开「标题」二级 */
   }
@@ -10147,9 +10350,15 @@ img.img-broken { display: none; }
         if (_canStore) {
           html += '<div class="mi" data-act="imgmode"><span style="width:18px;text-align:center">🔄</span>转化为内嵌式存储</div>';
           html += '<div class="mi" data-act="imgrename"><span style="width:18px;text-align:center">✏</span>修改图片名称</div>';
+        } else {
+          /* v3.38（IMG-12）：未保存文档时不再整组静默消失 —— 置灰条目说明原因 */
+          html += '<div class="mi dis" data-act="imgstorewait"><span style="width:18px;text-align:center">⤓</span>转存本地（请先保存文档）</div>';
         }
       } else if (_canStore) {
         html += '<div class="mi" data-act="imgmode"><span style="width:18px;text-align:center">🔄</span>转化为相对路径存储</div>';
+      } else {
+        /* v3.38（IMG-12）：未保存文档时不再整组静默消失 —— 置灰条目说明原因 */
+        html += '<div class="mi dis" data-act="imgstorewait"><span style="width:18px;text-align:center">⤓</span>转存本地（请先保存文档）</div>';
       }
       html += '<div class="sep"></div>';
       /* v3.30.16：「显示图片」= 应用内大图预览（Esc / 点遮罩关闭） */
@@ -10157,6 +10366,11 @@ img.img-broken { display: none; }
       /* v3.30.16：「复制图片」—— 位图进剪贴板（可粘贴到微信 / Word），
          区别于「复制块」（在文档内复制一份） */
       html += '<div class="mi" data-act="copyimg"><span style="width:18px;text-align:center">🖼</span>复制图片</div>';
+      /* v3.38（IMG-10）：补「复制块」—— 与 chart 分支对齐（文档内复制一份，
+         区别于「复制图片」的写剪贴板） */
+      html += '<div class="mi" data-act="dup"><span style="width:18px;text-align:center">⧉</span>复制块</div>';
+      /* v3.38（图片报告 §四 #9）：「替换图片」—— 建议补（Notion / 语雀有） */
+      html += '<div class="mi" data-act="imgreplace"><span style="width:18px;text-align:center">🔁</span>替换图片</div>';
       html += '<div class="sep"></div>';
       html += '<div class="mi" data-act="up"><span style="width:18px;text-align:center">⬆</span>上移</div>';
       html += '<div class="mi" data-act="down"><span style="width:18px;text-align:center">⬇</span>下移</div>';
@@ -10166,6 +10380,10 @@ img.img-broken { display: none; }
       /* v3.34（MMD-11）：图表块右键菜单 —— 在通用操作之上新增「图表主题」
          二级子菜单（跟随界面 + 六套自定义主题，当前项 ✓），免去去设置面板换主题 */
       html += '<div class="mi" data-act="edit"><span style="width:18px;text-align:center">✎</span>' + SPEC_EDIT[kind] + '</div>';
+      /* v3.38（MMD-16）：blkmenu 补「图注 / 重置尺寸」（objbar 收缩后唯一入口，
+         位置在编辑源码后、主题前，与 image 分支对称） */
+      html += '<div class="mi" data-act="mmdcap"><span style="width:18px;text-align:center">🏷</span>图注</div>';
+      html += '<div class="mi" data-act="mmdreset"><span style="width:18px;text-align:center">⭯</span>重置尺寸</div>';
       html += '<div class="mi" data-act="mmd-theme-sub"><span style="width:18px;text-align:center">🎨</span>图表主题<span style="float:right;opacity:.55">›</span></div>';
       html += '<div class="mi" data-act="dup"><span style="width:18px;text-align:center">⧉</span>复制块</div>';
       html += '<div class="mi" data-act="up"><span style="width:18px;text-align:center">⬆</span>上移</div>';
@@ -10184,6 +10402,7 @@ img.img-broken { display: none; }
     }
     BM.innerHTML = html;
     activePop = 'block';
+    markBlockMenuBoundary(idx);   /* v3.38（BQ-1/IMG-11）：上移 / 下移边界置灰 */
     placePop(BM, x, y);
   }
   /* R1：块菜单「编辑」→ 按块类型打开对应编辑器 */
@@ -10273,6 +10492,13 @@ img.img-broken { display: none; }
     var t = e.target.closest ? e.target.closest('.mi') : null;
     if (!t || handleIdx < 0) { hidePops(); return; }
     var act = t.getAttribute('data-act');
+    /* v3.38（IMG-12）：「转存本地（请先保存文档）」置灰条 —— 点击只说明原因，不执行 */
+    if (act === 'imgstorewait') {
+      hidePops();
+      toastStatus('请先保存文档（Ctrl+S）：转存本地需要用文档名生成 assets 目录');
+      return;
+    }
+    if (t.classList.contains('dis')) return;   /* v3.38（BQ-1/IMG-11）：置灰项不动作 */
     /* v3.31.3（IMG-9）：图片对齐改为一级菜单项（imgalign:l|c|r 直达
        applyBlockAct），二级入口 imgalign-sub 已移除 */
     if (act === 'to-h' || act === 'to-list') {  // 展开二级子菜单
@@ -13538,12 +13764,10 @@ img.img-broken { display: none; }
     OB.innerHTML = '';
     /* v3.30.17：图片不再使用悬浮按钮条（操作全部收进图片右键菜单），
        此函数只剩图表（mmd）—— 基础两项 + 源码 / 删除 */
+    /* v3.38（MMD-16）：objbar 收缩为「源码」单钮 —— 图注 / 重置尺寸移入块菜单
+       （与图片操作收进右键菜单对称），删除走块菜单 / DEL 键；兑现单钮条形态 */
     var items = [
-      ['图注', function () { editCaption(kind, idx); }, '添加 / 修改图注（可放在上方或下方）'],
-      ['重置尺寸', function () { resetObjSize(kind, idx); }, '恢复原始尺寸'],
-      ['源码', function () { openMmdEditor(ED.children[idx], idx); }, '编辑图表源码'],
-      /* v3.25：图表保留删除按钮；图片块改用 DEL / Backspace 删除（见下方 keydown） */
-      ['删除', function () { deleteBlockAt(idx); hideObjSel(); }, '删除整块']
+      ['源码', function () { openMmdEditor(ED.children[idx], idx); }, '编辑图表源码']
     ];
     items.forEach(function (b) {
       var el = document.createElement('button');
@@ -13753,7 +13977,15 @@ img.img-broken { display: none; }
     showRzFrame(el, kind, idx);
     /* v3.30.17：图片操作全部收进右键菜单 —— 选中只出蓝框，不再浮现按钮条；
        图表（mmd）保留悬浮按钮条 */
-    if (kind === 'img') { if (OB) OB.classList.remove('show'); pulseBlkHandle(idx); return; }
+    if (kind === 'img') {
+      /* v3.38（IMG-13）：选中图片时主动让当前可编辑元素失焦（顺带提交其内容），
+         否则键盘删除守卫按 activeElement 判定会把 DEL / Backspace 留在原文本块 */
+      var _aeSel = document.activeElement;
+      if (_aeSel && _aeSel.isContentEditable) _aeSel.blur();
+      if (OB) OB.classList.remove('show');
+      pulseBlkHandle(idx);
+      return;
+    }
     buildObjbar(kind, idx);
     var r = el.getBoundingClientRect();
     placePop(OB, r.left, Math.max(6, r.top - 40));
@@ -13863,6 +14095,7 @@ img.img-broken { display: none; }
   });
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && (objSel || rzTarget)) hideObjSel();
+    if (e.key === 'Escape' && hrSelIdx >= 0) clearHrSel();   /* v3.38（HR-11） */
     /* v3.25：图片选中（且焦点不在任何输入框）时 DEL / Backspace 删除整块
        （悬浮操作条已去掉删除按钮，键盘删除是唯一入口） */
     if (objSel && objSel.kind === 'img' &&
