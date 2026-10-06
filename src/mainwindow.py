@@ -13,7 +13,7 @@ import time
 import zipfile
 
 from PySide6.QtCore import QEvent, QTimer, QUrl, QSize, Qt, QSettings, QMimeData
-from PySide6.QtGui import QAction, QActionGroup, QGuiApplication, QImage, QKeySequence
+from PySide6.QtGui import QAction, QActionGroup, QColor, QGuiApplication, QImage, QKeySequence
 from PySide6.QtWidgets import (
     QApplication, QDialog, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
     QMainWindow, QMenu, QMessageBox, QSplitter, QStackedWidget, QTabBar, QToolBar,
@@ -238,6 +238,10 @@ class MainWindow(QMainWindow):
         self._pending_switch = -1
         # v3.38（TAB-3）：已关闭标签栈（Ctrl+Alt+T 逐个回溯，浏览器语义）
         self._closed_stack = []
+        # v3.38（TAB-B）：多选标签（N++ 对标）—— Ctrl+单击增减 / Shift+单击区间，
+        # 集合存标签索引；任何切换 / 批量关闭后清空重建。
+        self._tab_multi = set()
+        self._multi_anchor = -1
         # v3.38（TAB-8）：最近使用顺序（MRU，存 doc 字典引用；切换时前插、关闭时惰性剔除）
         self._mru = []
 
@@ -534,8 +538,9 @@ class MainWindow(QMainWindow):
         # v3.38（TAB-6）：多文档批量保存（只保存「有路径且已修改」的标签，未命名不批量弹窗）
         self._reg_act("文件", "全部保存", "Ctrl+Alt+S", self.save_all, menu=m_file)
         self._reg_act("文件", "关闭标签页", "Ctrl+W", lambda: self._close_tab(self._cur), menu=m_file)
+        # v3.38（TAB-B）：走 _close_all_tabs（跳过固定标签 + 未保存汇总确认 + 状态栏反馈）
         self._reg_act("文件", "关闭所有标签", None,
-                      lambda: self._batch_close(list(range(len(self._docs)))), menu=m_file)
+                      self._close_all_tabs, menu=m_file)
         # v3.38（TAB-3）：重新打开刚关闭的标签（可连按逐个回溯）。
         # 浏览器习惯是 Ctrl+Shift+T，但该组合在本工程已属「插入表格」（v3.31 起），
         # 故改用 Ctrl+Alt+T，避免抢键。
@@ -653,6 +658,22 @@ class MainWindow(QMainWindow):
         # 与界面主题 / 字号同处一页集中配置；切换逻辑仍走 _set_mmd_theme
         self._theme_acts = {}
 
+        # ---- 设置 ----
+        m_set = self.menuBar().addMenu("设置(&S)")
+        self._reg_act("设置", "系统设置…", None, self.show_settings, menu=m_set)
+        self._reg_act("设置", "快捷键设置…", None, self.show_shortcut_settings, menu=m_set)
+
+        # ---- 帮助（始终放最后）----
+        m_help = self.menuBar().addMenu("帮助(&H)")
+        # v3.38（HELP-1）：使用手册（只读渲染视图，滚动浏览全功能参考指南）
+        self._reg_act("帮助", "使用手册", "F12", self._show_manual, menu=m_help)
+        self._reg_act("帮助", "快捷键一览", "F1", self._show_shortcuts, menu=m_help)
+        # v3.32（P0-6①）：检查更新（version.json 只提示不强升）
+        self._reg_act("帮助", "检查更新…", None, self.check_update, menu=m_help)
+        # v3.32（P0-5②）：复制诊断信息（版本 / 系统 / 依赖 / 最近日志）
+        self._reg_act("帮助", "复制诊断信息", None, self.copy_diagnostics, menu=m_help)
+        self._reg_act("帮助", "关于", None, self._about, menu=m_help)
+
         # v3.38（TB-1）：恢复上次的工具栏可见性（隐藏 → 同步显形边缘展开按钮）
         self.set_toolbar_visible(
             self._settings.value("ui/toolbarVisible", True, type=bool), toast=False)
@@ -682,20 +703,6 @@ class MainWindow(QMainWindow):
         if act is not None:
             m.addAction(act)
         return m
-
-        # ---- 设置 ----
-        m_set = self.menuBar().addMenu("设置(&S)")
-        self._reg_act("设置", "系统设置…", None, self.show_settings, menu=m_set)
-        self._reg_act("设置", "快捷键设置…", None, self.show_shortcut_settings, menu=m_set)
-
-        # ---- 帮助（始终放最后）----
-        m_help = self.menuBar().addMenu("帮助(&H)")
-        self._reg_act("帮助", "快捷键一览", "F1", self._show_shortcuts, menu=m_help)
-        # v3.32（P0-6①）：检查更新（version.json 只提示不强升）
-        self._reg_act("帮助", "检查更新…", None, self.check_update, menu=m_help)
-        # v3.32（P0-5②）：复制诊断信息（版本 / 系统 / 依赖 / 最近日志）
-        self._reg_act("帮助", "复制诊断信息", None, self.copy_diagnostics, menu=m_help)
-        self._reg_act("帮助", "关于", None, self._about, menu=m_help)
 
     def _set_mmd_theme(self, val):
         """v3.30.19（MMD-7）/ v3.34（MMD-11）：全局图表主题切换。
@@ -1936,6 +1943,16 @@ class MainWindow(QMainWindow):
                 mark = "📌 " + mark.lstrip()
             self._tabbar.setTabText(i, f"{mark}{name}")
         self._update_tb_more()   # v3.38（TAB-9）：标签溢出态随文本变化重算
+        self._update_multi_highlight()   # v3.38（TAB-B）：多选高亮随重建恢复
+
+    # ---- TAB-B：多选标签高亮 ----
+    def _update_multi_highlight(self):
+        """多选标签着主题强调色；未选中的恢复默认文字色（QColor() = 清除覆盖）。"""
+        self._tab_multi = {i for i in self._tab_multi if 0 <= i < len(self._docs)}
+        col = QColor(styles.palette(self._theme)["accent"]) if self._tab_multi else None
+        for i in range(self._tabbar.count()):
+            self._tabbar.setTabTextColor(i, col if (col and i in self._tab_multi)
+                                         else QColor())
 
     # ---- TAB-7：固定标签（Pin）----
     def _toggle_pin(self, idx):
@@ -2009,6 +2026,11 @@ class MainWindow(QMainWindow):
             return
         if idx == self._cur:
             return
+        # v3.38（TAB-B）：普通切换即放弃多选（Ctrl/Shift 路径在 eventFilter 已消费事件）
+        if self._tab_multi:
+            self._tab_multi.clear()
+            self._multi_anchor = -1
+            self._update_multi_highlight()
         # 编辑视图尚未加载完成时无法取回内容，直接同步激活
         if not self._vstate[self._active_role()]["loaded"]:
             self._pending_switch = idx
@@ -2208,6 +2230,7 @@ class MainWindow(QMainWindow):
 
     def _perform_batch_close(self, idxs, discard_unnamed=False):
         """倒序移除给定索引集合，随后修正 _cur / 选中态 / 正文（索引不漂移）。"""
+        self._clear_tab_multi()   # v3.38（TAB-B）：关闭后索引漂移，多选集作废
         idxset = {i for i in idxs if 0 <= i < len(self._docs)}
         if not idxset:
             return 0
@@ -2249,7 +2272,11 @@ class MainWindow(QMainWindow):
         return closed
 
     def _batch_close(self, idxs, ask=True):
-        """批量关闭确认链：未命名非空 → 一次汇总确认（保存 / 放弃 / 取消）→ 倒序执行。"""
+        """批量关闭确认链（Notepad++ 对标）：
+
+        未保存文档（含**已命名但 dirty** 的）→ 一次汇总确认
+        「全部保存 / 全部不保存 / 取消」→ 倒序执行，任一保存被取消则整批中止。
+        """
         if self._switching:
             return 0
         idxs = sorted({i for i in idxs if 0 <= i < len(self._docs)})
@@ -2257,22 +2284,83 @@ class MainWindow(QMainWindow):
             return 0
         if self._cur in idxs:
             self._capture_current_md()               # 实时内容回写，保证判定与保存内容正确
-        need = [i for i in idxs if self._unnamed_nonempty(i)]
+            self._docs[self._cur]["dirty"] = bool(self._dirty)   # 当前文档脏标记取实时
+        need_unnamed = [i for i in idxs if self._unnamed_nonempty(i)]
+        # v3.38（TAB-B）：已命名未保存的文档**必须**进确认（旧版只确认未命名，
+        # 有路径的 dirty 文档会被静默关闭丢内容）
+        need_named = [i for i in idxs if self._docs[i].get("path") is not None
+                      and self._docs[i].get("dirty")]
+        need = need_unnamed + need_named
         discard = not need
         if need and ask:
-            btn = QMessageBox.question(
-                self, "关闭多个标签页",
-                f"其中 {len(need)} 个未命名文档尚未保存，关闭将丢失内容。\n是否一并保存？",
-                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
-            if btn == QMessageBox.Cancel:
+            box = QMessageBox(self)
+            box.setWindowTitle("批量关闭")
+            box.setIcon(QMessageBox.Question)
+            names = []
+            for i in need[:8]:
+                nm = os.path.basename(self._docs[i]["path"]) \
+                    if self._docs[i].get("path") else "未命名"
+                names.append(f"    {nm}")
+            if len(need) > 8:
+                names.append(f"    …等共 {len(need)} 个")
+            box.setText(f"要关闭的 {len(idxs)} 个标签页中，{len(need)} 个文档未保存，"
+                        f"是否保存后关闭？\n" + "\n".join(names))
+            b_save = box.addButton("全部保存", QMessageBox.AcceptRole)
+            b_skip = box.addButton("全部不保存", QMessageBox.DestructiveRole)
+            box.addButton("取消", QMessageBox.RejectRole)
+            box.exec()
+            if box.clickedButton() is not b_save and box.clickedButton() is not b_skip:
                 return 0
-            if btn == QMessageBox.Save:
-                for i in sorted(need, reverse=True):
+            if box.clickedButton() is b_save:
+                for i in sorted(need_unnamed, reverse=True):
                     if not self._save_doc_as_sync(i):
                         return 0                     # 用户取消 → 整批中止，不动任何标签
+                for i in sorted(need_named, reverse=True):
+                    if not self._save_named_doc_sync(i):
+                        return 0
             else:
                 discard = True
         return self._perform_batch_close(idxs, discard_unnamed=discard)
+
+    def _save_named_doc_sync(self, idx):
+        """v3.38（TAB-B）：已命名文档同步落盘（批量「全部保存」用）。"""
+        doc = self._docs[idx]
+        if doc.get("path") is None:
+            return False
+        md = self._doc_text(idx)
+        if md is None:
+            return False
+        text = md if md.endswith("\n") else md + "\n"
+        try:
+            self.snapshot_history(doc["path"], text)
+            self._write_text(doc["path"], text)
+        except OSError as e:
+            QMessageBox.critical(self, "保存失败", f"{doc['path']}\n{e}")
+            return False
+        self._remember_dir("save", doc["path"])
+        doc["content"] = md
+        doc["dirty"] = False
+        if idx == self._cur:
+            self._dirty = False
+        self._refresh_tab_texts()
+        return True
+
+    def _clear_tab_multi(self):
+        self._tab_multi.clear()
+        self._multi_anchor = -1
+        self._update_multi_highlight()
+
+    def _close_all_tabs(self):
+        """v3.38（TAB-B）：关闭所有标签页（固定标签跳过，全固定则提示）。"""
+        if 0 <= self._cur < len(self._docs):
+            self._docs[self._cur]["dirty"] = bool(self._dirty)
+        idxs = [i for i in range(len(self._docs)) if not self._docs[i].get("pinned")]
+        if not idxs:
+            self.show_status("没有可关闭的标签页（固定标签需先取消固定）")
+            return
+        n = self._batch_close(idxs)
+        if n:
+            self.show_status(f"已关闭 {n} 个标签页")
 
     def _close_unmodified(self):
         """关闭所有未修改的标签（右键菜单项）；固定标签跳过（TAB-7 语义：不许自动关）。"""
@@ -2310,13 +2398,29 @@ class MainWindow(QMainWindow):
             idx = self._cur
         if not (0 <= idx < len(self._docs)):
             return
-        if idx != self._cur:
+        # v3.38（TAB-B）：多选感知 —— 右键命中选中集 → 选中与当前标签都保持不动
+        #（N++ 语义：对选中集操作）；右键在选中集外 → 放弃多选走普通路径
+        multi = {i for i in self._tab_multi if 0 <= i < len(self._docs)} \
+            if idx in self._tab_multi else set()
+        if self._tab_multi and not multi:
+            self._tab_multi.clear()
+            self._multi_anchor = -1
+            self._update_multi_highlight()
+        if not multi and idx != self._cur:
             self._tabbar.setCurrentIndex(idx)        # 右键即选中
         doc = self._docs[idx]
         has_path = doc.get("path") is not None
         pinned = doc.get("pinned")
         last = len(self._docs) - 1
         m = QMenu(self)
+        # v3.38（TAB-B）：多选生效 → 首位给「关闭选中标签页」+「取消多选」（N++ 对标）
+        if multi:
+            a = m.addAction(f"关闭选中的 {len(multi)} 个标签页")
+            a.triggered.connect(lambda: self._when_idle(
+                lambda: self._batch_close(sorted(multi))))
+            a = m.addAction("取消多选")
+            a.triggered.connect(self._clear_tab_multi)
+            m.addSeparator()
         # v3.38（TAB-7）：固定 / 取消固定（Notepad++ 对标第一项）
         a = m.addAction("固定 / 取消固定标签")
         a.setCheckable(True)
@@ -2339,6 +2443,8 @@ class MainWindow(QMainWindow):
                 [i for i in range(idx + 1, len(self._docs)) if not self._docs[i].get("pinned")])))
         a = m.addAction("关闭所有未修改")
         a.triggered.connect(lambda: self._when_idle(self._close_unmodified))
+        a = m.addAction("关闭所有标签页")
+        a.triggered.connect(lambda: self._when_idle(self._close_all_tabs))
         m.addSeparator()
         a = m.addAction("在资源管理器中显示")
         a.setEnabled(has_path)
@@ -3236,6 +3342,50 @@ class MainWindow(QMainWindow):
         else:
             self.show_status("未找到 CHANGELOG.md")
 
+    # ---- v3.38（HELP-1）：使用手册 ----
+    def _manual_md(self):
+        """读取使用手册 Markdown（开发态 src/，打包态 _internal/）。"""
+        p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "使用手册.md")
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                return f.read()
+        except OSError:
+            return "# 使用手册\n\n手册文件缺失：" + p
+
+    def _show_manual(self):
+        """使用手册：独立非模态窗口，用编辑器内核只读渲染（滚动浏览）。"""
+        if getattr(self, "_manual_dlg", None) is None:
+            dlg = QDialog(self)
+            dlg.setWindowTitle(f"使用手册 · {APP_NAME}")
+            dlg.setWindowFlag(Qt.WindowMinMaxButtonsHint, True)
+            dlg.resize(960, 720)
+            v = QWebEngineView(dlg)
+            v.settings().setAttribute(
+                QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+            lay = QHBoxLayout(dlg)
+            lay.setContentsMargins(0, 0, 0, 0)
+            lay.addWidget(v)
+            dlg._view = v
+            dlg._ready = False
+
+            def _fill(ok):
+                if not ok:
+                    return
+                self._js_view(v, f"window.setTheme({js(self._theme)})")
+                v.setZoomFactor(self._zoom)
+                self._js_view(v, "window.setPreviewMode(true)")
+                self._js_view(v, f"window.setPreviewContent({js(self._manual_md())})")
+                dlg._ready = True
+
+            v.loadFinished.connect(_fill)
+            v.load(QUrl.fromLocalFile(
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "editor.html")))
+            self._manual_dlg = dlg
+        self._manual_dlg.show()
+        self._manual_dlg.raise_()
+        self._manual_dlg.activateWindow()
+        self.show_status("已打开使用手册（滚动浏览，Esc 关闭）")
+
     def _show_shortcuts(self):
         """快捷键一览：从快捷键管理体系动态生成（含用户自定义值）。"""
         rows = []
@@ -3918,6 +4068,34 @@ class MainWindow(QMainWindow):
                 if i >= 0:
                     self._close_tab(i)
                     return True
+            elif (ev.type() == QEvent.MouseButtonPress and ev.button() == Qt.LeftButton
+                  and ev.modifiers() & (Qt.ControlModifier | Qt.ShiftModifier)):
+                # v3.38（TAB-B）：Ctrl+单击增减选中 / Shift+单击区间选中（消费事件
+                # 阻止 QTabBar 内部切标签；固定标签不参与多选）
+                i = self._tabbar.tabAt(ev.position().toPoint())
+                if i >= 0 and not self._docs[i].get("pinned"):
+                    if ev.modifiers() & Qt.ControlModifier:
+                        if i in self._tab_multi:
+                            self._tab_multi.discard(i)   # 取消选中：锚点保持不变
+                        else:
+                            self._tab_multi.add(i)
+                            self._multi_anchor = i
+                    else:   # Shift：锚点（上次 Ctrl 单击，缺省当前标签）到本标签的区间
+                        a = self._multi_anchor if self._multi_anchor >= 0 else self._cur
+                        lo, hi = sorted((a, i))
+                        self._tab_multi = {k for k in range(lo, hi + 1)
+                                           if not self._docs[k].get("pinned")}
+                    self._update_multi_highlight()
+                    self.show_status(
+                        f"已选中 {len(self._tab_multi)} 个标签页（Ctrl+单击增减，Shift+单击区间，右键可批量关闭）")
+                return True
+            elif (ev.type() == QEvent.MouseButtonPress and ev.button() == Qt.LeftButton):
+                # 普通左键单击：清多选（正常切标签路径不受影响）。
+                # 注意右键**不能**在这里清 —— 右键命中选中集时要保持多选弹批量关闭菜单
+                if self._tab_multi:
+                    self._tab_multi.clear()
+                    self._multi_anchor = -1
+                    self._update_multi_highlight()
             elif ev.type() == QEvent.MouseButtonDblClick:
                 i = self._tabbar.tabAt(ev.position().toPoint())
                 if i >= 0:
