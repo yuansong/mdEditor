@@ -238,6 +238,8 @@ class MainWindow(QMainWindow):
         self._pending_switch = -1
         # v3.38（TAB-3）：已关闭标签栈（Ctrl+Alt+T 逐个回溯，浏览器语义）
         self._closed_stack = []
+        # v3.38（TAB-8）：最近使用顺序（MRU，存 doc 字典引用；切换时前插、关闭时惰性剔除）
+        self._mru = []
 
         # ---- 模式（edit=写作 / src=源码 / dual=分屏）----
         self._mode = "edit"
@@ -346,6 +348,17 @@ class MainWindow(QMainWindow):
         tl = QHBoxLayout(tab_wrap)
         tl.setContentsMargins(8, 0, 0, 0)
         tl.addWidget(self._tabbar)
+        # v3.38（TAB-9）：标签溢出下拉（N++ / VS Code 对标）—— 列出全部标签带
+        # • 未保存 / 📌 固定标记，点击切换；仅在总宽超出可视宽度时启用
+        self._btn_tb_more = QToolButton(tab_wrap)
+        self._btn_tb_more.setObjectName("tbMore")
+        self._btn_tb_more.setText("»")
+        self._btn_tb_more.setAutoRaise(True)
+        self._btn_tb_more.setFixedWidth(24)
+        self._btn_tb_more.setCursor(Qt.PointingHandCursor)
+        self._btn_tb_more.clicked.connect(self._show_tb_more_menu)
+        self._btn_tb_more.setEnabled(False)
+        tl.addWidget(self._btn_tb_more)
         tl.addStretch(1)
 
         right = QWidget(self)
@@ -426,6 +439,12 @@ class MainWindow(QMainWindow):
         self._dual_split.setStretchFactor(1, 1)
         self._dual_split.setHandleWidth(1)
         self._stack.addWidget(self._dual_split)  # index 1
+
+        # v3.38（SYN-3）：预览 → 源码反向同步的循环防护 / 变更检测状态
+        self._sync_ts_src2prev = 0.0   # 最近一次程序性滚动预览（源码同步所致）的时刻
+        self._sync_ts_prev2src = 0.0   # 最近一次用户滚动预览触发反向同步的时刻
+        self._last_src_pair = None     # 上次发给预览的 (块号, frac)——无变化不重发
+        self._last_prev_pair = None    # 上次从预览收到并转发的 (块号, frac)
 
     # ================= 工具栏 + 菜单 =================
     def _init_menu_toolbar(self):
@@ -612,6 +631,8 @@ class MainWindow(QMainWindow):
         # v3.38（TAB-4）：上一 / 下一标签页（Ctrl+PgUp / Ctrl+PgDn，N++ 与 VS Code 同款）
         self._reg_act("视图", "上一个标签页", "Ctrl+PgUp", lambda: self._cycle_tab(-1), menu=m_view)
         self._reg_act("视图", "下一个标签页", "Ctrl+PgDown", lambda: self._cycle_tab(1), menu=m_view)
+        # v3.38（TAB-8）：Ctrl+Tab MRU 快切面板（松开 Ctrl 或回车确认，Esc 取消）
+        self._reg_act("视图", "标签快切面板", "Ctrl+Tab", self._open_tab_switcher, menu=m_view)
         m_view.addSeparator()
         self._act_typewriter = self._reg_act("视图", "打字机模式", None,
                                              self.toggle_typewriter, menu=m_view, checkable=True)
@@ -648,6 +669,7 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self._place_tb_expand_btn()
+        self._update_tb_more()   # v3.38（TAB-9）：窗口缩放重算标签溢出态
 
     def createPopupMenu(self):
         """工具栏 / 菜单栏右键菜单：只给「显示 / 隐藏工具栏」一项。
@@ -906,6 +928,7 @@ class MainWindow(QMainWindow):
     def _poll_sync_scroll(self):
         """v3.29 双栏同步滚动：源码视图滚动位置 / 光标段落 → 预览视图。
 
+        v3.38（SYN-3）：同时轮询预览视图，用户滚动预览时反向带动源码。
         非双栏直接返回；两侧页面都加载完成后才发查询，避免 JS 未注入报错。"""
         if not self._dual or self._view_src is None or self._view_prev is None:
             return
@@ -916,6 +939,9 @@ class MainWindow(QMainWindow):
         self._js_view(self._view_src,
                       "window.pollSrcScroll ? window.pollSrcScroll() : null",
                       self._on_src_scroll)
+        self._js_view(self._view_prev,
+                      "window.pollPrevScroll ? window.pollPrevScroll() : null",
+                      self._on_prev_scroll)
 
     def _on_src_scroll(self, res):
         try:
@@ -923,6 +949,10 @@ class MainWindow(QMainWindow):
         except (TypeError, ValueError):
             return
         if not isinstance(data, dict) or data.get("idx") is None:
+            return
+        # v3.38（SYN-3）：用户刚滚动过预览 → 反向同步优先，源码侧暂时让权，
+        # 否则光标锁定（cv）会把预览拉回光标段落、抵消用户的预览滚动。
+        if time.monotonic() - self._sync_ts_prev2src < 1.2:
             return
         # 光标在源码视口内可见 → 预览优先定位到光标所在段落（编辑跟随）
         if data.get("cv") and data.get("cidx") is not None:
@@ -934,7 +964,42 @@ class MainWindow(QMainWindow):
             frac = max(0.0, min(1.0, float(frac)))
         except (TypeError, ValueError):
             return
+        pair = (idx, round(frac, 2))
+        if pair == self._last_src_pair:   # 无变化不重发（防程序性滚动再触反向）
+            return
+        self._last_src_pair = pair
+        self._sync_ts_src2prev = time.monotonic()
         self._js_view(self._view_prev, f"window.scrollPreviewToBlock({idx},{frac})")
+
+    def _on_prev_scroll(self, res):
+        """v3.38（SYN-3）：预览滚动 → 反向带动源码视图。"""
+        try:
+            data = json.loads(res) if isinstance(res, str) else res
+        except (TypeError, ValueError):
+            return
+        if not isinstance(data, dict) or data.get("idx") is None:
+            return
+        now = time.monotonic()
+        # 这是源码同步程序性设置的滚动位置 → 不回传，切断回环
+        if now - self._sync_ts_src2prev < 0.6:
+            return
+        try:
+            idx = int(data["idx"])
+            frac = max(0.0, min(1.0, float(data.get("frac", 0))))
+        except (TypeError, ValueError, KeyError):
+            return
+        pair = (idx, round(frac, 2))
+        if pair == self._last_prev_pair:  # 预览没动（或仍是上次位置）不重发
+            return
+        # v3.38（SYN-3）：与上次正向发给预览的目标同块且 frac 微差 → 是正向
+        # 程序性落点（两侧参照残余偏差），不反向，杜绝正反向互相追逐
+        if (self._last_src_pair is not None and idx == self._last_src_pair[0]
+                and abs(frac - self._last_src_pair[1]) < 0.12):
+            self._last_prev_pair = pair
+            return
+        self._last_prev_pair = pair
+        self._sync_ts_prev2src = now
+        self._js_view(self._view_src, f"window.scrollSrcToBlock({idx},{frac})")
 
     def goto_line(self):
         n, ok = QInputDialog.getInt(self, "转到行", "行号：", 1, 1, 1_000_000)
@@ -1866,7 +1931,61 @@ class MainWindow(QMainWindow):
             name = os.path.basename(doc["path"]) if doc.get("path") else "未命名"
             # v3.38（TAB-1）：改读 per-doc dirty —— 顺带修掉「非当前标签不显示 •」
             mark = " • " if doc.get("dirty") else "  "
+            # v3.38（TAB-7）：固定标签加 📌 前缀（N++ / 浏览器对标，强提示 + 排左）
+            if doc.get("pinned"):
+                mark = "📌 " + mark.lstrip()
             self._tabbar.setTabText(i, f"{mark}{name}")
+        self._update_tb_more()   # v3.38（TAB-9）：标签溢出态随文本变化重算
+
+    # ---- TAB-7：固定标签（Pin）----
+    def _toggle_pin(self, idx):
+        """固定 / 取消固定：固定标签不可关闭、批量关闭跳过、强制排在未固定之前。"""
+        if not (0 <= idx < len(self._docs)):
+            return
+        doc = self._docs[idx]
+        doc["pinned"] = not doc.get("pinned")
+        name = os.path.basename(doc["path"]) if doc.get("path") else "未命名"
+        self.show_status(f"已{'固定' if doc['pinned'] else '取消固定'} · {name}")
+        self._enforce_pin_order()
+        self._refresh_tab_texts()
+
+    def _enforce_pin_order(self):
+        """把固定标签稳定地排到未固定标签之前（必要时重建标签条，保持当前文档）。"""
+        order = sorted(range(len(self._docs)),
+                       key=lambda i: not self._docs[i].get("pinned"))   # 稳定排序
+        if order == list(range(len(self._docs))):
+            return
+        old_cur = self._cur
+        self._docs = [self._docs[i] for i in order]
+        self._tabbar.blockSignals(True)
+        while self._tabbar.count():
+            self._tabbar.removeTab(0)
+        for _ in self._docs:
+            self._tabbar.addTab("")
+        self._tabbar.blockSignals(False)
+        if 0 <= old_cur < len(self._docs):
+            self._cur = order.index(old_cur)
+            self._tabbar.setCurrentIndex(self._cur)
+
+    # ---- TAB-9：标签溢出下拉（N++ / VS Code 对标）----
+    def _update_tb_more(self):
+        """标签总宽超出标签栏可视宽度时启用 » 下拉按钮。"""
+        if not hasattr(self, "_btn_tb_more"):
+            return
+        tb = self._tabbar
+        overflow = (tb.count() > 1 and tb.sizeHint().width() > tb.width() + 2)
+        self._btn_tb_more.setEnabled(overflow)
+        self._btn_tb_more.setToolTip("所有标签页" if overflow else "所有标签页（无溢出）")
+
+    def _show_tb_more_menu(self):
+        m = QMenu(self)
+        for i, doc in enumerate(self._docs):
+            name = os.path.basename(doc["path"]) if doc.get("path") else "未命名"
+            text = ("📌 " if doc.get("pinned") else "") + ("• " if doc.get("dirty") else "") + name
+            a = m.addAction(("● " if i == self._cur else "    ") + text)
+            a.triggered.connect(lambda _c=False, k=i: self._tabbar.setCurrentIndex(k))
+        m.exec(self._btn_tb_more.mapToGlobal(
+            self._btn_tb_more.rect().bottomLeft()))
 
     def _update_title(self):
         name = os.path.basename(self.file_path) if self.file_path else "未命名"
@@ -1913,6 +2032,8 @@ class MainWindow(QMainWindow):
             return
         self._cur = target
         doc = self._docs[target]
+        # v3.38（TAB-8）：切换完成 → 该文档移到 MRU 最前
+        self._mru = [doc] + [x for x in self._mru if x is not doc]
         self.file_path = doc.get("path")
         text = doc.get("content")
         if text is None:
@@ -1944,11 +2065,18 @@ class MainWindow(QMainWindow):
             self._cur -= 1
         elif to <= self._cur < frm:
             self._cur += 1
+        # v3.38（TAB-7）：拖动后固定标签仍须排在未固定之前
+        self._enforce_pin_order()
 
     def _close_tab(self, idx):
         if idx < 0 or idx >= len(self._docs) or self._switching:
             return
         doc = self._docs[idx]
+        # v3.38（TAB-7）：固定标签不可关闭（关闭按钮 / Ctrl+W / 菜单统一入口守卫）
+        if doc.get("pinned"):
+            name = os.path.basename(doc["path"]) if doc.get("path") else "未命名"
+            self.show_status(f"标签已固定，请先取消固定再关闭 · {name}")
+            return
 
         def do_close(cached_md=None):
             if cached_md is not None:
@@ -2147,16 +2275,26 @@ class MainWindow(QMainWindow):
         return self._perform_batch_close(idxs, discard_unnamed=discard)
 
     def _close_unmodified(self):
-        """关闭所有未修改的标签（右键菜单项）。"""
+        """关闭所有未修改的标签（右键菜单项）；固定标签跳过（TAB-7 语义：不许自动关）。"""
         if 0 <= self._cur < len(self._docs):
             self._docs[self._cur]["dirty"] = bool(self._dirty)   # 实时脏标记优先
-        idxs = [i for i in range(len(self._docs)) if not self._docs[i].get("dirty")]
+        idxs = [i for i in range(len(self._docs))
+                if not self._docs[i].get("dirty") and not self._docs[i].get("pinned")]
         if not idxs:
             self.show_status("没有未修改的标签页")
             return
         n = self._batch_close(idxs)
         if n:
             self.show_status(f"已关闭 {n} 个未修改的标签页")
+
+    def _open_terminal(self, path):
+        """v3.38（TAB-10）：在文件所在目录打开 PowerShell。"""
+        d = os.path.dirname(path or "") or None
+        try:
+            subprocess.Popen("start powershell", shell=True, cwd=d)
+            self.show_status(f"已打开终端 · {d or '当前目录'}")
+        except OSError as e:
+            QMessageBox.warning(self, "打开终端失败", str(e))
 
     def _when_idle(self, fn):
         """等切换锁释放后再执行（右键即选中的异步窗口期保护）。"""
@@ -2176,26 +2314,39 @@ class MainWindow(QMainWindow):
             self._tabbar.setCurrentIndex(idx)        # 右键即选中
         doc = self._docs[idx]
         has_path = doc.get("path") is not None
+        pinned = doc.get("pinned")
         last = len(self._docs) - 1
         m = QMenu(self)
+        # v3.38（TAB-7）：固定 / 取消固定（Notepad++ 对标第一项）
+        a = m.addAction("固定 / 取消固定标签")
+        a.setCheckable(True)
+        a.setChecked(pinned)
+        a.triggered.connect(lambda: self._when_idle(lambda: self._toggle_pin(idx)))
         a = m.addAction("关闭\tCtrl+W")
+        a.setEnabled(not pinned)             # TAB-7：固定标签不可直接关闭
         a.triggered.connect(lambda: self._when_idle(lambda: self._close_tab(idx)))
         a = m.addAction("关闭其它所有")
         a.triggered.connect(lambda: self._when_idle(lambda: self._batch_close(
-            [i for i in range(len(self._docs)) if i != idx])))
+            [i for i in range(len(self._docs)) if i != idx and not self._docs[i].get("pinned")])))
         a = m.addAction("关闭左侧所有")
-        a.setEnabled(idx > 0)
-        a.triggered.connect(lambda: self._when_idle(lambda: self._batch_close(list(range(idx)))))
+        a.setEnabled(any(not self._docs[i].get("pinned") for i in range(idx)))
+        a.triggered.connect(lambda: self._when_idle(lambda: self._batch_close(
+            [i for i in range(idx) if not self._docs[i].get("pinned")])))
         a = m.addAction("关闭右侧所有")
-        a.setEnabled(idx < last)
+        a.setEnabled(any(not self._docs[i].get("pinned") for i in range(idx + 1, len(self._docs))))
         a.triggered.connect(lambda: self._when_idle(
-            lambda: self._batch_close(list(range(idx + 1, len(self._docs))))))
+            lambda: self._batch_close(
+                [i for i in range(idx + 1, len(self._docs)) if not self._docs[i].get("pinned")])))
         a = m.addAction("关闭所有未修改")
         a.triggered.connect(lambda: self._when_idle(self._close_unmodified))
         m.addSeparator()
         a = m.addAction("在资源管理器中显示")
         a.setEnabled(has_path)
         a.triggered.connect(lambda: self.show_in_explorer(doc.get("path")))
+        # v3.38（TAB-10）：在终端中打开（文件所在目录起 PowerShell）
+        a = m.addAction("在终端中打开")
+        a.setEnabled(has_path)
+        a.triggered.connect(lambda: self._open_terminal(doc.get("path")))
         m.addSeparator()
         a = m.addAction("复制文件名")
         a.setEnabled(has_path)
@@ -2232,6 +2383,89 @@ class MainWindow(QMainWindow):
         if n < 2:
             return
         self._tabbar.setCurrentIndex((self._cur + step) % n)
+
+    # ---- TAB-8：Ctrl+Tab MRU 快切面板 ----
+    class _TabSwitcher(QDialog):
+        """无边框快切浮层：按 MRU 列出标签，Ctrl+Tab / Ctrl+Shift+Tab 移动选区，
+        松开 Ctrl（或回车）确认，Esc 取消。"""
+
+        def __init__(self, win, entries, sel):
+            super().__init__(win, Qt.Dialog | Qt.FramelessWindowHint)
+            self.setWindowTitle("切换标签页")
+            self._win = win
+            self._entries = entries          # [(idx, 文本), ...]
+            self._sel = sel
+            self._result_idx = -1
+            lay = QVBoxLayout(self)
+            lay.setContentsMargins(10, 10, 10, 10)
+            self._list = QLabel(self)
+            self._list.setTextFormat(Qt.RichText)
+            lay.addWidget(self._list)
+            self._render()
+
+        def _render(self):
+            rows = []
+            for k, (idx, text) in enumerate(self._entries):
+                cur = "▶ " if k == self._sel else "&nbsp;&nbsp;&nbsp;"
+                rows.append(f"<div style='padding:2px 6px;{'' if k != self._sel else 'background:#3d6db5;color:#fff;border-radius:3px;'}'>"
+                            f"{cur}{text}</div>")
+            self._list.setText("".join(rows))
+
+        def keyPressEvent(self, ev):
+            k, mods = ev.key(), ev.modifiers()
+            if k in (Qt.Key_Tab, Qt.Key_Backtab) and mods & Qt.ControlModifier:
+                d = 1 if k == Qt.Key_Tab else -1
+                n = len(self._entries)
+                self._sel = (self._sel + d) % n
+                self._render()
+                ev.accept()
+                return
+            if k in (Qt.Key_Return, Qt.Key_Enter):
+                self.accept()
+                ev.accept()
+                return
+            if k == Qt.Key_Escape:
+                self.reject()
+                ev.accept()
+                return
+            super().keyPressEvent(ev)
+
+        def keyReleaseEvent(self, ev):
+            # 松开 Ctrl = 确认（VS Code 语义）
+            if ev.key() == Qt.Key_Control:
+                self.accept()
+                ev.accept()
+                return
+            super().keyReleaseEvent(ev)
+
+        def run(self):
+            self.exec()
+            return self._entries[self._sel][0] if self.result() else -1
+
+    def _open_tab_switcher(self):
+        self._mru = [d for d in self._mru
+                     if any(d is x for x in self._docs)]   # 惰性剔除已关闭
+        if len(self._docs) < 2:
+            self.show_status("只有一个标签页")
+            return
+        # MRU 序优先，缺项（从未切过的标签）按标签条顺序补尾
+        order = [self._docs.index(d) if any(d is x for x in self._docs) else -1
+                 for d in self._mru]
+        order = [i for i in order if i >= 0]
+        order += [i for i in range(len(self._docs)) if i not in order]
+        entries = []
+        for i in order:
+            doc = self._docs[i]
+            name = os.path.basename(doc["path"]) if doc.get("path") else "未命名"
+            if doc.get("dirty"):
+                name = "● " + name
+            if doc.get("pinned"):
+                name = "📌 " + name
+            entries.append((i, name))
+        sel = 1 if len(entries) > 1 else 0
+        idx = self._TabSwitcher(self, entries, sel).run()
+        if 0 <= idx < len(self._docs) and idx != self._cur:
+            self._tabbar.setCurrentIndex(idx)
 
     # ---- TAB-6：全部保存 ----
     def save_all(self) -> bool:

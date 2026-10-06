@@ -29,6 +29,7 @@ class FakeAct:
     def __init__(self, text):
         self._text = text
         self._enabled = True
+        self._checked = False
         self._cbs = []
 
     def text(self):
@@ -39,6 +40,15 @@ class FakeAct:
 
     def isEnabled(self):
         return self._enabled
+
+    def setCheckable(self, v):
+        pass
+
+    def setChecked(self, v):
+        self._checked = bool(v)
+
+    def isChecked(self):
+        return self._checked
 
     @property
     def triggered(self):
@@ -113,8 +123,8 @@ def tabs():
 
 
 def names():
-    """标签文本去掉前缀脏标记后的文件名部分。"""
-    return [t.replace("•", "").strip() for t in tabs()]
+    """标签文本去掉前缀脏标记 / 固定标记后的文件名部分。"""
+    return [t.replace("•", "").replace("📌", "").strip() for t in tabs()]
 
 
 def open_menu(idx):
@@ -157,9 +167,10 @@ check("A4 数据层与标签层同长（无幽灵文档）", len(win._docs) == w
 # ---------- B 右键菜单：结构 / 右键即选中 / 置灰 ----------
 mids, _m = menu_of(1)
 wait(500)          # 右键即选中是异步切换（getMarkdown 回包后才落 _cur）
-_expect = ["关闭\tCtrl+W", "关闭其它所有", "关闭左侧所有", "关闭右侧所有", "关闭所有未修改",
-           "在资源管理器中显示", "复制文件名", "复制文件路径", "复制所在目录"]
-check("B1 菜单项齐备（9 项，含分隔线）",
+_expect = ["固定 / 取消固定标签", "关闭\tCtrl+W", "关闭其它所有", "关闭左侧所有", "关闭右侧所有",
+           "关闭所有未修改", "在资源管理器中显示", "在终端中打开",
+           "复制文件名", "复制文件路径", "复制所在目录"]
+check("B1 菜单项齐备（11 项，TAB-7 固定 + TAB-10 终端）",
       [a.text() for a in _m.acts] == _expect, str([a.text() for a in _m.acts]))
 check("B2 菜单含 2 条分隔线（关闭组 / 文件组）", _m.seps == 2, str(_m.seps))
 check("B3 右键即选中（右键第 2 个标签后 _cur 变为 1）", win._cur == 1, "cur=%s" % win._cur)

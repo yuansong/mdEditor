@@ -3923,10 +3923,78 @@ img.img-broken { display: none; }
       if (_ta !== a || _tb !== b) { a = _ta; b = _tb; }
     }
     selected = raw.slice(a, b);
-    var newText = raw.slice(0, a) + marker + selected + marker + raw.slice(b);
+    /* v3.38（OBS-F1）：相邻同标记壳合并 —— `**已加粗**和普通` 对裸文字「普通」
+       加粗时，朴素包裹得 **已加粗****和普通**：渲染完全正确，但相邻 strong 壳
+       不合并，源码冗余且连续分段加粗会不断拼出 4 游程。包裹前把紧邻的「同标记
+       恰 mlen 游程」外壳并入本次包裹区间：
+         左侧：raw[a-mlen, a) === marker 且其前驱非空白 / 非标记字符（= 合法闭合壳，
+               排除 *** 粗斜长游程）→ 壳并入（本次少包一层）；
+         右侧：raw[b, b+mlen) === marker 且其后继非空白 / 非标记字符（= 合法开口壳）
+               → 壳并入（本次闭合与右侧开口相消）。
+       两端同时命中也一并合并。守卫：选区首 / 尾字符不得为 mch（避免并入后形成
+       超长游程）；行内码 ` 无侧翼约束，不参与合并 */
+    /* v3.38（OBS-F1）：相邻同标记壳链式整并 —— `**已加粗**和普通` 对裸文字
+       「普通」加粗时，朴素包裹得 **已加粗****和普通**：渲染完全正确，但相邻
+       strong 壳不合并，源码冗余、连续分段加粗会拼出 4 游程。包裹前把两端紧邻
+       的「同标记完整外壳」逐节并入本次包裹（每节外壳的一对标记被本次的一对
+       替换，壳内内容并入选区，链式向外直到贴不住为止）：
+         左侧：a 紧邻恰 mlen 游程的闭合壳 → 向左找恰 mlen 的开口游程，其间内容
+               （无标记字符、非空、两端非空白）并入；再以开口游程为界继续向外。
+         右侧：b 紧邻恰 mlen 游程的开口壳 → 向右找恰 mlen 的闭合游程，同理链式。
+       守卫：选区首 / 尾字符不得为 mch；任一节内容含标记字符 / 空白边界 / 为空
+       即整链停止（已验证的节保留）；行内码 ` 无侧翼约束不参与合并 */
+    var _mgL = -1, _mgR = -1, _mgMidL = '', _mgMidR = '';
+    if (marker !== '`') {
+      var _mgGuard = 0;
+      if (selected.charAt(0) !== mch) {
+        var _pEnd = a;
+        while (_mgGuard++ < 100) {
+          var _rl = 0;
+          while (_pEnd - 1 - _rl >= 0 && raw.charAt(_pEnd - 1 - _rl) === mch) _rl++;
+          if (_rl !== mlen) break;
+          var _pl = _pEnd - mlen - 1;
+          while (_pl >= 0 && raw.charAt(_pl) !== mch) _pl--;
+          if (_pl < 0) break;
+          var _rnl = 0;
+          while (_pl - _rnl >= 0 && raw.charAt(_pl - _rnl) === mch) _rnl++;
+          if (_rnl !== mlen) break;
+          var _qs = _pl - _rnl + 1;
+          var _cs = _qs + mlen, _ce = _pEnd - mlen;
+          if (_ce <= _cs || /[*_~=`]/.test(raw.slice(_cs, _ce)) ||
+              /^\s|\s$/.test(raw.slice(_cs, _ce))) break;
+          _mgMidL = raw.slice(_cs, _ce) + _mgMidL;
+          _mgL = _qs;
+          _pEnd = _qs;
+        }
+      }
+      if (selected.charAt(selected.length - 1) !== mch) {
+        var _pSt = b;
+        while (_mgGuard++ < 200) {
+          var _rr2 = 0;
+          while (_pSt + _rr2 < raw.length && raw.charAt(_pSt + _rr2) === mch) _rr2++;
+          if (_rr2 !== mlen) break;
+          var _qr = _pSt + mlen;
+          while (_qr < raw.length && raw.charAt(_qr) !== mch) _qr++;
+          if (_qr >= raw.length) break;
+          var _rnr = 0;
+          while (_qr + _rnr < raw.length && raw.charAt(_qr + _rnr) === mch) _rnr++;
+          if (_rnr !== mlen) break;
+          var _cf = _pSt + mlen, _ce2 = _qr;
+          if (_ce2 <= _cf || /[*_~=`]/.test(raw.slice(_cf, _ce2)) ||
+              /^\s|\s$/.test(raw.slice(_cf, _ce2))) break;
+          _mgMidR += raw.slice(_cf, _ce2);
+          _mgR = _qr + _rnr;
+          _pSt = _mgR;
+        }
+      }
+    }
+    var newText = raw.slice(0, _mgL < 0 ? a : _mgL) + marker + _mgMidL + selected +
+                  _mgMidR + marker + raw.slice(_mgR < 0 ? b : _mgR);
     state.raw[state.editIdx] = newText;
     el.textContent = newText;
-    setCaret(el, a + marker.length + selected.length);
+    setCaret(el, raw.slice(0, _mgL < 0 ? a : _mgL).length + marker.length +
+                  _mgMidL.length + selected.length + _mgMidR.length + marker.length);
+
     markDirty();
     scheduleSnapshot();
   }
@@ -6075,9 +6143,17 @@ img.img-broken { display: none; }
     var code = mmdCtx.ta.value.replace(/\u00a0/g, ' ');
     /* 保留围栏首行的尺寸 / 图注属性（v3.22：w / h / cap / captop） */
     if (!mmdCtx.attrs) {
-      mmdCtx.attrs = parseFenceInfo(String(state.raw[mmdCtx.idx] || '').split('\n')[0]).attrs;
+      var _as2 = mmdCtx.qblk ? String(mmdCtx.qblk.getAttribute('data-raw') || '').split('\n')[0]
+                             : String(state.raw[mmdCtx.idx] || '').split('\n')[0];
+      mmdCtx.attrs = parseFenceInfo(_as2).attrs;
     }
-    state.raw[mmdCtx.idx] = fenceInfoLine('mermaid', mmdCtx.attrs) + '\n' + code + '\n```';
+    /* v3.38（MMD-8）：引用内图表 → 行区间替换（只换 .qblk 对应的围栏行），
+       旧写法整块替换 state.raw[idx] 会把整个引用块变成裸围栏（引用文字全丢） */
+    if (mmdCtx.qblk) {
+      replaceQblkSub(mmdCtx.qblk, fenceInfoLine('mermaid', mmdCtx.attrs) + '\n' + code + '\n```');
+    } else {
+      state.raw[mmdCtx.idx] = fenceInfoLine('mermaid', mmdCtx.attrs) + '\n' + code + '\n```';
+    }
     mmdCtx.mmbEl.setAttribute('data-src', code);
     /* skipRender：closeMmdEditor 会统一渲染一次，避免同一元素并发双重渲染竞争（v3.26） */
     if (!skipRender) renderMermaidEl(mmdCtx.mmbEl);
@@ -6122,7 +6198,13 @@ img.img-broken { display: none; }
     var idx = ctx.idx;
     if (state.editIdx === idx) state.editIdx = -1;
     commitEditSilent();
-    state.raw.splice(idx, 1);
+    /* v3.38（MMD-8）：引用内图表 → 只删 .qblk 对应的围栏行（旧写法 splice(idx,1)
+       会删掉整个引用块） */
+    if (ctx.qblk) {
+      if (!replaceQblkDelete(ctx.qblk)) return;
+    } else {
+      state.raw.splice(idx, 1);
+    }
     if (!state.raw.length) state.raw = [''];
     if (idx >= state.raw.length) idx = state.raw.length - 1;
     rebuild();
@@ -6206,10 +6288,18 @@ img.img-broken { display: none; }
     var anchor = mmb;
     if (mmb.parentNode && mmb.parentNode.classList &&
         mmb.parentNode.classList.contains('mmd-wrap')) anchor = mmb.parentNode;
-    blk.insertBefore(ta, anchor);
+    /* v3.38（MMD-8）：ta 与 anchor 同层插入 —— 引用内图表的 anchor（.mmd-wrap）
+       在 .qblk 内、不是 blk 的直接子节点，旧写法 blk.insertBefore 抛 NotFoundError，
+       编辑器静默打不开 */
+    anchor.parentNode.insertBefore(ta, anchor);
     mountExampleBtn(ta, 'mmd');   /* v3.29d（UX #12） */
-    mmdCtx = { idx: idx, blk: blk, mmbEl: mmb, ta: ta, timer: null,
-               attrs: parseFenceInfo(String(state.raw[idx] || '').split('\n')[0]).attrs };
+    /* v3.38（MMD-8）：引用内图表的 attrs 从 .qblk 的 data-raw 首行解析
+       （state.raw[idx] 首行是引用文字，不是围栏首行） */
+    var _mq = mmb.closest('.qblk');
+    var _asrc = _mq ? String(_mq.getAttribute('data-raw') || '').split('\n')[0]
+                    : String(state.raw[idx] || '').split('\n')[0];
+    mmdCtx = { idx: idx, blk: blk, mmbEl: mmb, ta: ta, timer: null, qblk: _mq || null,
+               attrs: parseFenceInfo(_asrc).attrs };
     ta.addEventListener('input', function () {
       ta.rows = Math.min(14, Math.max(3, ta.value.split('\n').length + 1));
       if (!mmdCtx) return;
@@ -6829,9 +6919,68 @@ img.img-broken { display: none; }
     if (!blk) return;
     var r = blk.getBoundingClientRect();
     var vh = window.innerHeight || 800;
-    var pad = vh * 0.08;
+    /* SYN-3：与两侧轮询探针（min(48, 8%vh)）同参照系，否则正反向互追振荡 */
+    var pad = Math.min(48, vh * 0.08);
     var y = r.top + window.scrollY - pad + (frac || 0) * Math.max(0, r.height - pad * 2);
     window.scrollTo(0, Math.max(0, y));
+  };
+
+  /* ---------- v3.38（SYN-3）：预览 → 源码反向滚动同步 ----------
+     Python 每 160ms 同时轮询两侧：源码侧 pollSrcScroll（既有）+ 预览侧 pollPrevScroll。
+     循环防护在 Python 侧做时间戳 + 变更检测，这里只负责报数与定位。 */
+  window.pollPrevScroll = function () {
+    if (window.__previewLock !== true || !ED || !ED.children.length)
+      return JSON.stringify({ idx: null });
+    var blocks = ED.children, n = blocks.length;
+    var probe = Math.min(48, (window.innerHeight || 800) * 0.08);
+    /* 视口探针落在第几个块：块顶单调不降，二分找最后一个 top <= probe */
+    var lo = 0, hi = n - 1, idx = 0;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      if (blocks[mid].getBoundingClientRect().top <= probe) { idx = mid; lo = mid + 1; }
+      else { hi = mid - 1; }
+    }
+    var y0 = blocks[idx].getBoundingClientRect().top;
+    var y1 = (idx + 1 < n) ? blocks[idx + 1].getBoundingClientRect().top : y0 + 80;
+    var frac = (y1 > y0) ? (probe - y0) / (y1 - y0) : 0;
+    frac = Math.max(0, Math.min(1, frac));
+    return JSON.stringify({
+      idx: idx, frac: Math.round(frac * 100) / 100
+    });
+  };
+  /* 源码视图：滚动到第 idx 个块的源码起始（frac = 块内进度 0~1）。
+     与 pollSrcScroll 同一套坐标（块间分隔 = 空行 2 字符），预览视图调用无效果。 */
+  window.scrollSrcToBlock = function (idx, frac) {
+    if (window.__previewLock === true) return;
+    if (!srcEl || !state.raw.length) return;
+    var tn = srcEl.firstChild;
+    if (!tn || tn.nodeType !== 3) return;
+    idx = Math.max(0, Math.min(idx | 0, state.raw.length - 1));
+    var off = 0;
+    for (var k = 0; k < idx; k++) off += state.raw[k].length + 2;
+    function yAbs(o) {
+      var r = document.createRange();
+      r.setStart(tn, Math.min(o, tn.length));
+      r.collapse(true);
+      var rect = r.getBoundingClientRect();
+      return rect ? rect.top + window.scrollY : -1e9;
+    }
+    var y0 = yAbs(off);
+    var off1 = (idx + 1 < state.raw.length) ? off + state.raw[idx].length + 2 : off;
+    var y1 = (idx + 1 < state.raw.length) ? yAbs(off1) : y0 + 80;
+    var probe = Math.min(48, (window.innerHeight || 800) * 0.08);
+    var target = y0 + (frac || 0) * Math.max(0, y1 - y0) - probe;
+    window.scrollTo(0, Math.max(0, target));
+    /* SYN-3：光标折叠到目标块起始 —— 光标随视口走，否则「光标可见」的
+       正向同步（cv 优先）会在让权窗口过后把预览拉回旧光标段落 */
+    try {
+      var sel2 = getSelection();
+      var rg2 = document.createRange();
+      rg2.setStart(tn, Math.min(off, tn.length));
+      rg2.collapse(true);
+      sel2.removeAllRanges();
+      sel2.addRange(rg2);
+    } catch (e) {}
   };
 
   /* 换文档时清理「就地编辑器」上下文（图表 / 公式源码框）。
@@ -7229,6 +7378,11 @@ img.img-broken { display: none; }
       docGen++;   /* v3.37（DOCGEN-1）：源码态落回 = 整体替换文档 */
       state.raw = splitBlocks(t);
       lastSnapshot = JSON.stringify(state.raw);
+      /* v3.38（UNDO-1）：与 setMarkdown 同口径 —— 整体替换文档 = 撤销历史作废。
+         旧实现只重置 lastSnapshot，不清 undo/redo 栈：撤销到旧态 → 进源码态整体
+         改写 → 退出后按 Ctrl+Y，旧 redo 条目会静默覆盖源码改写（无提示丢内容）。
+         口径经用户拍板：清双栈 */
+      undoStack = []; redoStack = [];
       rebuild();
       updateStats();
     }
@@ -7633,6 +7787,20 @@ img.img-broken { display: none; }
           mbs[k4].innerHTML = mmdMap[ds2];
           mbs[k4].removeAttribute('data-src');
         }
+      }
+      /* v3.38（CODE-8）：代码块导出着色 —— blockHTML 构建期懒渲染输出空壳
+         （v3.31 #15 不着色），导出 HTML 全部黑字；这里按语言补编辑器同款
+         hlCodeHTML。引用内 .qblk 的语言从 data-raw 首行解析（同 applyCodeEnhance） */
+      var presE = bh.querySelectorAll('pre.fence');
+      for (var k5 = 0; k5 < presE.length; k5++) {
+        var cE = presE[k5].querySelector('code');
+        if (!cE) continue;
+        var qbE = presE[k5].closest('.qblk');
+        var flE = qbE ? String(qbE.getAttribute('data-raw') || '').split('\n')[0] || ''
+                      : String(state.raw[i] || '').split('\n')[0] || '';
+        var lgE = parseFenceInfo(flE).lang;
+        if (lgE === 'mermaid' || lgE === 'math') continue;
+        cE.innerHTML = hlCodeHTML(cE.textContent.replace(/\n$/, ''), lgE || '') + '\n';
       }
       body += '<div class="blk">' + bh.innerHTML + '</div>\n';
     }
@@ -13141,6 +13309,65 @@ img.img-broken { display: none; }
     }
     state.raw[idx] = firstC + '\n' + text + '\n```';
     markDirty(); scheduleSnapshot();
+  }
+  /* v3.38（MMD-8）：把 .qblk 对应的新子文本写回引用块 raw 的行区间
+     （每行补 '> ' 前缀），并刷新 data-raw。MMD-8 图表回写与 QUO-5 代码块
+     回写共用同一套「行区间定位 + 前缀还原」逻辑 */
+  function replaceQblkSub(q, newSub) {
+    var blk = q.closest('.blk');
+    var idx = blk ? blockIndexOf(blk) : -1;
+    if (idx < 0) return false;
+    var oldSub = String(q.getAttribute('data-raw') || '');
+    if (!oldSub) return false;
+    var oldLines = oldSub.split('\n');
+    var cur = String(state.raw[idx] || '').split('\n');
+    /* 比对放宽：stripQ 后再忽略行首空白 —— data-raw 渲染分块时已丢行首缩进，
+       引用行却带缩进（> "  A-->B" vs data-raw "A-->B"），逐字符比对必失败 */
+    var stripQ = function (l) {
+      return l.replace(/^\s*>[^\S\n]?/, '').replace(/^\s+/, '');
+    };
+    for (var sQ = 0; sQ + oldLines.length <= cur.length; sQ++) {
+      var okQ = true;
+      for (var tQ = 0; tQ < oldLines.length; tQ++) {
+        if (stripQ(cur[sQ + tQ]) !== oldLines[tQ].replace(/^\s+/, '')) { okQ = false; break; }
+      }
+      if (okQ) {
+        var addsQ = newSub.split('\n').map(function (l) { return l ? '> ' + l : '>'; });
+        var argsQ2 = [sQ, oldLines.length].concat(addsQ);
+        cur.splice.apply(cur, argsQ2);
+        state.raw[idx] = cur.join('\n');
+        q.setAttribute('data-raw', newSub);
+        markDirty(); scheduleSnapshot();
+        return true;
+      }
+    }
+    return false;
+  }
+  /* v3.38（MMD-8）：删除 .qblk 对应的围栏行（引用内图表按 DEL 只删图表行，
+     不删整个引用块） */
+  function replaceQblkDelete(q) {
+    var blk = q.closest('.blk');
+    var idx = blk ? blockIndexOf(blk) : -1;
+    if (idx < 0) return false;
+    var oldSub = String(q.getAttribute('data-raw') || '');
+    if (!oldSub) return false;
+    var oldLines = oldSub.split('\n');
+    var cur = String(state.raw[idx] || '').split('\n');
+    var stripQ = function (l) {
+      return l.replace(/^\s*>[^\S\n]?/, '').replace(/^\s+/, '');
+    };
+    for (var sQ = 0; sQ + oldLines.length <= cur.length; sQ++) {
+      var okQ = true;
+      for (var tQ = 0; tQ < oldLines.length; tQ++) {
+        if (stripQ(cur[sQ + tQ]) !== oldLines[tQ].replace(/^\s+/, '')) { okQ = false; break; }
+      }
+      if (okQ) {
+        cur.splice(sQ, oldLines.length);
+        state.raw[idx] = cur.join('\n');
+        return true;
+      }
+    }
+    return false;
   }
   /* v3.31.3（QUO-5）：引用内代码块回写 —— 把新围栏写回引用块 raw 中
      data-raw 对应的行区间（每行补 '> ' 前缀），并刷新 .qblk 的 data-raw */

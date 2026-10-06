@@ -796,3 +796,125 @@ title 与图标，并补上**自动换行态按源码 `wrap=1` 还原**（此前
 - TAB-7~TAB-10（固定标签 / Ctrl+Tab 快切 / 标签溢出下拉 / 在终端中打开）为方案文档登记的**第二批**，
   未在本批实施；连同其它全部未实现条目，已汇总到 `docs/未实现功能决策清单-v3.38.md` 待拍板。
 
+
+
+## 第二十三章 v3.38 批次（之九）：A/B 档十项（2026-10-06）
+
+> 承第二十二章决策稿，用户拍板：A 档 + B 档全做、UNDO-1 清双栈。
+> 实施序：UNDO-1 → OBS-F1 → TAB-7/8/9/10 → SYN-3 → MMD-8 → CODE-8 → OBS-N1（实证转请示）。
+
+### 23.1 UNDO-1 源码态退出清双栈（editor.html）
+
+`setSourceMode(false)` 退出源码态分支整体替换文档后补 `undoStack = []; redoStack = [];`，
+与 `setMarkdown` 同口径。修复：撤销到旧态 → 进源码态改写 → 退出后 Ctrl+Y，
+旧 redo 条目静默覆盖改写内容（无提示丢数据）。口径经用户拍板：清双栈。
+
+### 23.2 OBS-F1 相邻同标记壳链式整并（editor.html wrapSelection）
+
+对 `**已加粗**和普通` 再加粗（裸文字），新壳与紧邻同标记壳**链式整并**为
+`**已加粗和普通**`，不再产出 `**已加粗****和普通**`（4 游程）。
+实现要点（三版迭代后定稿）：
+- 整壳并入：左右两侧按「配对游程」吞并完整壳（非只吃闭合标记）；
+- 链式循环：并入后向同方向继续找链（`**甲**乙**丙**` + 加粗乙 → `**甲乙丙**`）；
+- 渲染本就正确，纯源码整洁度。
+过程坑（探针侧）：a2 版只吃闭合标记导致壳开口残留（B6 全错，`__wrapDbg` 实证）；
+newText 前后缀初值空串丢上下文；B5/B9 期望值两度算错（`***甲***和普通**` 的
+5 游程为**既有解析行为**，备份对照复现一致，登记 OBS-F1b 不另修）。
+
+### 23.3 TAB-7 固定标签（mainwindow.py）
+
+- per-doc `pinned` + `_toggle_pin(idx)`；右键菜单新增「固定 / 取消固定标签」（checkable）；
+- 标签文本 📌 前缀（`_refresh_tab_texts` 读 pinned）；
+- `_resort_tabs_pinned()`：固定强制排左（稳定排序），`tabMoved` 拖动后同样强制；
+- 关闭守卫：`_close_tab` / Ctrl+W / 关闭按钮 / 中键 / 双击对固定标签一律忽略；
+- 批量关闭（其它/左侧/右侧/所有未修改）跳过固定项。
+
+### 23.4 TAB-8 Ctrl+Tab MRU 快切面板（mainwindow.py）
+
+- `_mru` 按 `_activate_doc` 更新（切换完成 → 该文档移到最前）；
+- `_open_tab_switcher()`：自绘无边框浮层（QDialog），列出标签（• 未保存标记），高亮当前；
+- Ctrl+Tab 循环下一个 / Ctrl+Shift+Tab 上一个（事件过滤器捕获，松开确认提交）；
+- 只有一个标签时提示不开面板；面板 ESC 取消；关闭标签时惰性剔除。
+
+### 23.5 TAB-9 标签溢出下拉（mainwindow.py）
+
+`_btn_tab_more`（»）加入标签条布局；`_update_tab_overflow()` 按
+`_tabbar.width() + 34 < tab_wrap.width()` 启停；点击弹 QMenu 列出**全部**标签
+（带 • 标记与 📌），点击切换（`_when_idle` 防切换锁）；`resizeEvent` 重算。
+
+### 23.6 TAB-10 在终端中打开（mainwindow.py）
+
+右键菜单新增「在终端中打开」（未命名置灰）：`subprocess.Popen('start powershell', shell=True,
+cwd=目录)`（Windows）。收编在「复制路径」组后。
+
+### 23.7 SYN-3 预览→源码反向滚动同步（editor.html + mainwindow.py）
+
+机制：`_poll_sync_scroll` 每 160ms **同时**轮询两侧——源码侧既有 `pollSrcScroll` +
+预览侧新增 `pollPrevScroll`（视口探针落在第几个渲染块 + frac，二分）；预览滚动 →
+Python 转发 `scrollSrcToBlock` 反向定位源码。
+
+循环防护三层（缺一即振荡，实测踩满）：
+1. **时间戳**：程序性滚动预览后 0.6s 内预览 poll 不回传；用户滚预览触发反向后
+   1.2s 内源码侧让权（否则「光标可见优先」把预览拉回光标段落，反向同步被整体抵消）；
+2. **变更检测**：`_last_src_pair` / `_last_prev_pair` 无变化不重发；
+3. **死区**：与正向目标同块且 frac 差 < 0.12 视为程序性落点，不反向。
+
+参照系统一（关键）：`scrollPreviewToBlock` 落点 pad 由 8%vh 改为
+`min(48, 8%vh)`，与两侧轮询探针同参照——否则同一位置两侧报的 frac 有系统偏差，
+正反向互相追逐（实测静置时预览 23→78 漂移）。`scrollSrcToBlock` 滚动后把源码
+光标折叠到目标块起始（光标随视口走，防光标残留回拉）。
+
+### 23.8 MMD-8 引用块内图表编辑（editor.html，探针实证 4 处缺陷）
+
+| 缺陷 | 根因 | 修复 |
+| --- | --- | --- |
+| 点击图表编辑器打不开 | `openMmdEditor` 的 `blk.insertBefore(ta, anchor)`：引用内 anchor（.mmd-wrap）在 `.qblk` 内、非 blk 直接子节点 → NotFoundError 静默抛 | `anchor.parentNode.insertBefore(ta, anchor)` 同层插入 |
+| 编辑回写毁掉引用块 | `commitMmdInput` 整块替换 `state.raw[idx]` → 引用文字全丢变裸围栏 | 新增 `replaceQblkSub`：行区间替换 + 前缀还原（QUO-5 同款），刷新 data-raw |
+| 围栏属性丢失 | attrs 从 `state.raw[idx]` 首行解析（那是引用文字） | 引用内改从 `.qblk` data-raw 首行解析 |
+| DEL 删掉整个引用块 | `deleteMmdBlock` `splice(idx,1)` | 新增 `replaceQblkDelete` 只删围栏行 |
+
+**踩坑**：`.qblk` data-raw 渲染分块时**丢失行首缩进**（`> "  A-->B"` 存为
+`"A-->B"`）→ 行区间逐字符比对必失败、回写被安全丢弃 → 比对放宽为
+strip 前缀后忽略行首空白（替换仍整段写 newSub，不受影响）。
+`syncQblkCode`（QUO-5）有同款理论缺陷但未动（避免回归，另册观察）。
+
+### 23.9 CODE-8 导出 HTML 代码着色（editor.html getExportHTML）
+
+导出 body 从 `blockHTML` 重新序列化，代码块是构建期懒渲染空壳（v3.31 #15 不着色）
+→ 导出 HTML 全黑字。修复：导出循环里对 `pre.fence` 按语言调编辑器同款
+`hlCodeHTML`（引用内 `.qblk` 语言从 data-raw 首行解析，同 applyCodeEnhance）；
+mermaid / math 不走 pre.fence 天然排除（SVG 静态化路径不受影响）。
+
+### 23.10 OBS-N1 delimiter 栈：实证转请示（未实施）
+
+实施前实证（6 形状 + 4 敏感形状）：
+- `*A**B*` → `<em>A**B</em>`、`**A*B**` → `<strong>A*B</strong>`、
+  `*a*b*c*` → 两段 em —— **均与 CommonMark 一致**（裸 `**` 是标准字面文本，
+  Typora 同款）。**m110 基线的 seed42 s6「FAIL」实为标准行为，非缺陷**；
+- 唯一分歧：`*a *b* c*`（CommonMark 嵌套 em，当前裸 `*`）——同侧字符连续
+  开新强调的罕见手写形状。
+
+结论：delimiter 栈（CommonMark process-emphasis 完整移植）只能修这最后一个罕见
+形状，而上批同方向大改已回退过一次（13 FAIL）。**建议结项**（现状 = 与
+CommonMark 主流形状一致），是否做完整移植请用户二次拍板。
+
+### 23.11 验证
+
+| 探针 | 结果 | 覆盖 |
+| --- | --- | --- |
+| `_m128_undo_merge.py` | 17/0 | UNDO-1（A 组 7 例撤销/重做/源码态路径）+ OBS-F1（B 组 9 例并入/链式/不误并） |
+| `_m129_tabs2.py` | 30/0 | TAB-7 固定 / TAB-10 终端 / TAB-9 溢出 / TAB-8 MRU |
+| `_m130_syn3.py` | 12/0 | SYN-3：反向主路径（时间线采样）/ 循环防护稳定性 / 让权窗口 |
+| `_m131_mmdquote.py` | 11/0 | MMD-8：渲染取证 / 编辑入口 / 回写保真 / 普通位置对照 |
+| `_m132_export_code.py` | 8/0 | CODE-8 着色（python/js/无语言/mermaid）+ MMD-8 DEL 删除 |
+| 内核 `test_core.js` | ALL PASSED | 全量 |
+| 回归 | 见 23.12 | m110 / m121 / m98 / smoke33 / m125 / m126 / m129 / m128 |
+
+### 23.12 保留观察（新增 / 更新）
+
+- **OBS-F1b**：`***甲***和普通` + 加粗右侧 → `***甲*****和普通**`（5 游程）为既有
+  解析行为，非本次改动引入（备份对照一致）；OBS-N1 结项后一并覆盖。
+- **OBS-N1（更新）**：实证转请示，见 23.10。
+- **OBS-N2**：维持不做（语义冗余，toggle 已防产生）。
+- 引用内代码块 `syncQblkCode` 的行区间比对与 data-raw 缩进丢失同源，QUO-5 路径
+  未动（避免回归），另册观察。
