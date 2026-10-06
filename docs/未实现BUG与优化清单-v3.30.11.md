@@ -164,12 +164,12 @@
 | **DIFF-1** | **版本对比无词级高亮、无双栏形态（用户已拍板：单栏默认 + 双栏切换 + 词级高亮，一次做齐）** | DiffDialog（dialogs.py:1459）整行着色——中文段落一段一行，改 3 个字则整段红+整段绿，看不出变化字词；旧/新对应关系靠上下文推断。竞品：GitHub 默认 unified（split 可切）、VS Code 默认 split（inline 可切）、Word 比较为双栏——切换项是行业通行解 | 按已确认方案实施：①replace 块行配对 + 字符级 difflib 词级 span（>300 字符护栏）；②QSplitter 双 QTextBrowser + build_rows 公共行流（spacer 对位）+ 同步滚动；③「单栏 \| 双栏」切换 + QSettings `diff/layout` 记忆，默认单栏；④窗口 860→1100 仅首次切双栏时放宽。对齐近似声明：wrap 下长段可能错位 1~2 视觉行，接受 | ✅ **v3.38**（第十八章：词级 span + 单栏/双栏切换，按方案文档全做），实施方案见 `docs/历史版本对比双栏与词级高亮方案-v3.38.md`） |
 | **DIFF-2** | **历史版本无法任意选定两个快照互比（仅「与上一版本」「与当前文档」两条固定路径）** | 快照列表（HistoryDialog.listw，dialogs.py:1578）为默认 SingleSelection，只有 `currentRowChanged` 单选预览链路——想比「3 天前某版 vs 上周某版」只能连续点「与上一版本对比」逐级翻，跨多版差异无直达视图（用户 2026-10-01 追加需求） | 列表改 `ExtendedSelection`（单击预览行为不变）；新按钮「对比所选两项」，`selectedItems()` 恰为 2 时启用，按 mtime 旧→新调 `show_diff`（复用 DiffDialog，自动获得 DIFF-1 词级+双栏能力）；「与上一版本/与当前文档」保留为快捷路径 | ✅ **v3.38**（第十八章：ExtendedSelection + 对比所选两项） |
 | **UNDO-1** | **源码态落回不清空重做栈，Ctrl+Y 用旧状态静默覆盖源码改写** | `setSourceMode(false)`（editor.html:6958-6966）整体替换文档后只重置 `lastSnapshot`，**不清 redoStack/undoStack**——对照 `setMarkdown`（6598-6599）双栈清空口径。实测（`_m111x` C1）：撤销到旧态 → 源码态整体改写文档 → 退出 → Ctrl+Y → 文档被改写前的旧 redo 条目覆盖（「源码整体改写C1」→「v1内容改」），**用户源码改写无提示丢失**；空进空出源码态同样残留（C2 前置条件） | exit 分支（6963 `lastSnapshot = ...` 旁）补 `undoStack = []; redoStack = [];`，与 setMarkdown「整体替换文档 = 撤销历史作废」口径对齐（若想保留跨源码改写的撤销能力，则至少必须清 redoStack） | ❌ **未实现**（P3，半小时；2026-10-01 撤销重做全场景测试，见 `docs/撤销重做测试报告-v3.38.md`） |
-| **TAB-1** | **标签页无右键菜单，缺批量关闭四项（关闭其他所有/左侧所有/右侧所有/所有未修改，Notepad++ 对标）** | `_tabbar`（mainwindow.py:319-327）仅 movable+closable，无右键菜单；关闭只能逐个点 ×。批量整理多文档时逐个关效率低；「关闭所有未修改」还依赖前置改造——`_dirty` 只覆盖当前文档且切标签即清零（1829），**非当前标签无修改追踪**（顺带：1778 导致非当前标签不显示 • 标记） | tabbar 挂 CustomContextMenu + `tabAt(pos)` 定位；批量项倒序移除 + 两段式汇总确认（未保存 ≥1 先弹「全部保存/放弃/取消」）+ `_switching` 同位锁防异步交错；前置 per-doc dirty：`doc["dirty"]` 落盘（切换前存、修改信号写、保存清零），`_refresh_tab_texts` 改读之（顺带修复 • 标记缺陷）；「未命名非空=已修改」沿用 `_close_tab` 1862 口径 | ❌ **未实现**（P3，约 1 天；2026-10-01 用户需求，方案见 `docs/标签页右键菜单方案-批量关闭与复制路径-v3.38.md`） |
-| **TAB-2** | **标签页右键菜单缺复制组（复制文件名/复制文件路径/复制当前路径，Notepad++ 对标）** | 无任何复制路径入口；现有 `show_in_explorer`（1123）未收编入标签菜单 | tabbar 右键菜单加复制组三项：`QApplication.clipboard().setText`，成功后 `_toast` 提示「已复制」；未命名文档置灰；分隔线以下同组收编「打开所在文件夹」 | ❌ **未实现**（P4，约 1 小时；同上方案文档 §TAB-2） |
-| **TAB-3** | **无「重新打开已关闭标签」（Ctrl+Shift+T，可连按逐个回溯）** | 误关标签后只能从文件列表重新定位打开；浏览器 / VS Code / N++ 均有此误关解药 | `_close_tab` 关闭时把 doc dict（path+content）压入 `_closed_stack`（容量 10，超出淘汰最旧）；快捷键 Ctrl+Shift+T + 右键菜单首项，可连按回溯；对应文件已被外部删除时 toast 提示 | ❌ **未实现**（P3 高档，0.5 天；2026-10-01 用户拍板候选 1~8 纳入，见 `docs/标签页右键菜单方案-批量关闭与复制路径-v3.38.md` §三） |
-| **TAB-4** | **无上一/下一标签快捷键（Ctrl+PgUp/PgDn）** | 多标签切换只能鼠标点击；N++ / VS Code 原生支持 | QShortcut 绑 Ctrl+PgUp（左移）/ Ctrl+PgDn（右移），按 `_docs` 索引环形切换；`_tabbar` 已 movable 不受影响 | ❌ **未实现**（P3 高档，半小时；同上 §三候选 2） |
-| **TAB-5** | **标签页不支持中键点击关闭 / 双击关闭** | 浏览器 / VS Code（中键）/ N++（双击可配）惯例操作缺失 | tabbar 挂 eventFilter：`MiddleButton` 点击→`_close_tab`（含未保存确认链）；双击→同关闭（或按 N++ 惯例可后续加配置项） | ❌ **未实现**（P3 高档，1 小时；同上 §三候选 3） |
-| **TAB-6** | **无全部保存（多文档批量 Ctrl+S）** | 多标签改动需逐个手动保存；VS Code / N++ 均有 | 菜单 + Ctrl+Alt+S：遍历 `_docs` 中 dirty 项逐个保存（依赖 TAB-1 的 per-doc dirty 前置改造）；有失败项时汇总提示 | ❌ **未实现**（P3 高档，2 小时；随 TAB-1 顺产，同上 §三候选 4） |
+| **TAB-1** | **标签页无右键菜单，缺批量关闭四项（关闭其他所有/左侧所有/右侧所有/所有未修改，Notepad++ 对标）** | `_tabbar`（mainwindow.py:319-327）仅 movable+closable，无右键菜单；关闭只能逐个点 ×。批量整理多文档时逐个关效率低；「关闭所有未修改」还依赖前置改造——`_dirty` 只覆盖当前文档且切标签即清零（1829），**非当前标签无修改追踪**（顺带：1778 导致非当前标签不显示 • 标记） | tabbar 挂 CustomContextMenu + `tabAt(pos)` 定位；批量项倒序移除 + 两段式汇总确认（未保存 ≥1 先弹「全部保存/放弃/取消」）+ `_switching` 同位锁防异步交错；前置 per-doc dirty：`doc["dirty"]` 落盘（切换前存、修改信号写、保存清零），`_refresh_tab_texts` 改读之（顺带修复 • 标记缺陷）；「未命名非空=已修改」沿用 `_close_tab` 1862 口径 | ✅ **v3.38 已实现**（第二十二章，2026-10-06）：右键菜单 + 四项批量关闭 + 两段式确认 + `_switching` 同位锁；per-doc dirty 前置改造一并落地（顺带修掉「非当前标签不显示 •」） |
+| **TAB-2** | **标签页右键菜单缺复制组（复制文件名/复制文件路径/复制当前路径，Notepad++ 对标）** | 无任何复制路径入口；现有 `show_in_explorer`（1123）未收编入标签菜单 | tabbar 右键菜单加复制组三项：`QApplication.clipboard().setText`，成功后 `_toast` 提示「已复制」；未命名文档置灰；分隔线以下同组收编「打开所在文件夹」 | ✅ **v3.38 已实现**（第二十二章）：复制文件名 / 文件路径 / 所在目录三项，未命名置灰；分隔线以下收编「在资源管理器中显示」 |
+| **TAB-3** | **无「重新打开已关闭标签」（Ctrl+Shift+T，可连按逐个回溯）** | 误关标签后只能从文件列表重新定位打开；浏览器 / VS Code / N++ 均有此误关解药 | `_close_tab` 关闭时把 doc dict（path+content）压入 `_closed_stack`（容量 10，超出淘汰最旧）；快捷键 Ctrl+Shift+T + 右键菜单首项，可连按回溯；对应文件已被外部删除时 toast 提示 | ✅ **v3.38 已实现**（第二十二章）：`_closed_stack`（容量 10）+ Ctrl+Alt+T（Ctrl+Shift+T 已被「插入表格」占用，故让开） |
+| **TAB-4** | **无上一/下一标签快捷键（Ctrl+PgUp/PgDn）** | 多标签切换只能鼠标点击；N++ / VS Code 原生支持 | QShortcut 绑 Ctrl+PgUp（左移）/ Ctrl+PgDn（右移），按 `_docs` 索引环形切换；`_tabbar` 已 movable 不受影响 | ✅ **v3.38 已实现**（第二十二章）：视图菜单「上一个 / 下一个标签页」，Ctrl+PgUp / Ctrl+PgDown，环形切换 |
+| **TAB-5** | **标签页不支持中键点击关闭 / 双击关闭** | 浏览器 / VS Code（中键）/ N++（双击可配）惯例操作缺失 | tabbar 挂 eventFilter：`MiddleButton` 点击→`_close_tab`（含未保存确认链）；双击→同关闭（或按 N++ 惯例可后续加配置项） | ✅ **v3.38 已实现**（第二十二章）：eventFilter 接管中键关闭 / 双击关闭 / 双击空白新建（并入既有唯一 eventFilter，见 22.4 踩坑） |
+| **TAB-6** | **无全部保存（多文档批量 Ctrl+S）** | 多标签改动需逐个手动保存；VS Code / N++ 均有 | 菜单 + Ctrl+Alt+S：遍历 `_docs` 中 dirty 项逐个保存（依赖 TAB-1 的 per-doc dirty 前置改造）；有失败项时汇总提示 | ✅ **v3.38 已实现**（第二十二章）：文件菜单「全部保存」Ctrl+Alt+S，只保存「有路径且已修改」，未命名不计入批量 |
 | **TAB-7** | **无固定标签（Pin）**：固定后关闭类操作跳过、图标收窄、强制排左 | VS Code / Sublime / 浏览器标配（N++ 无此功能） | 右键菜单「固定/取消固定」；固定标签参与排序时置前、批量关闭（TAB-1 关闭其他/左侧/右侧）跳过、图标收窄 | ❌ **未实现**（P4 中档，1 天；第二批，同上 §三候选 5） |
 | **TAB-8** | **无 Ctrl+Tab 标签快切面板（MRU 顺序预览切换）** | 标签多时靠逐个点选效率低；VS Code / Sublime / 浏览器均按 MRU 快切 | 按住 Ctrl+Tab 弹自绘浮层（QDialog 无边框 + QLabel 列表），显示最近使用顺序，松开切换到选中项；需要维护 MRU 访问序列 | ❌ **未实现**（P4 中档，1~2 天；第二批，标签 ≥5 个后收益明显；同上 §三候选 6） |
 | **TAB-9** | **无标签溢出下拉（标签超宽出 » 列表）** | 标签过多时只能横向滚动盲找；N++ / VS Code（滚动箭头）有溢出导航 | tabbar 尺寸超限时显示 » 按钮，点击弹全部标签下拉列表（含 dirty • 标记），选中即切换 | ❌ **未实现**（P4 中档，0.5 天；第二批；同上 §三候选 7） |
@@ -694,3 +694,105 @@ title 与图标，并补上**自动换行态按源码 `wrap=1` 还原**（此前
 - 只恢复「工具栏本身」，不改变侧边栏可见性；工具栏回来后 « / » 侧栏开关即可用。
 - 与既有 `toggle_sidebar` / `_update_side_btn` 保持同款写法（勾选态由同步函数单向写入，
   不互相触发），避免 QAction 勾选与真实状态漂移。
+
+## 第二十二章 v3.38 批次（之九）：标签页选中/关闭体系 TAB-1~TAB-6 + 文件列表默认打开路径 FLP-1（2026-10-06）
+
+### 22.1 需求（用户报告两则）
+
+> ① 「请检查当前项目中『选中标签页并支持关闭 notepad』这一任务是否真的已实现 …… 若确认未实现，
+>    请在现有标签页组件的架构与代码风格下补全该功能。」
+> ② 「在文件列表（目录树/文件浏览器）中补充『默认打开路径』功能 …… 默认路径需支持通过配置项传入，
+>    明确配置项的字段名、默认值和取值规则 …… 配置值为空 / 路径不存在 / 无访问权限时应安全回退到根目录
+>    且不报错；若已记录用户上次访问的目录，则优先恢复上次路径，其次才使用默认路径。」
+
+**核查结论**：`_tabbar`（`mainwindow.py:319-327`）当时只有 `movable + closable`，**没有右键菜单**；
+`_close_tab` 单标签关闭链路（含未命名保存确认）是完整的，但**批量关闭、复制路径、重开、切换快捷键、
+批量保存全部缺失**；且 `_dirty` **只覆盖当前文档、切标签即清零**（`_on_switch_capture` 直接
+`self._dirty = False`），导致 `_refresh_tab_texts` 里 `i == self._cur and self._dirty` 使
+**非当前标签永远不显示 • 修改标记**。→ 判定为「部分实现」，按方案文档补齐。
+文件列表侧：侧栏是 **Typora 式单层逐级浏览 QListWidget**（`_cur_dir` + `go_up` + `_refresh_files`），
+**不是懒加载树**，无「默认打开路径」概念 → 新增 FLP-1。
+
+### 22.2 改动
+
+| 编号 | 位置 | 改动 |
+| --- | --- | --- |
+| TAB-1 | `src/mainwindow.py` | `_tabbar` 挂 `CustomContextMenu` → `_on_tab_menu(pos)`（**右键即选中**）；新增 `_batch_close` / `_perform_batch_close` / `_close_unmodified` / `_doc_text` / `_drop_doc` / `_unnamed_nonempty` / `_capture_current_md` / `_when_idle` / `_save_doc_as_sync`；菜单 9 项（关闭 / 其它所有 / 左侧所有 / 右侧所有 / 所有未修改 / 在资源管理器中显示 / 复制三项），首尾置灰规则齐备 |
+| TAB-1b | 同上 | **per-doc dirty 前置改造**：`_docs[i]["dirty"]`（`_add_doc` 初始化、`_on_switch_capture` 切走时回写、`_collect` 只置脏不清脏、保存成功清零、`_refresh_tab_texts` 改读之）——顺带修复「非当前标签不显示 •」既有缺陷 |
+| TAB-2 | 同上 | `_copy_to_clip` 三项 + 未命名置灰；`show_in_explorer` 收编进菜单 |
+| TAB-3 | 同上 | `_closed_stack`（容量 10）+ `_drop_doc(remember=True)` 统一入栈；「文件 → 重新打开关闭的标签」**Ctrl+Alt+T** |
+| TAB-4 | 同上 | 「视图 → 上一个 / 下一个标签页」Ctrl+PgUp / Ctrl+PgDown → `_cycle_tab(step)` 环形 |
+| TAB-5 | 同上 | `_tabbar.installEventFilter(self)`；中键点击标签即关闭 / 双击标签即关闭 / 双击空白新建 |
+| TAB-6 | 同上 | `save_all()` + 「文件 → 全部保存」**Ctrl+Alt+S**；**当前文档取实时内容、其余取切换时回写的缓存**（22.4 有解释） |
+| TB-1 修 | 同上 | `_sync_toolbar_state(toast, persist, vis=None)` 增加显式 `vis` 形参：**启动初始化阶段窗口未 `show()`，`isVisible()` 恒为 False**，旧实现据此落盘会把 `ui/toolbarVisible` 写成 False（下次启动工具栏凭空消失）；同时工具栏默认键 **Ctrl+Shift+T → Ctrl+Shift+B**（Ctrl+Shift+T 早已属「插入表格」） |
+| FLP-1 | `src/config.py` | 新增 `FILE_LIST_DEFAULT_DIR = ""`（默认不启用），注释写明取值规则 |
+| FLP-1 | `src/sidebar.py` | 新增 `_dir_usable` / `resolve_default_dir` / `highlight_dir` / `apply_default_dir` / `restore_initial_dir`；导入 `config` |
+| FLP-1 | `src/mainwindow.py` | `_file_list_default_dir` 字段 + `file_list_default_dir()` / `set_file_list_default_dir()` / `last_sidebar_dir()`；`__init__` 在 `startupAction == blank` 档调用 `_sidebar.restore_initial_dir()` |
+| FLP-1 | `src/dialogs.py` | 设置 → 通用 → 「文件与启动」新增「文件列表默认打开路径」输入框 + 说明 |
+
+**FLP-1 取值规则（字段 QSettings `files/defaultDir`，默认值 `config.FILE_LIST_DEFAULT_DIR` = `""`）**：
+
+| 输入形态 | 处理 |
+| --- | --- |
+| 空 / 纯空白 | 不启用 → 回退「此电脑」盘符层 |
+| 绝对路径（`E:\notes`、`\\server\share\docs`） | 原样规范化后使用 |
+| 相对路径 | **相对应用目录 `HERE` 解析**（与启动时的工作目录无关，行为可复现） |
+| `~` 开头 | 展开为用户主目录 |
+| 不存在 / 不是目录 / 无访问权限 | 一律回退根层，**不弹窗、不报错**（`_dir_usable` 内部吞掉 OSError） |
+
+**初始化优先级**：**上次访问目录（`lastSidebarDir`，且当前仍可访问）→ 默认打开路径 → 根层**。
+只在 `startupAction == "blank"`（默认档）接管；`lastFile` / `lastFileSide` / `folder` 三档已各自
+决定侧栏位置（OUT-5），不再覆盖，避免与既有语义打架。
+
+**与加载逻辑的兼容性**：本模型没有懒加载目录树 —— `_refresh_files()` 只列**当前一层**，
+子目录在被逐级进入时才 `listdir`。因此 `restore_initial_dir()` 只设 `_cur_dir` 并刷新一层，
+**不预展开任何子树、不在启动时做递归扫描**，大目录不阻塞启动；`go_up` 逐级浏览不受影响
+（`_m127` H 组实测）。「高亮目录节点」在本单层模型下等价于：目标目录本身在当前列表中时选中它
+（如盘符层的 `C:\`），否则把焦点落在列表首项。
+
+### 22.3 验证
+
+| 探针 | 结果 | 覆盖 |
+| --- | --- | --- |
+| `tests/_m126_tabs.py` | **67 / 0** | 选中态三源一致、菜单 9 项与首尾置灰、复制三项、关闭当前/非当前后索引落点与 path 不串位、其它所有/左/右、全关自动补空白页、关闭所有未修改、per-doc dirty 切走切回不丢、重开（含栈空不崩）、环形切换、全部保存（缓存路径 + 实时路径）、快捷键互不重复、中键关闭 |
+| `tests/_m127_filedir.py` | **33 / 0** | 配置解析 10 例（空/空白/绝对/相对 HERE/不存在/非目录/`~`/空目录/权限打桩/异常输入）、定位并加载内容、四级安全回退、盘符层高亮命中与未命中退化、初始化优先级三态、配置项读写与设置页接入、blank 模式不介入、与 `go_up` 逐级浏览兼容 |
+| `tests/_m125_tb.py` | **27 / 0**（回归） | 工具栏快捷键改 Ctrl+Shift+B 后全绿；探针开头补 `ui/toolbarVisible` 复位（跨运行污染防护） |
+| `tests/_m107_files_outline.py` | **20 / 0**（回归） | 侧栏文件列表 / 大纲未受影响 |
+
+### 22.4 过程记录 / 踩坑
+
+1. **快捷键冲突（重要）**：TB-1 初版把工具栏开关放在 **Ctrl+Shift+T**，而该组合自 v3.31 起就是
+   「插入表格」（`mainwindow.py` 格式命令组）。本批原计划把 Ctrl+Shift+T 让给「重新打开已关闭标签」
+   （浏览器约定），一查才发现**两边都不能用** → 最终：工具栏 → **Ctrl+Shift+B**，重开标签 →
+   **Ctrl+Alt+T**。`_m126` N 组做了全表快捷键唯一性断言（N7），以后加键不会再撞。
+2. **`QMainWindow` 只能有一个 `eventFilter`**：TAB-5 初版在标签区新写了一个 `eventFilter` 方法，
+   但 `mainwindow.py` 文件末尾（`_install_drop_filter` 旁）早就有一个 → **末位定义生效**，新写的那个
+   被静默遮蔽（表现为「中键点了没反应」，且直接把方法名调起来测才会发现返回 False）。修复 =
+   删掉重复定义，把标签栏分支**并入既有 eventFilter 顶部**。以后加事件过滤器一律改这一处。
+3. **`_perform_batch_close` 不能「重新激活当前文档」**：批量关闭时若当前文档**未被关掉**，
+   千万不能走「`_cur = -1` → 重新激活」路径 —— 该路径会从 `doc["content"]` 重载正文，而
+   **当前文档的缓存是滞后的**（编辑器里敲的字还没回写），会吞掉正在输入的内容。
+   正确处理：只按「左移量」修正 `_cur`，`blockSignals` 下同步 `setCurrentIndex`，不碰正文。
+4. **批量保存的内容来源**：`save_all` / `_save_doc_as_sync` 统一走 `_doc_text(i)` ——
+   **当前文档取实时内容**（`_capture_current_md` 走 JS 同步回包），**其余文档取缓存**
+   （切走时 `_on_switch_capture` 已回写，即最新）。曾设计过「切到该文档再取视图内容」，
+   实测有「页面还没渲染完就开始读」的竞态（会读到上一个文档的内容），已弃用。
+5. **TB-1 的启动落盘缺陷（本批顺带修掉，属既有版本遗留）**：窗口还没 `show()` 时
+   `QToolButton/QToolBar.isVisible()` 恒为 `False`，`set_toolbar_visible(True)` 在 `__init__` 里
+   调 `_sync_toolbar_state()` 就会把 `ui/toolbarVisible` **写成 False** → 下次启动工具栏消失
+   （等于 TB-1 的症状换个马甲复发）。修复：`_sync_toolbar_state` 增加显式 `vis` 形参，
+   由 `set_toolbar_visible` 传「调用方意图」；`visibilityChanged` 路径继续用真实可见性（那时窗口已 show）。
+   发现方式：`_m125` A 组基线突然失败，顺藤摸到 `ui/toolbarVisible` 已被写成 False。
+6. **探针替身**：右键菜单用 `FakeMenu` / `FakeAct`（替换 `mainwindow.QMenu`，捕获 `addAction`
+   文本与 `setEnabled`，`exec` 不阻塞）。注意 `_on_tab_menu` 里的「右键即选中」是**异步**的
+   （要等 `getMarkdown` 回包才落 `_cur`），断言前必须 `wait()`。
+7. `item.data(0)` 是 `DisplayRole`（显示文本，带 `📁 ` / `💽 ` 前缀），要取路径必须
+   `item.data(Qt.UserRole)` —— `_m127` B2/C1/D1 三条首跑失败都是这个。
+
+### 22.5 保留观察
+
+- **OBS-N1**（`*A**B*` 类「同游程既可闭又可开」残留裸 `**`）与 **OBS-N2**（同类型对称标记套两层）
+  状态不变，根治需 CommonMark 式 delimiter 栈，本批未动（见第二十章 20.6）。
+- TAB-7~TAB-10（固定标签 / Ctrl+Tab 快切 / 标签溢出下拉 / 在终端中打开）为方案文档登记的**第二批**，
+  未在本批实施；连同其它全部未实现条目，已汇总到 `docs/未实现功能决策清单-v3.38.md` 待拍板。
+

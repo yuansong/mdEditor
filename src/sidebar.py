@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from config import FILE_LIST_DEFAULT_DIR, HERE
 from styles import SIDEBAR_QSS
 
 # 跨文件搜索上限（避免在超大目录上卡死界面）
@@ -636,6 +637,112 @@ class Sidebar(QWidget):
     def current_dir(self):
         """v3.38（OUT-5）：当前浏览目录（会话恢复记录用）。"""
         return self._cur_dir
+
+    # ============ v3.38（FLP-1）：文件列表「默认打开路径」 ============
+    @staticmethod
+    def _dir_usable(path):
+        """可用性探针：存在 + 是目录 + 可枚举（覆盖无访问权限）。任何异常视为不可用。"""
+        try:
+            if not path or not os.path.isdir(path):
+                return False
+            os.listdir(path)
+            return True
+        except Exception:      # noqa: BLE001 —— OSError（权限）/ 设备名 / 超长路径
+            return False
+
+    def resolve_default_dir(self):
+        """解析配置的「默认打开路径」→ 可用绝对目录，或 None（未配置 / 不可用）。
+
+        字段：QSettings `files/defaultDir`（默认值 = config.FILE_LIST_DEFAULT_DIR = ""）
+        取值规则：
+          · 空 / 纯空白 → None（不启用）
+          · `~` 开头 → 展开为用户主目录
+          · 绝对路径 → 原样规范化
+          · 相对路径 → 相对**应用目录 HERE** 解析（与启动时工作目录无关）
+        安全回退：不存在 / 不是目录 / 无访问权限 → None，由调用方回退到根层；全程不报错。
+        """
+        try:
+            raw = str(self._win.file_list_default_dir() or "").strip()
+        except Exception:      # noqa: BLE001 —— 取配置失败视为未配置
+            return None
+        if not raw:
+            return None
+        try:
+            p = os.path.expanduser(raw)
+            if not os.path.isabs(p):
+                p = os.path.join(HERE, p)
+            p = os.path.abspath(p)
+        except Exception:      # noqa: BLE001
+            return None
+        return p if self._dir_usable(p) else None
+
+    def highlight_dir(self, path):
+        """在当前层列表里高亮 path 对应条目；未命中则选中首项（保证列表有焦点）。
+
+        本模型是 Typora 式**逐级浏览的单层列表**（没有懒加载目录树），「高亮目录节点」
+        在本模型下等价于：目标目录本身出现在当前列表时选中它（如盘符层的 `D:\\`），
+        否则定位到目标目录的内容层并把焦点落在首项。
+        """
+        if not path:
+            return False
+        try:
+            target = os.path.normcase(os.path.abspath(path)).rstrip("\\/")
+        except Exception:      # noqa: BLE001
+            return False
+        for row in range(self.file_list.count()):
+            it = self.file_list.item(row)
+            d = it.data(Qt.UserRole) if it is not None else None
+            if not d:
+                continue
+            try:
+                cand = os.path.normcase(os.path.abspath(d[1])).rstrip("\\/")
+            except Exception:      # noqa: BLE001
+                continue
+            if cand == target:
+                self.file_list.setCurrentRow(row)
+                self.file_list.scrollToItem(it, QAbstractItemView.PositionAtCenter)
+                return True
+        if self.file_list.count():
+            self.file_list.setCurrentRow(0)
+        return False
+
+    def apply_default_dir(self, toast=False):
+        """按「默认打开路径」定位（设置页改完即时生效）。空 / 不可用 → 回退根层。"""
+        if self._file_mode == "blank":
+            return False
+        target = self.resolve_default_dir()
+        if not target:
+            self._cur_dir = None
+            self._cur_file = None
+            self._refresh_files()
+            self._update_file_header()
+            if toast:
+                self._win.show_status("文件列表默认路径为空或不可用，已回退到「此电脑」")
+            return False
+        self.set_root(target)
+        self.highlight_dir(target)
+        if toast:
+            self._win.show_status(f"文件列表已定位到默认路径 · {target}")
+        return True
+
+    def restore_initial_dir(self):
+        """初始化定位：**上次访问目录（优先）→ 默认打开路径 → 根层**。
+
+        与既有加载逻辑兼容：本模型没有懒加载目录树，`_refresh_files()` 只列**当前一层**，
+        子目录在被逐级进入时才 listdir —— 因此这里只设 `_cur_dir` 并刷新一层，
+        不会预展开任何子树、也不会在启动时做递归扫描（大目录不阻塞启动）。
+        """
+        if self._file_mode == "blank":
+            return False
+        try:
+            last = str(self._win.last_sidebar_dir() or "")
+        except Exception:      # noqa: BLE001
+            last = ""
+        if last and self._dir_usable(last):
+            self.set_root(os.path.abspath(last))
+            self.highlight_dir(last)
+            return True
+        return self.apply_default_dir(toast=False)
 
     # 大纲默认展开层级：1~3 级直接可见，4 级及以下默认折叠（可手动展开）。
     # 级别可经 系统设置→通用 修改（OUTLINE_EXPAND_LEVEL 仅作默认值）

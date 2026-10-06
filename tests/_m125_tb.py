@@ -4,7 +4,7 @@
 用户报告：某个工具栏折叠起来后没有「展开」按钮，用户无法再展开工具栏。
 根因：左侧竖向主工具栏可被隐藏（工具栏/菜单栏右键 → 取消勾选「主工具栏」），
 隐藏后窗口内不再有任何恢复入口 —— 连工具栏顶部的侧栏开关 « 也一并消失。
-修复：① 视图菜单新增「显示 / 隐藏工具栏」（可勾选，Ctrl+Shift+T）
+修复：① 视图菜单新增「显示 / 隐藏工具栏」（可勾选，Ctrl+Shift+B）
      ② 工具栏隐藏时，窗口左侧边缘常驻一个「»」展开按钮（置顶可点）
      ③ 右键菜单 createPopupMenu 复用同一 QAction，避免两套互不同步的开关
      ④ 可见性持久化 ui/toolbarVisible，重启保持。
@@ -21,6 +21,11 @@ app = QApplication(sys.argv)
 from mainwindow import MainWindow
 
 win = MainWindow()
+# 跨运行污染防护（同 _smoke32 的 diff/layout 套路）：ui/toolbarVisible 是持久化项，
+# 上一次运行 / 其它探针留下的 False 会让本轮 A 组基线直接失败，必须先复位。
+win._settings.setValue("ui/toolbarVisible", True)
+win._settings.sync()
+win.set_toolbar_visible(True, toast=False)
 win.show()
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_m125.txt")
@@ -63,7 +68,7 @@ check("A2 工具栏可见时边缘展开按钮隐藏（不干扰编辑区）", s
 check("A3 视图菜单存在「显示 / 隐藏工具栏」且可勾选",
       s0["actExists"] and s0["actCheckable"] is True, str(s0))
 check("A4 菜单项初始为勾选态（与工具栏可见性一致）", s0["actChecked"] is True, str(s0))
-check("A5 菜单项带默认快捷键 Ctrl+Shift+T", "Ctrl+Shift+T" in s0["actSeq"], s0["actSeq"])
+check("A5 菜单项带默认快捷键 Ctrl+Shift+B", "Ctrl+Shift+B" in s0["actSeq"], s0["actSeq"])
 
 # ---------- B 隐藏工具栏（模拟用户走菜单 / 右键取消勾选）----------
 win._act_toolbar.trigger()      # checkable：trigger 会翻转勾选并回调 toggle_toolbar
@@ -73,7 +78,7 @@ check("B1 工具栏被隐藏", s1["tbVis"] is False, str(s1))
 check("B2 隐藏后**出现展开按钮**（用户报告的核心缺陷）", s1["btnVis"] is True, str(s1))
 check("B3 展开按钮文案为 »", s1["btnText"] == "»", s1["btnText"])
 check("B4 展开按钮 tooltip 明示用途与替代入口",
-      "展开" in s1["btnTip"] and "Ctrl+Shift+T" in s1["btnTip"], s1["btnTip"])
+      "展开" in s1["btnTip"] and "Ctrl+Shift+B" in s1["btnTip"], s1["btnTip"])
 check("B5 展开按钮贴在窗口左边缘（x<30）", s1["btnPos"][0] < 30, str(s1["btnPos"]))
 check("B6 展开按钮位于菜单栏下方（不被菜单栏遮挡）",
       s1["btnPos"][1] >= win.menuBar().height(), str(s1["btnPos"]))
@@ -89,14 +94,14 @@ check("C2 恢复后展开按钮自动隐藏", s2["btnVis"] is False, str(s2))
 check("C3 恢复后菜单勾选同步回 True", s2["actChecked"] is True, str(s2))
 check("C4 恢复状态已持久化", s2["saved"] is True, str(s2["saved"]))
 
-# ---------- D 快捷键路径（Ctrl+Shift+T）----------
+# ---------- D 快捷键路径（Ctrl+Shift+B）----------
 act = win._act_toolbar
 act.setChecked(True)
 win.set_toolbar_visible(True)
 wait(150)
 try:
     from PySide6.QtGui import QKeySequence
-    act.setShortcut(QKeySequence("Ctrl+Shift+T"))
+    act.setShortcut(QKeySequence("Ctrl+Shift+B"))
     win.addAction(act)
     # 直接触发动作（等价于快捷键命中），验证 checkable 语义不会反向
     act.trigger()

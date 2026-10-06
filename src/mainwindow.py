@@ -25,7 +25,7 @@ from PySide6.QtWebEngineCore import (
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
 import exporters
-from config import APP_NAME, APP_VERSION, BUILTIN_TEMPLATES, DEMO_MD, DRAFT_DIR, HERE, LOG_DIR, MD_EXTS, MMD_LEGACY, MMD_THEME_LABELS, MODES, TEMPLATE_FILE, TPL_FILE_VERSION, TPL_MAX_BYTES, TPL_NAME_MAX, UPDATE_URL, USER_DATA_DIR, js
+from config import APP_NAME, APP_VERSION, BUILTIN_TEMPLATES, DEMO_MD, DRAFT_DIR, FILE_LIST_DEFAULT_DIR, HERE, LOG_DIR, MD_EXTS, MMD_LEGACY, MMD_THEME_LABELS, MODES, TEMPLATE_FILE, TPL_FILE_VERSION, TPL_MAX_BYTES, TPL_NAME_MAX, UPDATE_URL, USER_DATA_DIR, js
 
 # 斜杠（/）菜单可配置项：一级菜单 id 集与默认顺序 / 默认项 / 二级默认下标
 # v3.30.3：按用户要求移除「上标 / 下标」（supsub）一级项；^x^ / ~x~ 语法仍可输入
@@ -232,10 +232,12 @@ class MainWindow(QMainWindow):
         self._pending_tries = 0
 
         # ---- 多文档 ----
-        self._docs = []          # [{"path": str|None, "content": str|None}]
+        self._docs = []          # [{"path": str|None, "content": str|None, "dirty": bool}]
         self._cur = -1
         self._switching = False
         self._pending_switch = -1
+        # v3.38（TAB-3）：已关闭标签栈（Ctrl+Alt+T 逐个回溯，浏览器语义）
+        self._closed_stack = []
 
         # ---- 模式（edit=写作 / src=源码 / dual=分屏）----
         self._mode = "edit"
@@ -253,6 +255,9 @@ class MainWindow(QMainWindow):
         # v3.38（OUT-5）：启动行为默认值（设置页可改，QSettings 持久化）
         self._startup_action = "blank"
         self._startup_folder = ""
+        # v3.38（FLP-1）：文件列表默认打开路径（config 默认值 + QSettings 覆盖）
+        self._file_list_default_dir = str(
+            self._settings.value("files/defaultDir", FILE_LIST_DEFAULT_DIR) or "")
 
         self._init_ui()
         self._init_menu_toolbar()
@@ -276,6 +281,12 @@ class MainWindow(QMainWindow):
             _sd = str(self._settings.value("lastSidebarDir", "") or "")
             if _sd and os.path.isdir(_sd):
                 self._sidebar.set_root(_sd)   # 侧栏位置恢复（优先于文件目录）
+
+        # v3.38（FLP-1）：文件列表默认打开路径 —— 上次访问目录（优先）→ 默认路径 → 根层。
+        # 只在「启动时 = 打开欢迎页」（默认档）接管：lastFile / lastFileSide / folder 三档
+        # 已各自决定侧栏位置（OUT-5），再覆盖会与既有语义打架。
+        if _sa == "blank":
+            self._sidebar.restore_initial_dir()
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._poll)
@@ -325,6 +336,11 @@ class MainWindow(QMainWindow):
         self._tabbar.currentChanged.connect(self._on_tab_clicked)
         self._tabbar.tabCloseRequested.connect(self._close_tab)
         self._tabbar.tabMoved.connect(self._on_tab_moved)
+        # v3.38（TAB-1）：标签右键菜单（Notepad++ 对标）—— 右键先选中该标签再弹菜单
+        self._tabbar.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._tabbar.customContextMenuRequested.connect(self._on_tab_menu)
+        # v3.38（TAB-5）：中键点击标签即关闭 / 双击空白处新建标签（N++ / 浏览器对标）
+        self._tabbar.installEventFilter(self)
         tab_wrap = QWidget(self)
         tab_wrap.setObjectName("tabstrip")
         tl = QHBoxLayout(tab_wrap)
@@ -428,7 +444,7 @@ class MainWindow(QMainWindow):
         self._btn_tb_show = QToolButton(self)
         self._btn_tb_show.setObjectName("tbExpand")
         self._btn_tb_show.setText("»")
-        self._btn_tb_show.setToolTip("展开工具栏（视图 → 显示 / 隐藏工具栏，或 Ctrl+Shift+T）")
+        self._btn_tb_show.setToolTip("展开工具栏（视图 → 显示 / 隐藏工具栏，或 Ctrl+Shift+B）")
         self._btn_tb_show.setCursor(Qt.PointingHandCursor)
         self._btn_tb_show.setAutoRaise(True)
         self._btn_tb_show.setFixedSize(20, 58)
@@ -496,7 +512,15 @@ class MainWindow(QMainWindow):
         m_file.addSeparator()
         self._reg_act("文件", "保存", "Ctrl+S", self.save_file, menu=m_file)
         self._reg_act("文件", "另存为…", "Ctrl+Shift+S", self.save_file_as, menu=m_file)
+        # v3.38（TAB-6）：多文档批量保存（只保存「有路径且已修改」的标签，未命名不批量弹窗）
+        self._reg_act("文件", "全部保存", "Ctrl+Alt+S", self.save_all, menu=m_file)
         self._reg_act("文件", "关闭标签页", "Ctrl+W", lambda: self._close_tab(self._cur), menu=m_file)
+        self._reg_act("文件", "关闭所有标签", None,
+                      lambda: self._batch_close(list(range(len(self._docs)))), menu=m_file)
+        # v3.38（TAB-3）：重新打开刚关闭的标签（可连按逐个回溯）。
+        # 浏览器习惯是 Ctrl+Shift+T，但该组合在本工程已属「插入表格」（v3.31 起），
+        # 故改用 Ctrl+Alt+T，避免抢键。
+        self._reg_act("文件", "重新打开关闭的标签", "Ctrl+Alt+T", self._reopen_closed_tab, menu=m_file)
         m_file.addSeparator()
         self._reg_act("文件", "导出 HTML…", None, self.export_html, menu=m_file)
         self._reg_act("文件", "导出 PDF…（含书签）", None, self.export_pdf, menu=m_file)
@@ -578,11 +602,16 @@ class MainWindow(QMainWindow):
                                           self.toggle_sidebar, menu=m_view, checkable=True)
         self._act_sidebar.setChecked(True)
         # v3.38（TB-1）：主工具栏显示 / 隐藏（隐藏时左侧边缘常驻展开按钮，杜绝「无法恢复」）
-        self._act_toolbar = self._reg_act("视图", "显示 / 隐藏工具栏", "Ctrl+Shift+T",
+        # v3.38（TAB-3）：默认快捷键由 TB-1 初版的 Ctrl+Shift+T 改为 Ctrl+Shift+B ——
+        # Ctrl+Shift+T 早已被「插入表格」（格式命令，v3.31 起）占用，不能再抢。
+        self._act_toolbar = self._reg_act("视图", "显示 / 隐藏工具栏", "Ctrl+Shift+B",
                                           self.toggle_toolbar, menu=m_view, checkable=True)
         self._act_toolbar.setChecked(True)
         self._reg_act("视图", "文件列表", "Ctrl+Shift+E", lambda: self._show_sidebar_tab(0), menu=m_view)
         self._reg_act("视图", "大纲", "Ctrl+Shift+O", lambda: self._show_sidebar_tab(1), menu=m_view)
+        # v3.38（TAB-4）：上一 / 下一标签页（Ctrl+PgUp / Ctrl+PgDn，N++ 与 VS Code 同款）
+        self._reg_act("视图", "上一个标签页", "Ctrl+PgUp", lambda: self._cycle_tab(-1), menu=m_view)
+        self._reg_act("视图", "下一个标签页", "Ctrl+PgDown", lambda: self._cycle_tab(1), menu=m_view)
         m_view.addSeparator()
         self._act_typewriter = self._reg_act("视图", "打字机模式", None,
                                              self.toggle_typewriter, menu=m_view, checkable=True)
@@ -1782,7 +1811,16 @@ class MainWindow(QMainWindow):
             self._pick_local_image()
         md = data.get("md")
         dirty = bool(data.get("dirty"))
-        self._dirty = dirty
+        # v3.38（TAB-1）：JS 的 dirty 是「自上次 collect 以来有改动」的**边沿**信号
+        # （editor.html 读取即清零），只能用来「置脏」；清脏只由保存 / 关闭负责，
+        # 否则停止敲键 0.7s 后 • 标记就会消失。per-doc 落盘见 _docs[i]["dirty"]。
+        if 0 <= self._cur < len(self._docs):
+            _doc = self._docs[self._cur]
+            if dirty:
+                _doc["dirty"] = True
+            self._dirty = bool(_doc.get("dirty"))
+        else:
+            self._dirty = dirty
         if self._autosave and 0 <= self._cur < len(self._docs):
             doc = self._docs[self._cur]
             if dirty and doc.get("path"):
@@ -1826,7 +1864,8 @@ class MainWindow(QMainWindow):
     def _refresh_tab_texts(self):
         for i, doc in enumerate(self._docs):
             name = os.path.basename(doc["path"]) if doc.get("path") else "未命名"
-            mark = " • " if (i == self._cur and self._dirty) else "  "
+            # v3.38（TAB-1）：改读 per-doc dirty —— 顺带修掉「非当前标签不显示 •」
+            mark = " • " if doc.get("dirty") else "  "
             self._tabbar.setTabText(i, f"{mark}{name}")
 
     def _update_title(self):
@@ -1836,7 +1875,8 @@ class MainWindow(QMainWindow):
 
     # ================= 多文档标签 =================
     def _add_doc(self, path=None, text=None):
-        self._docs.append({"path": path, "content": text})
+        # v3.38（TAB-1）：per-doc dirty —— 每个标签自带修改标记（切走再切回不丢）
+        self._docs.append({"path": path, "content": text, "dirty": False})
         idx = len(self._docs) - 1
         self._tabbar.addTab("未命名" if not path else os.path.basename(path))
         self._tabbar.setCurrentIndex(idx)  # 触发 _on_tab_clicked -> 激活
@@ -1861,6 +1901,10 @@ class MainWindow(QMainWindow):
         self._js_active("window.getMarkdown()", self._on_switch_capture)
 
     def _on_switch_capture(self, md):
+        # v3.38（TAB-1）：切走前把当前文档的修改标记存回 doc（旧实现直接丢弃，
+        # 切走再切回 • 就没了，「关闭所有未修改」也无从判断）
+        if 0 <= self._cur < len(self._docs):
+            self._docs[self._cur]["dirty"] = bool(self._dirty)
         if self._cur >= 0 and self._cur < len(self._docs) and md is not None:
             self._docs[self._cur]["content"] = md
         target = self._pending_switch
@@ -1877,7 +1921,7 @@ class MainWindow(QMainWindow):
         self._last_preview_md = None
         self._push_doc_dir()   # 图片相对路径随文档目录变化（先于正文下发）
         self._push_text(text)
-        self._dirty = False
+        self._dirty = bool(doc.get("dirty"))   # v3.38（TAB-1）：恢复该文档自己的修改标记
         self._update_title()
         self._refresh_tab_texts()
         if self.file_path:
@@ -1925,8 +1969,7 @@ class MainWindow(QMainWindow):
                     doc["path"] = self.file_path
                 elif btn == QMessageBox.Discard:
                     self._remove_draft(doc)   # v3.32（P0-1）：明确丢弃 → 草稿一并删除
-            self._docs.pop(idx)
-            self._tabbar.removeTab(idx)
+            self._drop_doc(idx)   # v3.38（TAB-3）：关闭即压入回溯栈（Ctrl+Shift+T 可恢复）
             if not self._docs:
                 self._cur = -1
                 self.file_path = None
@@ -1944,19 +1987,290 @@ class MainWindow(QMainWindow):
             self._update_title()
 
         if idx == self._cur:
-            from PySide6.QtCore import QEventLoop
-            loop_res = {}
-            loop = QEventLoop()
-
-            def cb(md):
-                loop_res["md"] = md
-                loop.quit()
-
-            self._js_active("window.getMarkdown()", cb)
-            loop.exec()
-            do_close(loop_res.get("md"))
+            do_close(self._capture_current_md())
         else:
             do_close()
+
+    # ============ 标签页：选中 / 关闭 / 批量 / 复制路径（v3.38 TAB-1~TAB-6） ============
+    # 设计依据：docs/archive/标签页右键菜单方案-批量关闭与复制路径-v3.38.md
+    CLOSED_STACK_MAX = 10
+
+    def _capture_current_md(self):
+        """同步取回当前视图的实时 Markdown 并回写当前 doc。
+
+        批量关闭 / 关闭前判定「未命名非空」都要用实时内容——doc["content"] 只在
+        切换与保存时才回写，停在编辑器里敲的字还留在 WebEngine 侧。
+        """
+        from PySide6.QtCore import QEventLoop
+        box = {}
+        loop = QEventLoop()
+
+        def cb(md):
+            box["md"] = md
+            loop.quit()
+
+        self._js_active("window.getMarkdown()", cb)
+        loop.exec()
+        md = box.get("md")
+        if md is not None and 0 <= self._cur < len(self._docs):
+            self._docs[self._cur]["content"] = md
+        return md
+
+    def _doc_text(self, idx):
+        """第 idx 个文档的 Markdown。
+
+        当前文档取**实时内容**（编辑器里的字还没回写 doc）；其余文档直接取缓存 ——
+        切走时 `_on_switch_capture` 已把实时内容写回，缓存即最新，无需再切视图取回
+        （切视图取回有「页面还没渲染完就开始读」的竞态，反而会读到上一个文档的内容）。
+        """
+        if idx == self._cur:
+            md = self._capture_current_md()
+            if md is not None:
+                return md
+        return self._docs[idx].get("content") or ""
+
+    def _drop_doc(self, idx, remember=True):
+        """移除第 idx 个文档（缓存 + 标签），按需压入「重新打开」回溯栈。"""
+        doc = self._docs.pop(idx)
+        self._tabbar.removeTab(idx)
+        if remember:
+            self._closed_stack.append(dict(doc))
+            del self._closed_stack[:-self.CLOSED_STACK_MAX]
+        return doc
+
+    def _unnamed_nonempty(self, idx):
+        """未命名且非空 —— 沿用 _close_tab 的确认口径。"""
+        doc = self._docs[idx]
+        if doc.get("path") is not None:
+            return False
+        if idx == self._cur:
+            return bool(self._dirty or (doc.get("content") or "").strip())
+        return bool((doc.get("content") or "").strip())
+
+    def _save_doc_as_sync(self, idx):
+        """给指定标签弹「另存为」并**同步**落盘（批量流程用，避免异步写入与切标签交错）。"""
+        doc = self._docs[idx]
+        path, _ = QFileDialog.getSaveFileName(
+            self, "保存 Markdown 文件", self._dlg_start("save", doc.get("path") or "未命名.md"),
+            "Markdown 文件 (*.md);;所有文件 (*.*)")
+        if not path:
+            return False
+        path = os.path.abspath(path)
+        md = self._doc_text(idx)
+        text = md if md.endswith("\n") else md + "\n"
+        try:
+            self.snapshot_history(path, text)
+            self._write_text(path, text)
+        except OSError as e:
+            QMessageBox.critical(self, "保存失败", f"{path}\n{e}")
+            return False
+        self._remember_dir("save", path)
+        doc["path"] = path
+        doc["content"] = md
+        doc["dirty"] = False
+        if idx == self._cur:
+            self.file_path = path
+            self._dirty = False
+            self._push_doc_dir()
+        self._remove_draft(doc)                  # v3.32（P0-1）：有路径后草稿收走
+        self._remember_last_session()            # v3.38（OUT-5）
+        self._refresh_tab_texts()
+        self._update_title()
+        return True
+
+    def _perform_batch_close(self, idxs, discard_unnamed=False):
+        """倒序移除给定索引集合，随后修正 _cur / 选中态 / 正文（索引不漂移）。"""
+        idxset = {i for i in idxs if 0 <= i < len(self._docs)}
+        if not idxset:
+            return 0
+        old_cur = self._cur
+        cur_closed = old_cur in idxset
+        closed = 0
+        for i in sorted(idxset, reverse=True):
+            if discard_unnamed and self._docs[i].get("path") is None:
+                self._remove_draft(self._docs[i])   # 明确丢弃 → 草稿一并删除
+            self._drop_doc(i)
+            closed += 1
+        if not self._docs:
+            self._cur = -1
+            self.file_path = None
+            self._switching = False
+            self._dirty = False
+            self._add_doc(path=None, text="")        # 沿用「空栈自动补空白页」
+            self._update_title()
+            self._refresh_tab_texts()
+            return closed
+        if cur_closed:
+            # 当前文档被关掉：置 -1 后走激活路径，让 _on_tab_clicked 从缓存装载正文
+            # （否则会被 idx == self._cur 的短路守卫挡掉）
+            self._cur = -1
+            self._switching = False
+            new_idx = min(max(old_cur - sum(1 for i in idxset if i < old_cur), 0),
+                          len(self._docs) - 1)
+            self._tabbar.setCurrentIndex(new_idx)
+            self._on_tab_clicked(new_idx)
+        else:
+            # 当前文档保留：只同步索引漂移，**不要**从 doc["content"] 重载
+            # （当前文档的缓存可能滞后于编辑器，重载会吞掉正在输入的内容）
+            self._cur = old_cur - sum(1 for i in idxset if i < old_cur)
+            self._tabbar.blockSignals(True)
+            self._tabbar.setCurrentIndex(self._cur)
+            self._tabbar.blockSignals(False)
+        self._refresh_tab_texts()
+        self._update_title()
+        return closed
+
+    def _batch_close(self, idxs, ask=True):
+        """批量关闭确认链：未命名非空 → 一次汇总确认（保存 / 放弃 / 取消）→ 倒序执行。"""
+        if self._switching:
+            return 0
+        idxs = sorted({i for i in idxs if 0 <= i < len(self._docs)})
+        if not idxs:
+            return 0
+        if self._cur in idxs:
+            self._capture_current_md()               # 实时内容回写，保证判定与保存内容正确
+        need = [i for i in idxs if self._unnamed_nonempty(i)]
+        discard = not need
+        if need and ask:
+            btn = QMessageBox.question(
+                self, "关闭多个标签页",
+                f"其中 {len(need)} 个未命名文档尚未保存，关闭将丢失内容。\n是否一并保存？",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel)
+            if btn == QMessageBox.Cancel:
+                return 0
+            if btn == QMessageBox.Save:
+                for i in sorted(need, reverse=True):
+                    if not self._save_doc_as_sync(i):
+                        return 0                     # 用户取消 → 整批中止，不动任何标签
+            else:
+                discard = True
+        return self._perform_batch_close(idxs, discard_unnamed=discard)
+
+    def _close_unmodified(self):
+        """关闭所有未修改的标签（右键菜单项）。"""
+        if 0 <= self._cur < len(self._docs):
+            self._docs[self._cur]["dirty"] = bool(self._dirty)   # 实时脏标记优先
+        idxs = [i for i in range(len(self._docs)) if not self._docs[i].get("dirty")]
+        if not idxs:
+            self.show_status("没有未修改的标签页")
+            return
+        n = self._batch_close(idxs)
+        if n:
+            self.show_status(f"已关闭 {n} 个未修改的标签页")
+
+    def _when_idle(self, fn):
+        """等切换锁释放后再执行（右键即选中的异步窗口期保护）。"""
+        if self._switching:
+            QTimer.singleShot(20, lambda: self._when_idle(fn))
+            return
+        fn()
+
+    def _on_tab_menu(self, pos):
+        """标签右键菜单（对标 Notepad++）：先选中被点标签，再弹菜单。"""
+        idx = self._tabbar.tabAt(pos)
+        if idx < 0:
+            idx = self._cur
+        if not (0 <= idx < len(self._docs)):
+            return
+        if idx != self._cur:
+            self._tabbar.setCurrentIndex(idx)        # 右键即选中
+        doc = self._docs[idx]
+        has_path = doc.get("path") is not None
+        last = len(self._docs) - 1
+        m = QMenu(self)
+        a = m.addAction("关闭\tCtrl+W")
+        a.triggered.connect(lambda: self._when_idle(lambda: self._close_tab(idx)))
+        a = m.addAction("关闭其它所有")
+        a.triggered.connect(lambda: self._when_idle(lambda: self._batch_close(
+            [i for i in range(len(self._docs)) if i != idx])))
+        a = m.addAction("关闭左侧所有")
+        a.setEnabled(idx > 0)
+        a.triggered.connect(lambda: self._when_idle(lambda: self._batch_close(list(range(idx)))))
+        a = m.addAction("关闭右侧所有")
+        a.setEnabled(idx < last)
+        a.triggered.connect(lambda: self._when_idle(
+            lambda: self._batch_close(list(range(idx + 1, len(self._docs))))))
+        a = m.addAction("关闭所有未修改")
+        a.triggered.connect(lambda: self._when_idle(self._close_unmodified))
+        m.addSeparator()
+        a = m.addAction("在资源管理器中显示")
+        a.setEnabled(has_path)
+        a.triggered.connect(lambda: self.show_in_explorer(doc.get("path")))
+        m.addSeparator()
+        a = m.addAction("复制文件名")
+        a.setEnabled(has_path)
+        a.triggered.connect(lambda: self._copy_to_clip(os.path.basename(doc.get("path") or ""), "文件名"))
+        a = m.addAction("复制文件路径")
+        a.setEnabled(has_path)
+        a.triggered.connect(lambda: self._copy_to_clip(doc.get("path") or "", "文件路径"))
+        a = m.addAction("复制所在目录")
+        a.setEnabled(has_path)
+        a.triggered.connect(lambda: self._copy_to_clip(os.path.dirname(doc.get("path") or ""), "所在目录"))
+        m.exec(self._tabbar.mapToGlobal(pos))
+
+    def _copy_to_clip(self, text, what):
+        if not text:
+            return
+        QApplication.clipboard().setText(text)
+        self.show_status(f"已复制{what}：{text}")
+
+    # ---- TAB-3：重新打开关闭的标签 ----
+    def _reopen_closed_tab(self):
+        if not self._closed_stack:
+            self.show_status("没有可重新打开的标签页")
+            return
+        doc = self._closed_stack.pop()
+        idx = self._add_doc(path=doc.get("path"), text=doc.get("content"))
+        self._docs[idx]["dirty"] = bool(doc.get("dirty"))
+        self._refresh_tab_texts()
+        name = os.path.basename(doc["path"]) if doc.get("path") else "未命名"
+        self.show_status(f"已重新打开 · {name}")
+
+    # ---- TAB-4：上一个 / 下一个标签 ----
+    def _cycle_tab(self, step):
+        n = len(self._docs)
+        if n < 2:
+            return
+        self._tabbar.setCurrentIndex((self._cur + step) % n)
+
+    # ---- TAB-6：全部保存 ----
+    def save_all(self) -> bool:
+        """批量保存「有路径且已修改」的文档；未命名文档不批量弹窗，仅在提示里计数。"""
+        n = 0
+        skipped = 0
+        for i, doc in enumerate(list(self._docs)):
+            if not doc.get("dirty"):
+                continue
+            if not doc.get("path"):
+                skipped += 1
+                continue
+            md = self._doc_text(i)
+            if md is None:
+                continue
+            text = md if md.endswith("\n") else md + "\n"
+            try:
+                self.snapshot_history(doc["path"], text)
+                self._write_text(doc["path"], text)
+            except OSError as e:
+                QMessageBox.critical(self, "保存失败", f"{doc['path']}\n{e}")
+                continue
+            doc["content"] = md
+            doc["dirty"] = False
+            if i == self._cur:
+                self._dirty = False
+            n += 1
+        if 0 <= self._cur < len(self._docs):
+            self._dirty = bool(self._docs[self._cur].get("dirty"))
+        self._refresh_tab_texts()
+        self._update_title()
+        msg = f"已保存 {n} 个文档" if n else "没有需要保存的修改"
+        if skipped:
+            msg += f"（{skipped} 个未命名文档请单独另存）"
+        self.show_status(msg)
+        return n > 0
+
+    # ---- TAB-5：标签栏鼠标手势见文件末尾 eventFilter（QMainWindow 只能有一个
+    #      eventFilter 定义，末位定义生效 —— 早期在此处另写一份会被静默遮蔽）----
 
     # ================= 文件操作 =================
     @staticmethod
@@ -2780,15 +3094,22 @@ class MainWindow(QMainWindow):
         """显示 / 隐藏左侧主工具栏；隐藏时左侧边缘常驻「»」展开按钮。"""
         vis = bool(vis)
         self._tool_tb.setVisible(vis)
-        self._sync_toolbar_state(toast=toast and not vis)
+        # 注意：窗口尚未 show() 时 isVisible() 恒为 False（Qt 语义），**不能**拿它当
+        # 「用户意图」落盘 —— 否则每次启动都会把 ui/toolbarVisible 写成 False，下次
+        # 启动工具栏就凭空消失（TB-1 的症状换个马甲复发）。故显式把 vis 传下去。
+        self._sync_toolbar_state(toast=toast and not vis, vis=vis)
 
     def toggle_toolbar(self, checked=True):
         """视图菜单 / 右键菜单 / 快捷键入口（checkable 动作带新勾选态）。"""
         self.set_toolbar_visible(bool(checked))
 
-    def _sync_toolbar_state(self, toast=False, persist=True):
-        """按工具栏当前可见性同步展开按钮 / 菜单勾选 / 持久化，并给出恢复提示。"""
-        vis = self._tool_tb.isVisible()
+    def _sync_toolbar_state(self, toast=False, persist=True, vis=None):
+        """按工具栏可见性同步展开按钮 / 菜单勾选 / 持久化，并给出恢复提示。
+
+        vis=None → 取控件真实可见性（visibilityChanged 路径，此时窗口已 show，可信）；
+        显式传入 → 以调用方意图为准（启动初始化阶段 isVisible() 不可信）。
+        """
+        vis = self._tool_tb.isVisible() if vis is None else bool(vis)
         btn = getattr(self, "_btn_tb_show", None)
         if btn is not None:
             btn.setVisible(not vis)
@@ -2801,7 +3122,7 @@ class MainWindow(QMainWindow):
         if persist:
             self._settings.setValue("ui/toolbarVisible", vis)
         if toast and not vis:
-            self.show_status("工具栏已隐藏：点击左侧边缘的 » 或按 Ctrl+Shift+T 可重新展开")
+            self.show_status("工具栏已隐藏：点击左侧边缘的 » 或按 Ctrl+Shift+B 可重新展开")
 
     # ---- 模式切换（写作 / 源码 / 分屏）----
     def _mode_label(self):
@@ -3011,6 +3332,23 @@ class MainWindow(QMainWindow):
         """v3.38（OUT-5）：『打开指定文件夹』使用的目录路径。"""
         self._startup_folder = str(path or "")
         self._settings.setValue("startupFolder", self._startup_folder)
+
+    def last_sidebar_dir(self):
+        """v3.38（FLP-1）：上次访问的侧栏目录（无则空串）。"""
+        return str(self._settings.value("lastSidebarDir", "") or "")
+
+    def file_list_default_dir(self):
+        """v3.38（FLP-1）：文件列表「默认打开路径」的**原始配置值**（未解析，空 = 未配置）。
+
+        字段：QSettings `files/defaultDir`；默认值 = `config.FILE_LIST_DEFAULT_DIR`（""）。
+        """
+        return str(self._settings.value("files/defaultDir", FILE_LIST_DEFAULT_DIR) or "")
+
+    def set_file_list_default_dir(self, text):
+        """v3.38（FLP-1）：设置文件列表默认打开路径（留空 = 不启用），并即时定位一次。"""
+        self._file_list_default_dir = str(text or "").strip()
+        self._settings.setValue("files/defaultDir", self._file_list_default_dir)
+        self._sidebar.apply_default_dir(toast=True)
 
     def _remember_last_session(self):
         """v3.38（OUT-5）：记录最近文档与侧栏目录，供「启动时」恢复上次会话。"""
@@ -3338,6 +3676,21 @@ class MainWindow(QMainWindow):
             v.setAcceptDrops(True)
 
     def eventFilter(self, obj, ev):
+        # v3.38（TAB-5）：标签栏鼠标手势 —— 中键点击标签即关闭 / 双击标签即关闭 /
+        # 双击空白处新建标签（Notepad++ 与浏览器对标）
+        if obj is self._tabbar:
+            if ev.type() == QEvent.MouseButtonPress and ev.button() == Qt.MiddleButton:
+                i = self._tabbar.tabAt(ev.position().toPoint())
+                if i >= 0:
+                    self._close_tab(i)
+                    return True
+            elif ev.type() == QEvent.MouseButtonDblClick:
+                i = self._tabbar.tabAt(ev.position().toPoint())
+                if i >= 0:
+                    self._close_tab(i)
+                else:
+                    self.new_file()
+                return True
         # 状态栏「字数」点击 → 统计详情
         if obj is getattr(self, "_count", None) and ev.type() == QEvent.MouseButtonPress:
             self._show_stats_detail()

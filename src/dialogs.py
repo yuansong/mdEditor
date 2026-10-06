@@ -909,6 +909,10 @@ class SettingsDialog(_ThemedDialog):
     def _on_startup_folder(self):
         self._win.set_startup_folder(self.startup_folder_edit.text().strip())
 
+    def _on_file_default_dir(self):
+        # v3.38（FLP-1）：文件列表默认打开路径（空 = 不启用，改完即时定位一次）
+        self._win.set_file_list_default_dir(self.file_default_dir_edit.text().strip())
+
     def _on_file_mode(self, _idx):
         mode = self.file_mode_box.currentData()
         if mode and mode != getattr(self._win, "_file_list_mode", "current"):
@@ -994,6 +998,21 @@ class SettingsDialog(_ThemedDialog):
         self.startup_folder_edit.setText(str(getattr(self._win, "_startup_folder", "") or ""))
         self.startup_folder_edit.editingFinished.connect(self._on_startup_folder)
         gfile.addWidget(self.startup_folder_edit)
+
+        # ---- v3.38（FLP-1）：文件列表默认打开路径（字段 files/defaultDir）----
+        gfile.addWidget(QLabel("文件列表默认打开路径（留空 = 不启用）"))
+        self.file_default_dir_edit = QLineEdit(page)
+        self.file_default_dir_edit.setPlaceholderText(
+            r"绝对路径如 E:\notes；相对路径按应用目录解析；~ 开头为主目录")
+        self.file_default_dir_edit.setText(
+            str(getattr(self._win, "_file_list_default_dir", "") or ""))
+        self.file_default_dir_edit.editingFinished.connect(self._on_file_default_dir)
+        gfile.addWidget(self.file_default_dir_edit)
+        fdd_hint = QLabel("· 启动时优先恢复「上次访问的目录」，其次才用本路径\n"
+                          "· 路径不存在 / 无访问权限时安全回退到「此电脑」，不报错")
+        fdd_hint.setObjectName("pageHint")
+        fdd_hint.setWordWrap(True)
+        gfile.addWidget(fdd_hint)
         lay.addWidget(gb_file)
 
         # ---- 导出（组框） ----
