@@ -10,10 +10,11 @@ from datetime import datetime
 from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QGroupBox, QHBoxLayout, QLabel,
-    QLineEdit, QListWidget, QListWidgetItem, QMenu, QMessageBox, QPlainTextEdit, QPushButton,
-    QKeySequenceEdit, QRadioButton, QSlider, QSpinBox, QStackedWidget, QTabWidget,
-    QTextBrowser, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QGroupBox,
+    QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu, QMessageBox,
+    QPlainTextEdit, QPushButton, QKeySequenceEdit, QRadioButton, QSlider, QSplitter, QSpinBox,
+    QStackedWidget, QTabWidget, QTextBrowser, QToolButton, QTreeWidget, QTreeWidgetItem,
+    QVBoxLayout, QWidget,
 )
 
 from config import BUILTIN_TEMPLATES, MMD_LEGACY, MMD_THEMES, TPL_NAME_MAX, js
@@ -902,6 +903,12 @@ class SettingsDialog(_ThemedDialog):
         if lvl is not None and int(lvl) != int(getattr(self._win, "_outline_level", 3)):
             self._win.set_outline_level(int(lvl))
 
+    def _on_startup_action(self, _i):
+        self._win.set_startup_action(self.startup_box.currentData())
+
+    def _on_startup_folder(self):
+        self._win.set_startup_folder(self.startup_folder_edit.text().strip())
+
     def _on_file_mode(self, _idx):
         mode = self.file_mode_box.currentData()
         if mode and mode != getattr(self._win, "_file_list_mode", "current"):
@@ -966,6 +973,27 @@ class SettingsDialog(_ThemedDialog):
         fm_hint.setObjectName("pageHint")
         fm_hint.setWordWrap(True)
         gfile.addWidget(fm_hint)
+
+        # ---- v3.38（OUT-5）：启动时恢复上次会话 ----
+        srow = QHBoxLayout()
+        srow.addWidget(QLabel("启动时"))
+        self.startup_box = QComboBox(page)
+        self.startup_box.addItem("打开欢迎页（默认）", "blank")
+        self.startup_box.addItem("恢复上次打开的文件", "lastFile")
+        self.startup_box.addItem("恢复上次文件与侧栏位置", "lastFileSide")
+        self.startup_box.addItem("打开指定文件夹（仅侧栏定位）", "folder")
+        _sa = str(getattr(self._win, "_startup_action", "blank") or "blank")
+        _si = self.startup_box.findData(_sa)
+        self.startup_box.setCurrentIndex(_si if _si >= 0 else 0)
+        self.startup_box.currentIndexChanged.connect(self._on_startup_action)
+        srow.addWidget(self.startup_box, 1)
+        gfile.addLayout(srow)
+        self.startup_folder_edit = QLineEdit(page)
+        self.startup_folder_edit.setPlaceholderText(
+            "「打开指定文件夹」使用的目录（留空 = 不定位）")
+        self.startup_folder_edit.setText(str(getattr(self._win, "_startup_folder", "") or ""))
+        self.startup_folder_edit.editingFinished.connect(self._on_startup_folder)
+        gfile.addWidget(self.startup_folder_edit)
         lay.addWidget(gb_file)
 
         # ---- 导出（组框） ----
@@ -1457,12 +1485,18 @@ class CommandPaletteDialog(_ThemedDialog):
 # P1-6 版本历史
 # =========================================================================
 class DiffDialog(_ThemedDialog):
-    """v3.31（#27）：版本差异对比视图（行级差异高亮，随主题配色）。
+    """v3.31（#27）：版本差异对比视图；v3.38（DIFF-1）：词级高亮 + 单栏/双栏切换。
 
-    用 difflib.SequenceMatcher 逐行比对，新增行 / 删除行分别着色，
-    上下文行淡色；QTextBrowser 展示静态 HTML，零外部依赖。"""
+    - 行级差异沿用 difflib.SequenceMatcher；replace 块内 del/add 行按顺序 1:1 配对，
+      配对行再做字符级 SequenceMatcher，非 equal 段用 <span> 词级高亮（>300 字符护栏）；
+    - 「单栏（unified，默认）| 双栏（split）」切换，QSettings `diff/layout` 跨会话记忆；
+    - 双栏 = QSplitter 内双 QTextBrowser + 左右列头 + 同步滚动（防递归互连）；
+    - 行流由 build_rows 公共构造，两模式从同一序列投影，内容恒一致；
+    - 对齐近似：QTextBrowser 自动换行下长段两侧可能错位 1~2 视觉行（方案 §5 已声明接受）。
+    QTextBrowser 展示静态 HTML，零外部依赖。"""
 
-    MAX_ROWS = 4000   # 超长差异截断，避免 HTML 过大卡界面
+    MAX_ROWS = 4000   # 超长差异截断（双栏按行对截断，左右行数恒等）
+    WORD_MAX = 300    # 词级 diff 字符护栏：超长行退整行着色
 
     def __init__(self, win):
         super().__init__(win)
@@ -1472,6 +1506,10 @@ class DiffDialog(_ThemedDialog):
         self.setModal(False)
         self.resize(860, 560)
         self._apply_theme_qss(getattr(win, "_theme", "light"))
+        self._rows = None        # build_rows 产物（切布局不重算 diff）
+        self._colors = None
+        self._widened = False    # 首次切双栏放宽窗口只做一次
+
         lay = QVBoxLayout(self)
         lay.setContentsMargins(14, 14, 14, 12)
         lay.setSpacing(8)
@@ -1481,66 +1519,249 @@ class DiffDialog(_ThemedDialog):
         self.stat_lbl = QLabel("", self)
         self.stat_lbl.setObjectName("pageHint")
         lay.addWidget(self.stat_lbl)
+
+        # ---- v3.38（DIFF-1）：单栏 | 双栏 切换（默认单栏，QSettings 记忆） ----
+        trow = QHBoxLayout()
+        trow.addWidget(QLabel("视图"))
+        self.layout_box = QComboBox(self)
+        self.layout_box.addItem("单栏", "unified")
+        self.layout_box.addItem("双栏", "split")
+        _cur = str(self._win._settings.value("diff/layout", "unified") or "unified")
+        _ci = self.layout_box.findData(_cur)
+        self.layout_box.setCurrentIndex(_ci if _ci >= 0 else 0)
+        self.layout_box.currentIndexChanged.connect(self._on_layout)
+        trow.addWidget(self.layout_box, 1)
+        trow.addStretch(1)
+        lay.addLayout(trow)
+
+        # 单栏视图（左栏浏览器同时复用为双栏左列，切布局只换容器可见性）
         self.view = QTextBrowser(self)
         self.view.setOpenExternalLinks(False)
+        # 双栏：QSplitter + 左右列头 + 双浏览器
+        self.split = QSplitter(Qt.Horizontal, self)
+        self.lbl_l = QLabel("", self)
+        self.lbl_r = QLabel("", self)
+        pane_l = QWidget(self)
+        vl = QVBoxLayout(pane_l)
+        vl.setContentsMargins(0, 0, 0, 0)
+        vl.setSpacing(2)
+        vl.addWidget(self.lbl_l)
+        self.view_l = QTextBrowser(self)
+        self.view_l.setOpenExternalLinks(False)
+        vl.addWidget(self.view_l, 1)
+        self.split.addWidget(pane_l)
+        pane_r = QWidget(self)
+        vr = QVBoxLayout(pane_r)
+        vr.setContentsMargins(0, 0, 0, 0)
+        vr.setSpacing(2)
+        vr.addWidget(self.lbl_r)
+        self.view_r = QTextBrowser(self)
+        self.view_r.setOpenExternalLinks(False)
+        vr.addWidget(self.view_r, 1)
+        self.split.addWidget(pane_r)
+        self.split.setSizes([1, 1])
         lay.addWidget(self.view, 1)
+        lay.addWidget(self.split, 1)
+        # v3.38（DIFF-1）：双栏同步滚动（blockSignals 防递归）
+        self.view_l.verticalScrollBar().valueChanged.connect(self._sync_scroll_l)
+        self.view_r.verticalScrollBar().valueChanged.connect(self._sync_scroll_r)
+
         brow = QHBoxLayout()
         brow.addStretch(1)
         b_close = QPushButton("关闭", self)
         b_close.clicked.connect(self.close)
         brow.addWidget(b_close)
         lay.addLayout(brow)
+        self._on_layout(self.layout_box.currentIndex())   # 按记忆的布局初始化可见性
+
+    # ---------- 同步滚动 ----------
+    def _sync_scroll_l(self, v):
+        sb = self.view_r.verticalScrollBar()
+        sb.blockSignals(True)
+        sb.setValue(v)
+        sb.blockSignals(False)
+
+    def _sync_scroll_r(self, v):
+        sb = self.view_l.verticalScrollBar()
+        sb.blockSignals(True)
+        sb.setValue(v)
+        sb.blockSignals(False)
+
+    def _on_layout(self, _i):
+        self._win._settings.setValue("diff/layout", self.layout_box.currentData())
+        if self._rows is not None:
+            self._render()
+
+    # ---------- v3.38（DIFF-1）：词级配对 ----------
+    @staticmethod
+    def _esc(ln):
+        return (str(ln).replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;").replace(" ", "&nbsp;") or "&nbsp;")
+
+    @classmethod
+    def _word_pair(cls, old_ln, new_ln, c_wdel, c_wadd):
+        """replace 配对行的词级高亮：返回 (旧行 HTML, 新行 HTML)；
+        超 WORD_MAX 或行内容一致（配对余量）返回 None 退整行着色。"""
+        old_ln, new_ln = str(old_ln), str(new_ln)
+        if len(old_ln) > cls.WORD_MAX or len(new_ln) > cls.WORD_MAX:
+            return None
+        sm = difflib.SequenceMatcher(a=old_ln, b=new_ln, autojunk=False)
+        ops = sm.get_opcodes()
+        if all(t == "equal" for t, _, _, _, _ in ops):
+            return None
+
+        def _mark(s, color, new_side):
+            out = []
+            for tag, i1, i2, j1, j2 in ops:
+                a, b = (j1, j2) if new_side else (i1, i2)
+                seg = cls._esc(s[a:b])
+                out.append(f'<span style="background:{color};">{seg}</span>'
+                           if tag != "equal" else seg)
+            return "".join(out)
+
+        return _mark(old_ln, c_wdel, False), _mark(new_ln, c_wadd, True)
+
+    def _build_rows(self, old_lines, new_lines, c_wdel, c_wadd):
+        """公共行流：[(kl, tl, hl, kr, tr, hr)]（hl/hr=词级 HTML 或 None）；
+        replace 块 del/add 行按顺序 1:1 配对做词级，余量侧退整行。"""
+        rows = []
+        add = dele = same = 0
+        sm = difflib.SequenceMatcher(a=old_lines, b=new_lines, autojunk=False)
+        for tag, i1, i2, j1, j2 in sm.get_opcodes():
+            if tag == "equal":
+                for k in range(i2 - i1):
+                    rows.append(("ctx", old_lines[i1 + k], None,
+                                 "ctx", new_lines[j1 + k], None))
+                same += i2 - i1
+            elif tag == "replace":
+                dl, al = old_lines[i1:i2], new_lines[j1:j2]
+                for k in range(max(len(dl), len(al))):
+                    lft = dl[k] if k < len(dl) else ""
+                    rgt = al[k] if k < len(al) else ""
+                    hl = hr = None
+                    if k < len(dl) and k < len(al):
+                        pair = self._word_pair(lft, rgt, c_wdel, c_wadd)
+                        if pair:
+                            hl, hr = pair
+                    rows.append(("del", lft, hl, "add", rgt, hr))
+                dele += len(dl)
+                add += len(al)
+            elif tag == "delete":
+                for k in range(i2 - i1):
+                    rows.append(("del", old_lines[i1 + k], None, "spacer", "", None))
+                dele += i2 - i1
+            else:   # insert
+                for k in range(j2 - j1):
+                    rows.append(("spacer", "", None, "add", new_lines[j1 + k], None))
+                add += j2 - j1
+        return rows, add, dele, same
 
     def show_diff(self, title, old_text, new_text, old_label, new_label):
         self.title_lbl.setText(title)
         theme = getattr(self._win, "_theme", "light")
         dark = theme in ("dark", "night", "panda")
+        # v3.38（DIFF-1）：行底沿用两档；词级取更深一档（方案 §4 配色）
         c_add = "#1e3b2a" if dark else "#e2f6e9"
         c_del = "#3f2222" if dark else "#fde8e8"
+        c_wadd = "#2a5c42" if dark else "#9FE1CB"
+        c_wdel = "#5c2f2f" if dark else "#F5C4B3"
         try:
             c_ctx = palette(theme).get("text_muted", "#6b7280")
         except Exception:      # noqa: BLE001
             c_ctx = "#6b7280"
+        self._colors = (dark, c_add, c_del, c_ctx, c_wadd, c_wdel)
         old_lines = str(old_text or "").split("\n")
         new_lines = str(new_text or "").split("\n")
-        sm = difflib.SequenceMatcher(a=old_lines, b=new_lines, autojunk=False)
-        add = dele = same = 0
-        rows = []
-        for tag, i1, i2, j1, j2 in sm.get_opcodes():
-            if tag == "equal":
-                for ln in old_lines[i1:i2]:
-                    rows.append(("ctx", ln))
-                same += i2 - i1
-            else:
-                for ln in old_lines[i1:i2]:
-                    rows.append(("del", ln))
-                dele += i2 - i1
-                for ln in new_lines[j1:j2]:
-                    rows.append(("add", ln))
-                add += j2 - j1
+        self._rows, add, dele, same = self._build_rows(
+            old_lines, new_lines, c_wdel, c_wadd)
+        self.lbl_l.setText(old_label)
+        self.lbl_r.setText(new_label)
         if add == 0 and dele == 0:
             self.stat_lbl.setText("两个版本内容一致。")
             self.view.setPlainText("")
+            self.view_l.setPlainText("")
+            self.view_r.setPlainText("")
         else:
             self.stat_lbl.setText(
                 f"新增 {add} 行 · 删除 {dele} 行 · 相同 {same} 行　（{old_label} → {new_label}）")
-            parts = ['<div style="font-family: Consolas, monospace; font-size: 12px; line-height: 1.5;">']
-            for kind, ln in rows[:self.MAX_ROWS]:
-                escd = (ln.replace("&", "&amp;").replace("<", "&lt;")
-                          .replace(">", "&gt;").replace(" ", "&nbsp;") or "&nbsp;")
-                if kind == "add":
-                    parts.append(f'<div style="background:{c_add};">{escd}</div>')
-                elif kind == "del":
-                    parts.append(f'<div style="background:{c_del};">{escd}</div>')
+            self._render()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def _render(self):
+        """按当前布局渲染（切布局不重算 diff，直接复用缓存的行流）。"""
+        dark, c_add, c_del, c_ctx, c_wadd, c_wdel = self._colors
+        rows = self._rows
+        c_sp = "#3a3f4b" if dark else "#d1d5db"
+        if self.layout_box.currentData() == "split":
+            self.view.setVisible(False)
+            self.split.setVisible(True)
+            if not self._widened:
+                self._widened = True
+                if self.width() < 1000:   # 仅首次切双栏且未手动放宽过
+                    self.resize(1100, self.height())
+            shown = rows[:self.MAX_ROWS]
+            pl = ['<div style="font-family: Consolas, monospace; font-size: 12px; line-height: 1.5;">']
+            pr = ['<div style="font-family: Consolas, monospace; font-size: 12px; line-height: 1.5;">']
+            for kl, tl, hl, kr, tr, hr in shown:
+                if kl == "spacer":
+                    pl.append(f'<div style="border-top:1px dashed {c_sp};'
+                              f'border-bottom:1px dashed {c_sp};color:{c_ctx};">&nbsp;</div>')
+                elif kl == "del":
+                    body = hl if hl else self._esc(tl)
+                    pl.append(f'<div style="background:{c_del};">{body}</div>')
                 else:
-                    parts.append(f'<div style="color:{c_ctx};">{escd}</div>')
+                    pl.append(f'<div style="color:{c_ctx};">{self._esc(tl)}</div>')
+                if kr == "spacer":
+                    pr.append(f'<div style="border-top:1px dashed {c_sp};'
+                              f'border-bottom:1px dashed {c_sp};color:{c_ctx};">&nbsp;</div>')
+                elif kr == "add":
+                    body = hr if hr else self._esc(tr)
+                    pr.append(f'<div style="background:{c_add};">{body}</div>')
+                else:
+                    pr.append(f'<div style="color:{c_ctx};">{self._esc(tr)}</div>')
+            tail = f'<div style="color:{c_ctx};">… 其余 {len(rows) - self.MAX_ROWS} 行省略</div>'
+            if len(rows) > self.MAX_ROWS:
+                pl.append(tail)
+                pr.append(tail)
+            pl.append("</div>")
+            pr.append("</div>")
+            self.view_l.setHtml("".join(pl))
+            self.view_r.setHtml("".join(pr))
+        else:
+            self.split.setVisible(False)
+            self.view.setVisible(True)
+            parts = ['<div style="font-family: Consolas, monospace; font-size: 12px; line-height: 1.5;">']
+            for kl, tl, hl, kr, tr, hr in rows[:self.MAX_ROWS]:
+                # v3.38 修复：单栏从行流投影时 replace 对两侧都要输出（旧版 del/add
+                # 各占一行；投影只取左列会丢失 add 侧内容）
+                if kl == "del" and kr == "add":
+                    body = hl if hl else self._esc(tl)
+                    parts.append(f'<div style="background:{c_del};">{body}</div>')
+                    body2 = hr if hr else self._esc(tr)
+                    parts.append(f'<div style="background:{c_add};">{body2}</div>')
+                    continue
+                if kl == "spacer":
+                    body2 = hr if hr else self._esc(tr)
+                    parts.append(f'<div style="background:{c_add};">{body2}</div>')
+                    continue
+                if kr == "spacer":
+                    body = hl if hl else self._esc(tl)
+                    parts.append(f'<div style="background:{c_del};">{body}</div>')
+                    continue
+                if kl == "add":
+                    body = hl if hl else self._esc(tl)
+                    parts.append(f'<div style="background:{c_add};">{body}</div>')
+                elif kl == "del":
+                    body = hl if hl else self._esc(tl)
+                    parts.append(f'<div style="background:{c_del};">{body}</div>')
+                else:
+                    parts.append(f'<div style="color:{c_ctx};">{self._esc(tl)}</div>')
             if len(rows) > self.MAX_ROWS:
                 parts.append(f'<div style="color:{c_ctx};">… 其余 {len(rows) - self.MAX_ROWS} 行省略</div>')
             parts.append("</div>")
             self.view.setHtml("".join(parts))
-        self.show()
-        self.raise_()
-        self.activateWindow()
 
     def showEvent(self, ev):
         super().showEvent(ev)
@@ -1579,6 +1800,9 @@ class HistoryDialog(_ThemedDialog):
         self.listw.setObjectName("themeList")
         self.listw.setMinimumWidth(240)
         self.listw.currentRowChanged.connect(self._on_pick)
+        # v3.38（DIFF-2）：扩展选择 —— 单击仍是单选预览；Ctrl/Shift 可选两项互比
+        self.listw.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.listw.itemSelectionChanged.connect(self._on_two_sel)
         row.addWidget(self.listw, 0)
         self.preview = QPlainTextEdit(self)
         self.preview.setReadOnly(True)
@@ -1588,7 +1812,10 @@ class HistoryDialog(_ThemedDialog):
 
         brow = QHBoxLayout()
         brow.addStretch(1)
-        # v3.31（#27）：版本差异对比
+        # v3.31（#27）：版本差异对比；v3.38（DIFF-2）：任选两快照互比
+        self.b_diff_two = QPushButton("对比所选两项", self)
+        self.b_diff_two.setEnabled(False)
+        self.b_diff_two.clicked.connect(self._diff_two)
         self.b_diff_prev = QPushButton("与上一版本对比", self)
         self.b_diff_prev.clicked.connect(self._diff_prev)
         self.b_diff_cur = QPushButton("与当前文档对比", self)
@@ -1599,6 +1826,7 @@ class HistoryDialog(_ThemedDialog):
         self.b_folder.clicked.connect(self._open_folder)
         b_close = QPushButton("关闭", self)
         b_close.clicked.connect(self.close)
+        brow.addWidget(self.b_diff_two)
         brow.addWidget(self.b_diff_prev)
         brow.addWidget(self.b_diff_cur)
         brow.addWidget(self.b_restore)
@@ -1627,11 +1855,13 @@ class HistoryDialog(_ThemedDialog):
             self.b_folder.setEnabled(False)
             self.b_diff_cur.setEnabled(False)
             self.b_diff_prev.setEnabled(False)
+            self.b_diff_two.setEnabled(False)
         else:
             self.b_restore.setEnabled(True)
             self.b_folder.setEnabled(True)
             self.b_diff_cur.setEnabled(True)
             self.b_diff_prev.setEnabled(len(self._items) >= 2)
+            self.b_diff_two.setEnabled(len(self.listw.selectedItems()) == 2)
             for fp, mt in self._items:
                 try:
                     size = os.path.getsize(fp)
@@ -1699,6 +1929,29 @@ class HistoryDialog(_ThemedDialog):
         self._ensure_diff_dlg().show_diff(
             f"版本对比 · {name}", old, self._current_text(),
             f"快照 {self._fmt_when(self._items[row][1])}", "当前文档")
+
+    def _on_two_sel(self):
+        """v3.38（DIFF-2）：恰选两项时启用「对比所选两项」。"""
+        if hasattr(self, "b_diff_two"):
+            self.b_diff_two.setEnabled(len(self.listw.selectedItems()) == 2)
+
+    def _diff_two(self):
+        """v3.38（DIFF-2）：任选两个快照互比 —— 按 mtime 旧→新作为 old/new
+        （复用 DiffDialog，自动获得词级高亮与单栏/双栏切换能力）。"""
+        sel = self.listw.selectedItems()
+        if len(sel) != 2:
+            return
+        rows = sorted([self.listw.row(it) for it in sel],
+                      key=lambda r: self._items[r][1])
+        old = self._snap_text(rows[0])
+        new = self._snap_text(rows[1])
+        if old is None or new is None:
+            return   # 快照在对比期间被清理：沿用现有静默返回模式
+        name = os.path.basename(self._cur_file) if self._cur_file else "（未保存文档）"
+        self._ensure_diff_dlg().show_diff(
+            f"版本对比 · {name}", old, new,
+            f"快照 {self._fmt_when(self._items[rows[0]][1])}",
+            f"快照 {self._fmt_when(self._items[rows[1]][1])}")
 
     def _diff_prev(self):
         """v3.31（#27）：所选快照 vs 更新一份的快照（列表按时间倒序，row-1 更新）。"""

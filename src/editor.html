@@ -3411,11 +3411,197 @@ img.img-broken { display: none; }
     setCaretSel(el, rawOff, selLen || 0);
     el.scrollIntoView({ block: modes.typewriter ? 'center' : 'nearest' });
   }
+  /* =========================================================
+   * v3.38（NEST-1）行内交叉嵌套自愈
+   * 交叉态（==<u>x==</u>：A 开 B 开 A 闭 B 闭）无法被 parseInline 的
+   * 「区间内搜闭合」模型解析 —— <u> 与 </u> 分落在 mark 内容与闭合之外，
+   * 双双降级为字面文本（界面显示 <u>…</u>，再套格式即产生更深交错）。
+   * 修复：栈式配对扫描发现交叉即重排为合法嵌套（后来居上：后开的壳包住
+   * 先开的壳的剩余区间）——
+   *   在 K 闭合符之前插 J 闭合符；闭合符之后有残余内容再补 J 重开符
+   *   （无残余则删掉 J 原闭合符）。对称游程开闭同串，插在闭合符两侧
+   *   天然隔开（==**x==** → ==**x**==），不会产生 ==== 连排。
+   * 仅处理多字符无歧义标记（<u> <ins> == ~~ ** __）；单字符 * _ ~ ^ 易
+   * 误伤正文（3*4、snake_case），保持字面不动。行内码区间跳过。
+   * ========================================================= */
+  var HEAL_TOKENS = [
+    { kind: 'u', open: '<u>', close: '</u>', tag: true },
+    { kind: 'ins', open: '<ins>', close: '</ins>', tag: true },
+    { kind: '==', open: '==', close: '==', tag: false },
+    { kind: '~~', open: '~~', close: '~~', tag: false },
+    { kind: '**', open: '**', close: '**', tag: false },
+    { kind: '__', open: '__', close: '__', tag: false }
+  ];
+  /* 行内码区间掩码：成对等长反引号游程之间的内容不做标记扫描 */
+  function healCodeMask(s) {
+    var mask = [], runs = [], re = /`+/g, m;
+    while ((m = re.exec(s)) !== null) runs.push([m.index, m.index + m[0].length, m[0].length]);
+    for (var i = 0; i + 1 < runs.length; i++) {
+      if (runs[i][2] === runs[i + 1][2]) { mask.push([runs[i][0], runs[i + 1][1]]); i++; }
+    }
+    return mask;
+  }
+  function healMasked(pos, mask) {
+    for (var i = 0; i < mask.length; i++) if (pos >= mask[i][0] && pos < mask[i][1]) return true;
+    return false;
+  }
+  /* 单趟：token 流栈式重排。返回重排后的新串；无交叉返回 null（原样保留）。
+     判定规则：
+       - 标签闭串（</u> 等）恒为闭合候选；
+       - 对称串：栈顶同 kind → 普通闭合；栈中 deeper 同 kind → 交叉闭合；
+         其后还有同 kind 串且后继字符非空白 → 开符；否则散落字面。
+     交叉修复：按 LIFO 输出上方各层闭合串 + 本闭合串（后开先闭），
+     再按原栈序重开上方各层（重开符 reopen 标记，供紧邻剪枝）。 */
+  function healCrossOnce(s) {
+    var mask = healCodeMask(s), toks = [], t, d, p, i;
+    for (d = 0; d < HEAL_TOKENS.length; d++) {
+      t = HEAL_TOKENS[d];
+      var needles = t.tag ? [t.open, t.close] : [t.open];
+      for (i = 0; i < needles.length; i++) {
+        p = s.indexOf(needles[i]);
+        while (p !== -1) {
+          var e = p + needles[i].length;
+          var esc = p > 0 && s.charAt(p - 1) === '\\';
+          /* 处于更长同字符游程中（*** / ====）→ 歧义，跳过 */
+          var runedge = !t.tag &&
+            ((p > 0 && s.charAt(p - 1) === t.open.charAt(0)) ||
+             (e < s.length && s.charAt(e) === t.open.charAt(0)));
+          if (!esc && !runedge && !healMasked(p, mask)) {
+            toks.push({ pos: p, end: e, kind: t.kind, tag: t.tag,
+                        isClose: t.tag && needles[i] === t.close, def: t });
+          }
+          p = s.indexOf(needles[i], e);
+        }
+      }
+    }
+    if (toks.length < 3) return null;
+    toks.sort(function (x, y) { return x.pos - y.pos; });
+    var out = '', srcPos = 0, stack = [], crossed = false, k;
+    function flush(pos) { if (pos > srcPos) out += s.slice(srcPos, pos); srcPos = pos; }
+    function hasCloserLater(idx, kind) {
+      for (var q = idx + 1; q < toks.length; q++) {
+        if (toks[q].kind !== kind) continue;
+        if (toks[q].tag && !toks[q].isClose) continue;
+        return true;
+      }
+      return false;
+    }
+    function closerPosLater(idx, kind) {
+      for (var q = idx + 1; q < toks.length; q++) {
+        if (toks[q].kind !== kind) continue;
+        if (toks[q].tag && !toks[q].isClose) continue;
+        return toks[q].pos;
+      }
+      return -1;
+    }
+    for (k = 0; k < toks.length; k++) {
+      var tk = toks[k], top = stack.length ? stack[stack.length - 1] : null;
+      var isCloser = tk.tag ? tk.isClose : !!(top && top.kind === tk.kind);
+      if (!isCloser && !tk.tag) {
+        /* 对称串：栈顶不匹配 → deeper 同 kind 即交叉闭合 */
+        var dd;
+        for (dd = stack.length - 1; dd >= 0; dd--) if (stack[dd].kind === tk.kind) break;
+        if (dd >= 0) isCloser = true;
+      }
+      if (!isCloser) {
+        /* 开符判定：标签恒开（无闭合则栈底残留、无交叉、原样返回）；
+           对称串须后继同 kind 且后继字符非空白（与 parseInline 开符规则一致） */
+        if (tk.tag || (hasCloserLater(k, tk.kind) && /\S/.test(s.charAt(tk.end)))) {
+          flush(tk.pos);
+          out += s.slice(tk.pos, tk.end);
+          srcPos = tk.end;
+          stack.push({ kind: tk.kind, def: tk.def, reopen: false });
+        }
+        /* 否则散落符号：字面（不推进 srcPos，由后续 flush 原样带出） */
+        continue;
+      }
+      if (top && top.kind === tk.kind) {
+        /* 重开符 + 紧随闭合 + 中间无文本 → 两者都不输出 */
+        if (top.reopen && tk.pos === srcPos) {
+          out = out.slice(0, out.length - top.def.open.length);
+          srcPos = tk.end;
+          stack.pop();
+          continue;
+        }
+        flush(tk.pos);
+        out += s.slice(tk.pos, tk.end);
+        srcPos = tk.end;
+        stack.pop();
+        continue;
+      }
+      /* 悬垂 / 交叉 */
+      var di;
+      for (di = stack.length - 1; di >= 0; di--) if (stack[di].kind === tk.kind) break;
+      if (di < 0) continue;   /* 悬垂闭合：字面 */
+      /* 交叉确认：上方每一层都必须有自己的闭合符（否则解析层本就字面，不动） */
+      var above = [], d2, ok = true;
+      for (d2 = di + 1; d2 < stack.length; d2++) {
+        var cp = closerPosLater(k, stack[d2].kind);
+        if (cp < 0) { ok = false; break; }
+        above.push({ st: stack[d2], cp: cp });
+      }
+      if (!ok) continue;
+      crossed = true;
+      /* LIFO 输出上方各层闭合串（原始栈序：后开先闭） */
+      for (d2 = above.length - 1; d2 >= 0; d2--) {
+        flush(tk.pos);
+        out += above[d2].st.def.close;
+      }
+      flush(tk.pos);
+      out += s.slice(tk.pos, tk.end);   /* 本闭合符 */
+      srcPos = tk.end;
+      stack.length = di;                /* 弹出上方各层 + 匹配 opener */
+      /* 重开：按后继闭合符位置降序压栈（栈顶对应源码中最先到来的闭合符），
+         使后续闭合符按原顺序即可逐一匹配；紧邻无文本时由闭合路径剪枝 */
+      var re = above.slice().sort(function (x, y) { return y.cp - x.cp; });
+      for (d2 = 0; d2 < re.length; d2++) {
+        out += re[d2].st.def.open;
+        stack.push({ kind: re[d2].st.kind, def: re[d2].st.def, reopen: true });
+      }
+    }
+    if (!crossed) return null;
+    return out + s.slice(srcPos);
+  }
+  /* 单行自愈：无交叉时逐字节原样返回；有交叉则重排并清理空标签对 */
+  function healCrossedLine(s) {
+    if (!s) return s;
+    var cheap = false;
+    for (var q = 0; q < HEAL_TOKENS.length; q++) {
+      if (s.indexOf(HEAL_TOKENS[q].open) >= 0) { cheap = true; break; }
+    }
+    if (!cheap) return s;
+    var orig = s;
+    for (var it = 0; it < 8; it++) {
+      var fixed = healCrossOnce(s);
+      if (fixed === null) break;
+      s = fixed;
+    }
+    if (s === orig) return s;
+    /* 清理重排产生的空标签对 / 相邻重开残渣 */
+    s = s.replace(/<u><\/u>/g, '').replace(/<ins><\/ins>/g, '');
+    return s;
+  }
+  /* 整块自愈：仅段落 / 标题 / 引用 / 列表 / 脚注定义 / 定义列表；
+     代码围栏 / 表格 / HTML / 公式等块内标记是字面内容，绝不改写 */
+  function healBlockRaw(text) {
+    var bi, out = [], i, changed = false, lines, h;
+    try { bi = blockInfo(text); } catch (e) { return text; }
+    var t = bi.type;
+    if (!(t === 'p' || /^h[1-6]$/.test(t) || t === 'quote' ||
+          t === 'list' || t === 'fndef' || t === 'deflist')) return text;
+    lines = text.split('\n');
+    for (i = 0; i < lines.length; i++) {
+      h = healCrossedLine(lines[i]);
+      if (h !== lines[i]) changed = true;
+      out.push(h);
+    }
+    return changed ? out.join('\n') : text;
+  }
   function commitEdit() {
     var el = editEl();
     if (!el) return;
     var i = state.editIdx;
-    state.raw[i] = el.textContent.replace(/\u00a0/g, ' ');
+    state.raw[i] = healBlockRaw(el.textContent.replace(/\u00a0/g, ' '));   /* v3.38（NEST-1） */
     state.editIdx = -1;
     ED.replaceChild(blockEl(i), el);
     markDirty();
@@ -3424,7 +3610,7 @@ img.img-broken { display: none; }
     var el = editEl();
     if (!el) return;
     var i = state.editIdx;
-    state.raw[i] = el.textContent.replace(/\u00a0/g, ' ');
+    state.raw[i] = healBlockRaw(el.textContent.replace(/\u00a0/g, ' '));   /* v3.38（NEST-1） */
     state.editIdx = -1;
     ED.replaceChild(blockEl(i), el);
   }
@@ -3659,6 +3845,19 @@ img.img-broken { display: none; }
       }
       if (runs % 2 === 1) b += n;       /* 终点外推到闭合游程之后 */
     })();
+    /* v3.38（NEST-2 / FMT-16）：侧翼修剪 —— CommonMark 侧翼规则要求开符后继
+       非空白、闭符前驱非空白，否则解析层判字面（`lish** mix` 的 ** 永不渲染，
+       模糊测试 leak=0:** 即此）。对称 MD 标记（* ** __ ~~ ==）包裹前把选区
+       两端空白修出包裹区间：起点越过前导空白、终点回退尾随空白；修剪后为空
+       （纯空白选区）则整体无操作。反引号无侧翼约束；标签对 <u> 走
+       wrapSelectionTag 不在此列。仅在普通包裹分支（toggle 分支已提前返回） */
+    if (marker !== '`') {
+      var _ta = a, _tb = b;
+      while (_ta < _tb && /\s/.test(raw.charAt(_ta))) _ta++;
+      while (_tb > _ta && /\s/.test(raw.charAt(_tb - 1))) _tb--;
+      if (_tb === _ta) return;   /* 纯空白选区：无操作（对齐空选区语义） */
+      if (_ta !== a || _tb !== b) { a = _ta; b = _tb; }
+    }
     selected = raw.slice(a, b);
     var newText = raw.slice(0, a) + marker + selected + marker + raw.slice(b);
     state.raw[state.editIdx] = newText;
@@ -4664,7 +4863,8 @@ img.img-broken { display: none; }
     if (t.tagName === 'BLOCKQUOTE') quoTipOnce();   /* v3.38（QUO-11） */
     var isH = /^H[1-6]$/.test(t.tagName);
     var isDL = t.tagName === 'DT' || t.tagName === 'DD';   /* v3.26 定义列表 */
-    if (!isH && !isDL && t.tagName !== 'LI' && t.tagName !== 'BLOCKQUOTE') return;
+    var isFN = t.tagName === 'SPAN' && t.classList.contains('fnedit');   /* v3.38（REFS-5）脚注定义渲染态 */
+    if (!isH && !isDL && !isFN && t.tagName !== 'LI' && t.tagName !== 'BLOCKQUOTE') return;
     var blk = t.closest('.blk');
     var i = blockIndexOf(blk);
     if (i < 0) return;
@@ -4678,10 +4878,12 @@ img.img-broken { display: none; }
       if (autoPairKey(e, t, false)) return;
     }
 
-    if (e.key === 'ArrowUp' && off === 0 && i > 0) { e.preventDefault(); goToBlock(i - 1, 'end'); return; }
-    if (e.key === 'ArrowDown' && off >= text.length && i < state.raw.length - 1) { e.preventDefault(); goToBlock(i + 1, 'start'); return; }
-    if (e.key === 'ArrowLeft' && off === 0 && i > 0) { e.preventDefault(); goToBlock(i - 1, 'end'); return; }
-    if (e.key === 'ArrowRight' && off >= text.length && i < state.raw.length - 1) { e.preventDefault(); goToBlock(i + 1, 'start'); return; }
+    /* v3.38（REFS-5）：fnedit 边界跳出优先走 focusRenderedBlock（fndef 落渲染态
+       fnedit；goToBlock 对 fndef 会切入源码态，不符合定义列表跳出语义） */
+    if (e.key === 'ArrowUp' && off === 0 && i > 0) { e.preventDefault(); if (!(isFN && focusRenderedBlock(i - 1, true))) goToBlock(i - 1, 'end'); return; }
+    if (e.key === 'ArrowDown' && off >= text.length && i < state.raw.length - 1) { e.preventDefault(); if (!(isFN && focusRenderedBlock(i + 1, false))) goToBlock(i + 1, 'start'); return; }
+    if (e.key === 'ArrowLeft' && off === 0 && i > 0) { e.preventDefault(); if (!(isFN && focusRenderedBlock(i - 1, true))) goToBlock(i - 1, 'end'); return; }
+    if (e.key === 'ArrowRight' && off >= text.length && i < state.raw.length - 1) { e.preventDefault(); if (!(isFN && focusRenderedBlock(i + 1, false))) goToBlock(i + 1, 'start'); return; }
 
     /* v3.30.19（DL-3）：Tab 新增定义 / Shift+Tab 退出定义列表（键盘流补齐） */
     if (isDL && e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -6463,8 +6665,25 @@ img.img-broken { display: none; }
     return 'ok';
   };
   /* 源代码模式下按块序号跳转：滚动到对应行 */
-  window.gotoHeadingSrc = function (i) {
+  window.gotoHeadingSrc = function (i, txt) {
     if (!srcEl) return;
+    /* v3.38（OUT-4）：与 gotoHeading 同款缓存校验（文本不符按实时重查） */
+    if (txt) {
+      var _bi4s = (i >= 0 && i < state.raw.length) ? blockInfo(state.raw[i]) : null;
+      var _ok4s = !!(_bi4s && /^h[1-6]$/.test(_bi4s.type) &&
+                     headingPlainOf(state.raw[i]).slice(0, 60) === txt);
+      if (!_ok4s) {
+        var _f4s = -1, _k4s;
+        for (_k4s = 0; _k4s < state.raw.length; _k4s++) {
+          var _b24s = blockInfo(state.raw[_k4s]);
+          if (_b24s && /^h[1-6]$/.test(_b24s.type) &&
+              headingPlainOf(state.raw[_k4s]).slice(0, 60) === txt) { _f4s = _k4s; break; }
+        }
+        if (_f4s < 0) return;
+        i = _f4s;
+      }
+    }
+    if (i < 0 || i >= state.raw.length) return;
     var sep = '\n\n', off = 0;
     for (var k = 0; k < i && k < state.raw.length; k++) off += state.raw[k].length + sep.length;
     var tn = srcEl.firstChild;
@@ -6574,6 +6793,8 @@ img.img-broken { display: none; }
     foldSet = {};           /* P1-2：换文档清空折叠状态（标题文本键可能撞车） */
     docGen++;   /* v3.37（DOCGEN-1）：换文档 —— 旧渲染态的失焦回写自此失效 */
     state.raw = splitBlocks(text || '');
+    /* v3.38（NEST-1）：载入即自愈交叉嵌套（==<u>x==</u> → ==<u>x</u>==） */
+    for (var _hi = 0; _hi < state.raw.length; _hi++) state.raw[_hi] = healBlockRaw(state.raw[_hi]);
     lastFB = null;          /* v3.30.18（LIST-3）：换文档清掉选区快照，防跨文档残留 */
     undoStack = []; redoStack = [];
     lastSnapshot = JSON.stringify(state.raw);
@@ -6645,7 +6866,24 @@ img.img-broken { display: none; }
     }
     return out;
   };
-  window.gotoHeading = function (i) {
+  window.gotoHeading = function (i, txt) {
+    /* v3.38（OUT-4）：大纲树缓存的是 poll 上报时刻的块序号 —— 1s 窗口内增删过块
+       则整体偏移。跳转前校验目标块仍是标题且文本与大纲一致，不符按文本实时重查 */
+    if (txt) {
+      var _bi4 = (i >= 0 && i < state.raw.length) ? blockInfo(state.raw[i]) : null;
+      var _ok4 = !!(_bi4 && /^h[1-6]$/.test(_bi4.type) &&
+                    headingPlainOf(state.raw[i]).slice(0, 60) === txt);
+      if (!_ok4) {
+        var _f4 = -1, _k4;
+        for (_k4 = 0; _k4 < state.raw.length; _k4++) {
+          var _b24 = blockInfo(state.raw[_k4]);
+          if (_b24 && /^h[1-6]$/.test(_b24.type) &&
+              headingPlainOf(state.raw[_k4]).slice(0, 60) === txt) { _f4 = _k4; break; }
+        }
+        if (_f4 < 0) return;   /* 标题已被删除：放弃跳转，不滚错块 */
+        i = _f4;
+      }
+    }
     if (i < 0 || i >= state.raw.length) return;
     var el = ED.children[i];
     if (!el) return;
@@ -8558,6 +8796,17 @@ img.img-broken { display: none; }
         hidePops();
         return;
       }
+      /* v3.38（FMTB-5）：选区横穿已有行内格式标记 —— 区间内部（剥两端标记游程后）
+         仍扫到 *_~=` 任一标记字符即拒绝应用，杜绝游程交错产生字面泄漏
+         （模糊测试 62 处泄漏全部归此根因；clearfmt 例外 —— T× 就是要剥标记） */
+      if (action !== 'clearfmt') {
+        var _fseg = raw.slice(rawOff, rawEnd).replace(/^[*_~=`]+/, '').replace(/[*_~=`]+$/, '');
+        if (/[*_~=`]/.test(_fseg)) {
+          toastStatus('选区横穿已有行内格式标记，请调整选区后再试');
+          hidePops();
+          return;
+        }
+      }
       rawLen = Math.max(1, rawEnd - rawOff);
     }
     /* F1：链接改用页内小弹层（不再 window.prompt），确认时按 raw 区间直接改写，
@@ -8629,9 +8878,29 @@ img.img-broken { display: none; }
          段落等本就没有渲染态编辑目标的块，focusWysiwyg 返回 false，行为不变 */
       focusWysiwyg(fbIdx2, false);
     }
+    /* v3.38（FMTB-6）：格式操作收尾同步入栈快照（跳过 350ms 防抖）——
+       防抖窗口内连做第二次格式操作后立即 Ctrl+Z 会无反应或一步跳两档 */
+    snapshotNow();
     hidePops();
   }
   /* 清除格式：去掉选区内的行内标记（粗体/斜体/删除线/行内代码/链接/行内公式定界） */
+  /* v3.38（NEST-3）：以真实解析器为判据 —— 该行经 parseInline 后是否残留字面
+     标记（** ~~ == <u> 出现在纯文本节点里）。供清除格式的「半截结构保护」判断
+     「清完是否更糟」，避免用脆弱的正则游程猜测解析结果。 */
+  function _hasLiteralMarkers(s) {
+    if (!s) return false;
+    var nodes;
+    try { nodes = parseInline(s, 0, s.length); } catch (e) { return false; }
+    var txt = '';
+    (function walk(ns) {
+      for (var i = 0; i < ns.length; i++) {
+        var n = ns[i];
+        if (n.type === 'text') txt += s.slice(n.rs, n.re);
+        else if (n.ch) walk(n.ch);
+      }
+    })(nodes || []);
+    return /\*\*|~~|==(?!=)|<u>/.test(txt);
+  }
   function clearSelectionFormat() {
     var el = editEl();
     if (!el) return;
@@ -8683,8 +8952,12 @@ img.img-broken { display: none; }
       if (_opU) a -= _opU[0].length;
       if (a === _ca && b === _cb) break;
     }
-    var selected = raw.slice(a, b);
-    var cleaned = selected
+    /* v3.38（NEST-3 / FMT-17b）：strip 链迭代到不动点 —— 原来每条正则只跑
+       一遍，`***已*有**` 剥掉内层后新形成的 `**…**` 无人再剥，清完仍带格式 */
+    var _stripMarks = function (sel) {
+      var _o = sel;
+      for (var _k = 0; _k < 4; _k++) {
+        var _n2 = _o
       .replace(/\*\*([^*]+)\*\*/g, '$1')
       .replace(/__([^_]+)__/g, '$1')
       .replace(/\*([^*\n]+)\*/g, '$1')
@@ -8694,6 +8967,64 @@ img.img-broken { display: none; }
       .replace(/!?\[([^\]\n]*)\]\([^)\n]*\)/g, '$1')
       .replace(/<\/?(?:u|ins)>/g, '')
       .replace(/\$([^$\n]+)\$/g, '$1');
+        if (_n2 === _o) break;
+        _o = _n2;
+      }
+      return _o;
+    };
+    var selected = raw.slice(a, b);
+    var cleaned = _stripMarks(selected);
+    window.__clrDbg = { a: a, b: b, selected: selected, cleaned: cleaned };
+    /* v3.38（NEST-3 / FMT-17）：清除后两端残留游程配平 —— 吸附阶段会把选区外的
+       标记游程吸进清除区间，而配对正则只剥「成对」标记，于是 ***已*有**标**记**
+       清完剩 ***已有标记*（3+1 游程失衡）：解析层按配对规则判字面，界面出现裸 **
+       —— 点一次 T× 反而冒出更多标记。这里在两端同字符且长度不等（配平失败）时
+       把两游程一并去掉（它们都来自吸附吸收的标记，用户点 T× 的意图即清掉）。
+       等长（*a* … *b* 各 1）或单端残留（纯文本符号）均不动，避免误删正文 */
+    var _ez1 = /^([*_~=]+)/.exec(cleaned);
+    var _ez2 = /([*_~=]+)$/.exec(cleaned);
+    if (_ez1 && _ez2 && _ez1[1].charAt(0) === _ez2[1].charAt(0) &&
+        _ez1[1].length !== _ez2[1].length &&
+        _ez1[1].length + _ez2[1].length < cleaned.length) {
+      cleaned = cleaned.slice(_ez1[1].length, cleaned.length - _ez2[1].length);
+    }
+    /* v3.38（NEST-3 / FMT-17b）：半截结构保护 —— 清除区间只切中某个嵌套结构
+       的右半（如 ***已*有** 上的「有标记」）时，清完会留下失衡游程（*** … *：
+       3 与 1），解析层判字面、界面冒出裸 **。判据用真实解析器 parseInline
+       （不用正则游程猜测）：原文不字面化而结果字面化 → 把区间向外扩到最近的
+       标记游程（整条外层结构；遇空格即停，避免吞掉行内码等无关结构）重清。 */
+    var _origLit = _hasLiteralMarkers(raw);
+    for (var _gr = 0; _gr < 4; _gr++) {
+      if (cleaned === selected || _origLit) break;
+      if (!_hasLiteralMarkers(raw.slice(0, a) + cleaned + raw.slice(b))) break;
+      var _MC = /[*_~=`]/, _na = a, _nb = b, _okL = false, _okR = false, _cL, _cR;
+      while (_na > 0) {
+        _cL = raw.charAt(_na - 1);
+        if (_cL === ' ' || _cL === '\n') break;
+        if (_MC.test(_cL)) { _okL = true; break; }
+        _na--;
+      }
+      if (_okL) { while (_na > 0 && _MC.test(raw.charAt(_na - 1))) _na--; } else _na = a;
+      while (_nb < raw.length) {
+        _cR = raw.charAt(_nb);
+        if (_cR === ' ' || _cR === '\n') break;
+        if (_MC.test(_cR)) { _okR = true; break; }
+        _nb++;
+      }
+      if (_okR) { while (_nb < raw.length && _MC.test(raw.charAt(_nb))) _nb++; } else _nb = b;
+      if (_na === a && _nb === b) break;
+      a = _na; b = _nb;
+      selected = raw.slice(a, b);
+      cleaned = _stripMarks(selected);
+      /* 扩区间重清后同样适用 FMT-17 两端配平 */
+      var _ez1b = /^([*_~=]+)/.exec(cleaned);
+      var _ez2b = /([*_~=]+)$/.exec(cleaned);
+      if (_ez1b && _ez2b && _ez1b[1].charAt(0) === _ez2b[1].charAt(0) &&
+          _ez1b[1].length !== _ez2b[1].length &&
+          _ez1b[1].length + _ez2b[1].length < cleaned.length) {
+        cleaned = cleaned.slice(_ez1b[1].length, cleaned.length - _ez2b[1].length);
+      }
+    }
     if (cleaned !== selected) {
       var newText = raw.slice(0, a) + cleaned + raw.slice(b);
       state.raw[state.editIdx] = newText;

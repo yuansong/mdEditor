@@ -565,7 +565,9 @@ class Sidebar(QWidget):
             self.file_header.setToolTip(self._cur_dir + "\n双击返回上一级目录")
 
     def _on_outline_clicked(self, item, _col=0):
-        self._win.jump_to_heading(item.data(0, Qt.UserRole))
+        # v3.38（OUT-4）：附带标题文本，JS 侧校验缓存 index 是否过期
+        self._win.jump_to_heading(item.data(0, Qt.UserRole),
+                                  item.data(0, Qt.UserRole + 1))
 
     # ================= v3.32.2（OUT-2）大纲右键：展开 / 折叠子节点 =================
     def _on_outline_menu(self, pos):
@@ -620,6 +622,20 @@ class Sidebar(QWidget):
             self._cur_file = None
         self._refresh_files()
         self._update_file_header()
+
+    def clear_current_file(self):
+        """v3.38（OUT-3）：切到未命名文档时清除文件上下文 —— 保留浏览目录，
+        清 _cur_file 并取消列表高亮，避免用户误以为仍处于旧文件。"""
+        if self._file_mode == "blank":
+            return
+        self._cur_file = None
+        self._refresh_files()
+        self.file_list.setCurrentRow(-1)
+        self._update_file_header()
+
+    def current_dir(self):
+        """v3.38（OUT-5）：当前浏览目录（会话恢复记录用）。"""
+        return self._cur_dir
 
     # 大纲默认展开层级：1~3 级直接可见，4 级及以下默认折叠（可手动展开）。
     # 级别可经 系统设置→通用 修改（OUTLINE_EXPAND_LEVEL 仅作默认值）
@@ -681,6 +697,7 @@ class Sidebar(QWidget):
             real = int(h["level"])
             it = QTreeWidgetItem([h["text"]])
             it.setData(0, Qt.UserRole, h["index"])
+            it.setData(0, Qt.UserRole + 1, h.get("text"))   # v3.38（OUT-4）：跳转校验用
             it.setToolTip(0, h["text"])
             self._outline_items[h["index"]] = it   # v3.31（#8）：字数后缀原地更新用
             if real > self._outline_level:

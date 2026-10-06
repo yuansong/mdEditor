@@ -250,12 +250,32 @@ class MainWindow(QMainWindow):
             "prev": {"loaded": False, "pending": "", "src": False, "preview": True},
         }
 
+        # v3.38（OUT-5）：启动行为默认值（设置页可改，QSettings 持久化）
+        self._startup_action = "blank"
+        self._startup_folder = ""
+
         self._init_ui()
         self._init_menu_toolbar()
         self.apply_theme(self._theme, persist=False)
 
-        # 初始文档：欢迎页
-        self._add_doc(path=None, text=DEMO_MD)
+        # 初始文档：v3.38（OUT-5）「启动时」设置 —— blank=欢迎页（默认，行为不变）/
+        # lastFile=恢复上次打开的文件 / lastFileSide=恢复上次文件与侧栏位置 /
+        # folder=打开指定文件夹（仅侧栏定位，不打开文档）
+        _sa = str(self._settings.value("startupAction", self._startup_action) or "blank")
+        _lf = str(self._settings.value("lastFile", "") or "")
+        if _sa in ("lastFile", "lastFileSide") and _lf and os.path.isfile(_lf):
+            self._add_doc(path=_lf, text=self._read_file(_lf))
+            self._add_recent(_lf)
+        else:
+            self._add_doc(path=None, text=DEMO_MD)
+            if _sa == "folder":
+                _sf = str(self._settings.value("startupFolder", "") or "")
+                if _sf and os.path.isdir(_sf):
+                    self._sidebar.set_root(_sf)
+        if _sa == "lastFileSide" and self.file_path:
+            _sd = str(self._settings.value("lastSidebarDir", "") or "")
+            if _sd and os.path.isdir(_sd):
+                self._sidebar.set_root(_sd)   # 侧栏位置恢复（优先于文件目录）
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._poll)
@@ -1091,7 +1111,12 @@ class MainWindow(QMainWindow):
             payload = json.dumps(pairs)
         except (TypeError, ValueError):
             return
-        self._js_active(f"window.reorderSections({js(payload)})")
+        if self._dual and self._view_src is not None:
+            # v3.38（OUT-6）：分屏下双视图同时下发（原只发激活视图，预览侧要等 1~2s poll 收敛）
+            self._js_view(self._view_src, f"window.reorderSections({js(payload)})")
+            self._js_view(self._view_prev, f"window.reorderSections({js(payload)})")
+        else:
+            self._js_active(f"window.reorderSections({js(payload)})")
         self.show_status("已调整章节顺序")
 
     # ================= P1-7 外部打开 =================
@@ -1808,7 +1833,9 @@ class MainWindow(QMainWindow):
             self._sidebar.set_root(self.file_path)
             self._status.setText(f"已打开 · {self.file_path}")
         else:
+            self._sidebar.clear_current_file()   # v3.38（OUT-3）：清除残留的文件上下文与高亮
             self.show_status("未命名文档")
+        self._remember_last_session()   # v3.38（OUT-5）
         # 期间用户又点了其他标签 -> 继续处理最新请求
         if self._tabbar.currentIndex() != self._cur:
             QTimer.singleShot(0, lambda: self._on_tab_clicked(self._tabbar.currentIndex()))
@@ -2059,6 +2086,7 @@ class MainWindow(QMainWindow):
         text = self._read_file(path)
         self._add_doc(path=path, text=text)
         self._add_recent(path)
+        self._remember_last_session()   # v3.38（OUT-5）
 
     def save_file(self) -> bool:
         if not self.file_path:
@@ -2101,6 +2129,7 @@ class MainWindow(QMainWindow):
         self._push_doc_dir()
         if 0 <= self._cur < len(self._docs):
             self._remove_draft(self._docs[self._cur])   # v3.32（P0-1）：有路径后草稿收走
+        self._remember_last_session()   # v3.38（OUT-5）
         self.save_file()
         return True
 
@@ -2881,6 +2910,31 @@ class MainWindow(QMainWindow):
         self._sidebar.set_outline_words(self._outline_words)
         self.show_status("大纲分节字数：" + ("已显示" if self._outline_words else "已隐藏"))
 
+    def set_startup_action(self, mode):
+        """v3.38（OUT-5）：启动时行为（blank=欢迎页 / lastFile=恢复上次文件 /
+        lastFileSide=恢复上次文件与侧栏位置 / folder=打开指定文件夹），下次启动生效。"""
+        mode = str(mode or "blank")
+        if mode not in ("blank", "lastFile", "lastFileSide", "folder"):
+            mode = "blank"
+        self._startup_action = mode
+        self._settings.setValue("startupAction", mode)
+
+    def set_startup_folder(self, path):
+        """v3.38（OUT-5）：『打开指定文件夹』使用的目录路径。"""
+        self._startup_folder = str(path or "")
+        self._settings.setValue("startupFolder", self._startup_folder)
+
+    def _remember_last_session(self):
+        """v3.38（OUT-5）：记录最近文档与侧栏目录，供「启动时」恢复上次会话。"""
+        try:
+            if self.file_path and os.path.isfile(self.file_path):
+                self._settings.setValue("lastFile", self.file_path)
+            sdir = self._sidebar.current_dir()
+            if sdir and os.path.isdir(sdir):
+                self._settings.setValue("lastSidebarDir", sdir)
+        except Exception:      # noqa: BLE001
+            pass
+
     def set_para_indent(self, n):
         """v3.31.2（#8）：段落首行缩进格数（0~4），持久化并全视图即时生效。"""
         try:
@@ -3154,12 +3208,14 @@ class MainWindow(QMainWindow):
         self._find_dlg.raise_()
         self._find_dlg.focus_find()
 
-    def jump_to_heading(self, index):
+    def jump_to_heading(self, index, text=None):
+        """v3.38（OUT-4）：text = 大纲缓存标题文本，JS 侧先校验再跳（过期自动重查）。"""
+        suffix = f", {js(text)}" if text else ""
         if self._dual and self._view_src is not None:
-            self._js_view(self._view_src, f"window.gotoHeadingSrc({index})")
-            self._js_view(self._view_prev, f"window.gotoHeading({index})")
+            self._js_view(self._view_src, f"window.gotoHeadingSrc({index}{suffix})")
+            self._js_view(self._view_prev, f"window.gotoHeading({index}{suffix})")
         else:
-            self._js_view(self._view, f"window.gotoHeading({index})")
+            self._js_view(self._view, f"window.gotoHeading({index}{suffix})")
 
     # ================= 拖拽 =================
     def dragEnterEvent(self, e):
@@ -3249,6 +3305,7 @@ class MainWindow(QMainWindow):
             if not cur_doc.get("path") and (cur_doc.get("content") or "").strip():
                 need_ask = True
         if not need_ask:
+            self._remember_last_session()   # v3.38（OUT-5）
             self._quitting = True
             e.accept()
             return
@@ -3284,5 +3341,6 @@ class MainWindow(QMainWindow):
                     self._remember_dir("save", path)
                     self.file_path = os.path.abspath(path)
                 self._write_text(self.file_path, md)   # v3.29d（B2）
+        self._remember_last_session()   # v3.38（OUT-5）
         self._quitting = True
         e.accept()
