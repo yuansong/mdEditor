@@ -1,7 +1,0 @@
-NOTE | A 初始 DOM | {'tc': '"第一行内容\\n第二行内容"', 'html': '第一行内容\n第二行内容', 'nodes': ['t:"第一行内容"', 't:"\\n"', 't:"第二行内容"']}
-NOTE | A raw | ['> 第一行内容\n> 第二行内容']
-NOTE | B off 复刻 | {'off': 11, 'tcLen': 11}
-NOTE | C Enter#1 dispatch | {'_raw': 'ok'}
-NOTE | C raw after | ['> 第一行内容\n> 第二行内容\n> ']
-NOTE | C DOM after | {'tc': '"第一行内容\\n第二行内容"', 'inEdit': False}
-DONE

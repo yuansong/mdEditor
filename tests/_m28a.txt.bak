@@ -1,7 +1,0 @@
-PASS | 系统设置=相对路径 → 默认选中相对路径存储 | assets
-PASS | 切到内嵌式存储 → mode()=embed | embed
-PASS | 系统设置=内嵌 → 默认选中内嵌式存储 | embed
-PASS | 切到相对路径存储 → mode()=assets | assets
-PASS | 单选互斥 | 
-PASS | 预览文案随存储方式联动（内嵌=写进文档 / 相对路径=assets） | embed[将以 data URL 内嵌进文档，默认] assets[将复制到「文档名.assets」文件夹，]
-DONE PASS=6 FAIL=0

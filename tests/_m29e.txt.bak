@@ -1,8 +1,0 @@
-NOTE | H1 环境 | {'previewLock': False, 'blkClass': 'blk b-quote', 'isDirectChild': True, 'bqEditable': 'plaintext-only'}
-NOTE | H2 跨行 * 接管判定 | {'selTxtLen': 10, 'selTxtNL': False, 'seen': True, 'prevented': False, 'tgt': 'BLOCKQUOTE'}
-NOTE | H2 raw | ['> 第一行内容\n> 第二行内容']
-NOTE | H3 单行 * 接管判定 | {}
-NOTE | H3 raw | ['> 第一行内容\n> 第二行内容']
-NOTE | H4 Enter 接管判定 | {'prevented': False, 'txt': '第一行内容第二行内容', 'tail': '"行内容第二行内容"'}
-NOTE | H4 raw | ['> 第一行内容\n> 第二行内容']
-DONE

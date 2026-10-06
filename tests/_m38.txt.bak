@@ -1,9 +1,0 @@
-Q1 after mousedown: {"_raw": "x"}
-Q1 after slash: {"tgt": "BLOCKQUOTE.", "sm": true}
-Q1 after pick: {"pick": "OK", "grid": false, "editIdx": "nohook"}
-Q1 grid click: {"_raw": "nogrid"} raw=["> 引用行"]
-Q2 clear placeholder: {"_raw": "noraw"}
-Q2 after slash: {}
-Q2 footnote: pick="NOMENU" raw=["正文段落", "X"]
-Q3 ctrl+/: {"st": "{\"show\":false,\"items\":[],\"sub\":false,\"subItems\":[]}"}
-DONE
