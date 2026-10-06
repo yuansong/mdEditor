@@ -422,6 +422,20 @@ class MainWindow(QMainWindow):
         self.addToolBar(Qt.LeftToolBarArea, tb)
         self._tool_tb = tb
 
+        # v3.38（TB-1）：工具栏可被隐藏（右键菜单 / 视图菜单 / 快捷键），而隐藏后原本
+        # 没有任何恢复入口 —— 连工具栏顶部的侧栏开关 « 也一起消失，等同死局。
+        # 这里在窗口左侧边缘常驻一个「»」展开按钮，只在工具栏隐藏时显形、始终置顶可点。
+        self._btn_tb_show = QToolButton(self)
+        self._btn_tb_show.setObjectName("tbExpand")
+        self._btn_tb_show.setText("»")
+        self._btn_tb_show.setToolTip("展开工具栏（视图 → 显示 / 隐藏工具栏，或 Ctrl+Shift+T）")
+        self._btn_tb_show.setCursor(Qt.PointingHandCursor)
+        self._btn_tb_show.setAutoRaise(True)
+        self._btn_tb_show.setFixedSize(20, 58)
+        self._btn_tb_show.clicked.connect(lambda: self.set_toolbar_visible(True))
+        self._btn_tb_show.hide()
+        self._btn_tb_show.raise_()
+
         def tb_act(icon, tooltip, slot):
             a = QAction(self)
             a.setIcon(icon)
@@ -464,6 +478,10 @@ class MainWindow(QMainWindow):
         # 系统设置入口（左侧工具栏底部齿轮按钮）
         tb.addSeparator()
         tb_act(icon_settings(), "系统设置", self.show_settings)
+        # v3.38（TB-1）：工具栏被隐藏（右键菜单 / 视图菜单 / 快捷键）→ 同步边缘展开按钮。
+        # 注意只同步 UI、不写 QSettings：窗口关闭 / 隐藏时 Qt 也会给子控件发 HideToParent，
+        # 若在此落盘会把「关闭程序」误记成「用户隐藏了工具栏」。
+        tb.visibilityChanged.connect(lambda _v=False: self._sync_toolbar_state(persist=False))
 
         self._shortcut_acts = {}   # 动作名 -> QAction（设置->快捷键设置 可配置）
         self._shortcut_defs = []   # [(分组, [(动作名, 默认快捷键), ...]), ...]
@@ -559,6 +577,10 @@ class MainWindow(QMainWindow):
         self._act_sidebar = self._reg_act("视图", "显示 / 隐藏侧边栏", "Ctrl+Shift+L",
                                           self.toggle_sidebar, menu=m_view, checkable=True)
         self._act_sidebar.setChecked(True)
+        # v3.38（TB-1）：主工具栏显示 / 隐藏（隐藏时左侧边缘常驻展开按钮，杜绝「无法恢复」）
+        self._act_toolbar = self._reg_act("视图", "显示 / 隐藏工具栏", "Ctrl+Shift+T",
+                                          self.toggle_toolbar, menu=m_view, checkable=True)
+        self._act_toolbar.setChecked(True)
         self._reg_act("视图", "文件列表", "Ctrl+Shift+E", lambda: self._show_sidebar_tab(0), menu=m_view)
         self._reg_act("视图", "大纲", "Ctrl+Shift+O", lambda: self._show_sidebar_tab(1), menu=m_view)
         m_view.addSeparator()
@@ -580,6 +602,35 @@ class MainWindow(QMainWindow):
         # v3.34（MMD-11）：图表主题入口从视图菜单移到「设置 → 系统设置 → 外观」，
         # 与界面主题 / 字号同处一页集中配置；切换逻辑仍走 _set_mmd_theme
         self._theme_acts = {}
+
+        # v3.38（TB-1）：恢复上次的工具栏可见性（隐藏 → 同步显形边缘展开按钮）
+        self.set_toolbar_visible(
+            self._settings.value("ui/toolbarVisible", True, type=bool), toast=False)
+
+    # ---- v3.38（TB-1）：工具栏展开按钮的摆放与右键菜单 ----
+    def _place_tb_expand_btn(self):
+        """把边缘展开按钮摆到左侧工具栏原本的顶部位置（菜单栏下方）。"""
+        b = getattr(self, "_btn_tb_show", None)
+        if b is None:
+            return
+        top = self.menuBar().height() if self.menuBar() is not None else 0
+        b.move(2, top + 18)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._place_tb_expand_btn()
+
+    def createPopupMenu(self):
+        """工具栏 / 菜单栏右键菜单：只给「显示 / 隐藏工具栏」一项。
+
+        复用视图菜单同一个 QAction，避免出现两套互不同步的开关（默认实现只给
+        QToolBar 自带的 toggleViewAction，取消勾选后即无法找回）。
+        """
+        m = QMenu(self)
+        act = getattr(self, "_act_toolbar", None)
+        if act is not None:
+            m.addAction(act)
+        return m
 
         # ---- 设置 ----
         m_set = self.menuBar().addMenu("设置(&S)")
@@ -2724,6 +2775,34 @@ class MainWindow(QMainWindow):
         self._update_side_btn()
         self._sidebar.select_tab(tab)
 
+    # ---- 主工具栏 显示 / 隐藏（v3.38 TB-1）----
+    def set_toolbar_visible(self, vis, toast=True):
+        """显示 / 隐藏左侧主工具栏；隐藏时左侧边缘常驻「»」展开按钮。"""
+        vis = bool(vis)
+        self._tool_tb.setVisible(vis)
+        self._sync_toolbar_state(toast=toast and not vis)
+
+    def toggle_toolbar(self, checked=True):
+        """视图菜单 / 右键菜单 / 快捷键入口（checkable 动作带新勾选态）。"""
+        self.set_toolbar_visible(bool(checked))
+
+    def _sync_toolbar_state(self, toast=False, persist=True):
+        """按工具栏当前可见性同步展开按钮 / 菜单勾选 / 持久化，并给出恢复提示。"""
+        vis = self._tool_tb.isVisible()
+        btn = getattr(self, "_btn_tb_show", None)
+        if btn is not None:
+            btn.setVisible(not vis)
+            if not vis:
+                self._place_tb_expand_btn()
+                btn.raise_()
+        act = getattr(self, "_act_toolbar", None)
+        if act is not None and act.isChecked() != vis:
+            act.setChecked(vis)
+        if persist:
+            self._settings.setValue("ui/toolbarVisible", vis)
+        if toast and not vis:
+            self.show_status("工具栏已隐藏：点击左侧边缘的 » 或按 Ctrl+Shift+T 可重新展开")
+
     # ---- 模式切换（写作 / 源码 / 分屏）----
     def _mode_label(self):
         for m in MODES:
@@ -2834,6 +2913,15 @@ class MainWindow(QMainWindow):
         self._sidebar.setStyleSheet(styles.sidebar_qss(name))
         if hasattr(self._sidebar, "set_tree_arrows"):
             self._sidebar.set_tree_arrows(name)   # v3.26：展开/收拢箭头随主题换色
+        # v3.38（TB-1）：左侧边缘「展开工具栏」按钮随主题换色（仅工具栏隐藏时可见）
+        if getattr(self, "_btn_tb_show", None) is not None:
+            p = styles.palette(name)
+            self._btn_tb_show.setStyleSheet(
+                "QToolButton#tbExpand {{ background: {bg}; border: 1px solid {bd};"
+                " border-radius: 9px; color: {ac}; font-size: 15px; font-weight: 800;"
+                " padding: 0; }}"
+                "QToolButton#tbExpand:hover {{ background: {acs}; color: {ac}; }}".format(
+                    bg=p["bg_soft"], bd=p["border"], ac=p["accent"], acs=p["accent_soft"]))
         for dlg_attr in ("_find_dlg", "_sc_dlg", "_set_dlg", "_cmd_dlg", "_hist_dlg"):
             dlg = getattr(self, dlg_attr, None)
             if dlg is not None:

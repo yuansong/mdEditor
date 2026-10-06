@@ -644,3 +644,53 @@ title 与图标，并补上**自动换行态按源码 `wrap=1` 还原**（此前
   单层用例）。
 - 居中标题放开到 h1~h6 后，**导出侧**（exporters）对 `<hN align="center">` 的居中处理
   仍以 h1 为主，h2~h6 的导出居中效果待核（未纳入本批）。
+
+## 第二十一章 v3.38 批次（之八）：主工具栏隐藏后的展开入口 TB-1（2026-10-06）
+
+### 21.1 缺陷描述（用户报告）
+
+> 某个工具栏折叠起来后没有「展开」按钮，用户无法再展开工具栏。
+
+**复现路径**：在左侧竖向主工具栏 / 菜单栏上点右键 → 取消勾选「主工具栏」→ 工具栏消失，
+此后窗口内**再也找不到任何恢复入口**。
+
+### 21.2 根因
+
+`QMainWindow` 的默认右键菜单（由 `QMainWindow::createPopupMenu()` 生成）里带有该
+工具栏自带的 `toggleViewAction()`，**只负责「关闭」这一侧**：取消勾选后工具栏被 hide，
+而关闭它之后就没有任何地方能再唤起这个菜单（工具栏已不在，右键点不到；菜单栏右键在
+本工程布局下也不弹该菜单），于是进入死局。附带影响：工具栏顶部的侧边栏开关 « / »
+也一并消失，鼠标侧失去唯一的侧栏开合入口（只剩 Ctrl+Shift+L）。
+
+代码侧佐证：`_init_menu_toolbar()` 里 `tb.setMovable(False)`（不可拖出浮动），
+视图菜单只有侧边栏 / 模式 / 全屏等项，**没有工具栏开关**；全工程也没有 `createPopupMenu`
+覆写与 `resizeEvent`。
+
+### 21.3 改动（全部在 `src/mainwindow.py`）
+
+| 编号 | 位置 | 改动 |
+| --- | --- | --- |
+| TB-1① | `_init_menu_toolbar()`（`self._tool_tb = tb` 之后） | 新建边缘展开按钮 `_btn_tb_show`（`QToolButton`，objectName `tbExpand`，文案 `»`，固定 20×58，`AutoRaise`，点击 → `set_toolbar_visible(True)`），初始 `hide()` + `raise_()` |
+| TB-1② | 工具栏构建末尾 | `tb.visibilityChanged` → `_sync_toolbar_state()`（可见性不论从哪条路径变化都同步） |
+| TB-1③ | 视图菜单 | 新增可勾选项「显示 / 隐藏工具栏」（默认 **Ctrl+Shift+T**），走 `_reg_act` 纳入快捷键设置 |
+| TB-1④ | `_init_menu_toolbar()` 末尾 | 启动时按 `ui/toolbarVisible` 恢复上次可见性 |
+| TB-1⑤ | 新增 `set_toolbar_visible` / `toggle_toolbar` / `_sync_toolbar_state` / `_place_tb_expand_btn` / `resizeEvent` | 显示/隐藏 + 同步（按钮显隐、菜单勾选、持久化）+ 摆放（菜单栏下方、`x=2`）+ 缩放重摆 |
+| TB-1⑥ | `createPopupMenu()` 覆写 | 只返回「显示 / 隐藏工具栏」这一个 QAction（与视图菜单**同一实例**），不再出现两套互不同步的开关 |
+| TB-1⑦ | `apply_theme()` | 按钮随六套主题换色（`styles.palette` 的 `bg_soft/border/accent/accent_soft`） |
+
+行为约定：工具栏可见时边缘按钮**不出现**（不占编辑区）；隐藏时按钮常驻左边缘并置顶，
+状态栏同步提示「点击左侧边缘的 » 或按 Ctrl+Shift+T 可重新展开」。
+
+### 21.4 验证
+
+`tests/_m125_tb.py` **27/0**，覆盖：初始态（可见 / 按钮隐藏 / 菜单项勾选 / 快捷键串）→
+隐藏后按钮显形（文案、tooltip、贴左边缘、位于菜单栏下方、菜单勾选同步、持久化）→
+点击按钮恢复（工具栏回来、按钮自动隐藏、勾选与持久化同步）→ 快捷键路径双向 →
+`createPopupMenu()` 非空且与视图菜单同源 → 窗口缩放后按钮仍在可视范围内 → 收尾复位
+（避免 `ui/toolbarVisible` 残留污染其它探针）。
+
+### 21.5 备注
+
+- 只恢复「工具栏本身」，不改变侧边栏可见性；工具栏回来后 « / » 侧栏开关即可用。
+- 与既有 `toggle_sidebar` / `_update_side_btn` 保持同款写法（勾选态由同步函数单向写入，
+  不互相触发），避免 QAction 勾选与真实状态漂移。

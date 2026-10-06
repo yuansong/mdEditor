@@ -1,4 +1,4 @@
-﻿# mdEditor 一键打包脚本（v3.38 批次：格式渲染/toggle 双修 + 单元格列表占位 + 表格三浮层职责重构 → dist62）
+﻿# mdEditor 一键打包脚本（v3.38 批次之八：主工具栏隐藏后的展开入口 TB-1 → dist64）
 $ErrorActionPreference = "Stop"
 $pyi = "C:\Users\Administrator\.workbuddy\binaries\python\envs\default\Scripts\pyinstaller.exe"
 $root = $PSScriptRoot
@@ -9,7 +9,7 @@ Set-Location $root
 # （首行 INFO 即中断）→ 调用 PyInstaller 期间必须临时 EAP=Continue
 $ErrorActionPreference = "Continue"
 & $pyi --noconfirm --windowed --name mdEditor `
-    --distpath dist62 --workpath build62 --specpath spec62 `
+    --distpath dist64 --workpath build64 --specpath spec64 `
     --icon "$root\src\mdeditor.ico" `
     --add-data "$root\src\editor.html;." `
     --add-data "$root\src\mdeditor.ico;." `
