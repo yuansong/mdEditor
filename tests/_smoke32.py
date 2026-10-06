@@ -33,6 +33,9 @@ from mainwindow import MainWindow
 from dialogs import HistoryDialog, DiffDialog
 
 win = MainWindow()
+# v3.38：复位 diff/layout（QSettings 跨运行持久，走双栏时单栏 view 不渲染）
+win._settings.setValue("diff/layout", "unified")
+win._settings.sync()
 win.show()
 
 

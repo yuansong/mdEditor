@@ -176,12 +176,13 @@ check("A2 全套按钮", has_full(st), str(st.get("btns")))
 check("A2 有⇔", ("标题居中" in st.get("btns", [])) or ("标题向左对齐" in st.get("btns", [])), str(st.get("btns")))
 check("A2 尾部含标题1", "标题 1" in st.get("tail", ""), st.get("tail"))
 
-note("A3 标题2（无⇔，计数=1）")
+note("A3 标题2（v3.38 ALIGN-1：居中入口放开到 h1~h6，计数=1）")
 setmd("## 标题乙")
 sel_nth("#editor h2", 0, 0, 3)
 st = fb_state()
 check("A3 全套按钮", has_full(st), str(st.get("btns")))
-check("A3 无⇔", ("标题居中" not in st.get("btns", [])) and ("标题向左对齐" not in st.get("btns", [])), str(st.get("btns")))
+# v3.38 ALIGN-1：blockInfo / 渲染本就支持任意级别 tagForm，居中不再只认 h1
+check("A3 有⇔", ("标题居中" in st.get("btns", [])) or ("标题向左对齐" in st.get("btns", [])), str(st.get("btns")))
 check("A3 尾部含标题1", "标题 1" in st.get("tail", ""), st.get("tail"))
 
 note("A4 列表项")

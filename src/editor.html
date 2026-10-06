@@ -546,6 +546,9 @@ body[data-theme="dark"] #defhint { color: #c3cad2; }
     z-index: 60; background: var(--bg); border: 1px solid var(--border);
     border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,.28); overflow: auto; }
   .blk .codeblock.fs pre.fence { max-height: none; height: calc(100% - 36px); }
+  /* v3.38（CODE-12b）：全屏态的显式「退出全屏」按钮（非全屏隐藏） */
+  .blk .codeblock .fs-x { display: none; }
+  .blk .codeblock.fs .fs-x { display: inline-flex; opacity: 1; }
   .blk .codeblock .cmdbar { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px;
     border-top: 1px solid var(--border); }
   .blk .codeblock .cmdbar .cmdc { font-size: 12px; padding: 2px 8px; border: 1px solid var(--border);
@@ -1182,6 +1185,28 @@ img.img-broken { display: none; }
     return null;
   }
 
+  /* v3.38（NEST-4 / PARSE-1）游程感知闭合搜索：对称标记的闭合候选必须是
+     「长度恰为 need 的同字符游程」（前后都不是该字符）。旧实现用
+     s.indexOf('**', ...) 取下一处含该子串的位置，于是
+     **==[***x***](u)==** 的外层 ** 会闭到内层 *** 的前两位 —— == / [ / ](u) / *
+     全部降级为字面文本（用户可见裸标记）。更长（内层 ***）、更短、或与开符
+     同一游程（k < from）的一律跳过。 */
+  function findRunClose(s, from, to, c, need) {
+    var j = from;
+    while (j < to) {
+      if (s[j] === c) {
+        var k = j;
+        while (k > 0 && s[k - 1] === c) k--;
+        var len = 0;
+        while (k + len < to && s[k + len] === c) len++;
+        if (len === need && k >= from) return k;
+        j = k + len;
+        continue;
+      }
+      j++;
+    }
+    return -1;
+  }
   function parseInline(s, from, to) {
     var nodes = [];
     var textStart = from;
@@ -1205,9 +1230,8 @@ img.img-broken { display: none; }
       if (((c === '*' && s[i + 1] === '*' && s[i + 2] === '*') ||
            (c === '_' && s[i + 1] === '_' && s[i + 2] === '_')) &&
           !/\s/.test(s[i + 3] || '')) {
-        var m3 = s.slice(i, i + 3);
-        var closeSE = s.indexOf(m3, i + 3);
-        if (closeSE !== -1 && closeSE < to && closeSE > i + 3) {
+        var closeSE = findRunClose(s, i + 3, to, c, 3);
+        if (closeSE !== -1 && closeSE < to && closeSE > i + 2) {
           flush(i);
           nodes.push({ type: 'strongem', s: s, rs: i, re: closeSE + 3, cs: i + 3, ce: closeSE,
                        ch: parseInline(s, i + 3, closeSE) });
@@ -1216,8 +1240,7 @@ img.img-broken { display: none; }
       }
       // strong
       if ((c === '*' && s[i + 1] === '*') || (c === '_' && s[i + 1] === '_')) {
-        var m = s.slice(i, i + 2);
-        var close2 = s.indexOf(m, i + 2);
+        var close2 = findRunClose(s, i + 2, to, c, 2);
         if (close2 !== -1 && close2 < to && close2 > i + 2 && !/\s/.test(s[i + 2])) {
           flush(i);
           nodes.push({ type: 'strong', s: s, rs: i, re: close2 + 2, cs: i + 2, ce: close2, ch: parseInline(s, i + 2, close2) });
@@ -1238,7 +1261,19 @@ img.img-broken { display: none; }
       if (c === '<' && (s.startsWith('<u>', i) || s.startsWith('<ins>', i))) {
         var _uOp = s.startsWith('<u>', i) ? '<u>' : '<ins>';
         var _uCl = _uOp === '<u>' ? '</u>' : '</ins>';
-        var _uEn = s.indexOf(_uCl, i + _uOp.length);
+        /* v3.38（NEST-5）：同类型嵌套配对 —— 旧实现 s.indexOf(_uCl) 取下一处
+           闭合，`<u><u>x</u></u>` 的外层闭合会落到内层的 </u> 上，最外层一对
+           标签双双字面化。改为计数嵌套：途中每个同名开标签深度 +1，只有深度
+           归零时遇到的闭合才是配对闭合。 */
+        var _uEn = -1, _uD = 0, _uP = i + _uOp.length;
+        while (_uP < to) {
+          var _uO = s.indexOf(_uOp, _uP);
+          var _uC = s.indexOf(_uCl, _uP);
+          if (_uC === -1 || _uC >= to) break;
+          if (_uO !== -1 && _uO < _uC) { _uD++; _uP = _uO + _uOp.length; continue; }
+          if (_uD === 0) { _uEn = _uC; break; }
+          _uD--; _uP = _uC + _uCl.length;
+        }
         if (_uEn !== -1 && _uEn < to && _uEn > i + _uOp.length) {
           flush(i);
           nodes.push({ type: 'u', s: s, rs: i, re: _uEn + _uCl.length, cs: i + _uOp.length,
@@ -2521,7 +2556,18 @@ img.img-broken { display: none; }
     if (!cb) return;
     cb.classList.remove('fs');
     var b = cb.querySelector('.fs-btn');
-    if (b) b.textContent = '⛶';
+    if (b) {
+      b.textContent = '⛶';
+      /* v3.38（CODE-12b）：Esc 退出路径也要复位 title，否则与点击路径不一致 */
+      b.title = '全屏编辑（Esc 退出全屏）';
+    }
+    /* 还原自动换行态：全屏时强制换行，退出后回到源码 wrap=1 的本来设定 */
+    var blk = cb.closest ? cb.closest('.blk') : null;
+    var bi = blk ? blockIndexOf(blk) : -1;
+    if (bi >= 0) {
+      cb.classList.toggle('wrap-on',
+        (String(state.raw[bi] || '').split('\n')[0] || '').indexOf('wrap=1') >= 0);
+    }
     toastStatus('已退出全屏编辑');
   }
   /* =========================================================
@@ -2757,14 +2803,32 @@ img.img-broken { display: none; }
       e.stopPropagation(); e.preventDefault();
       var on = wrap.classList.toggle('fs');
       fsbtn.textContent = on ? '⤡' : '⛶';
+      /* v3.38（CODE-12b）：title 跟随状态 —— 旧实现恒为「全屏编辑」，
+         进入全屏后仍提示「全屏编辑」，用户无法得知如何退出 */
+      fsbtn.title = on ? '还原（Esc 也可退出全屏）' : '全屏编辑（Esc 退出全屏）';
       if (on) wrap.classList.add('wrap-on');
       else wrap.classList.toggle('wrap-on',
         (String(state.raw[idxHint] || '').split('\n')[0] || '').indexOf('wrap=1') >= 0);
       var c3 = wrap.querySelector('pre.fence code');
       if (on && c3) c3.focus();
-      toastStatus(on ? '已进入全屏编辑（Esc 退出）' : '已退出全屏编辑');
+      toastStatus(on ? '已进入全屏编辑（Esc 或右上角 ✕ 退出）' : '已退出全屏编辑');
     });
     bar.appendChild(fsbtn);
+    /* v3.38（CODE-12b）：全屏态的显式「✕ 退出全屏」按钮 —— 纯图标 ⤡ 语义
+       不明，全屏后界面上等于没有可见的关闭 / 还原入口。显示与否由 CSS
+       （.codeblock.fs .fs-x）控制，rebuild 重建 DOM 后依然正确 */
+    var fsxbtn = document.createElement('button');
+    fsxbtn.type = 'button';
+    fsxbtn.className = 'lang-btn fs-x';
+    fsxbtn.textContent = '✕ 退出全屏';
+    fsxbtn.title = '退出全屏编辑（Esc）';
+    fsxbtn.addEventListener('click', function (e) {
+      e.stopPropagation(); e.preventDefault();
+      codeFsExit(wrap);
+      var c4 = wrap.querySelector('pre.fence code');
+      if (c4) c4.focus();
+    });
+    bar.appendChild(fsxbtn);
     /* v3.38：常见命令提示 —— 仅当该语言收录了命令才出现（无可用命令不显示） */
     var cmdList = codeCmdList(pre.getAttribute('data-lang'));
     if (cmdList.length) {
@@ -4554,7 +4618,10 @@ img.img-broken { display: none; }
     /* v3.31.2（#4）：居中 h1 的存储形态保持 <h1 align="center">…</h1> */
     var bi0 = blockInfo(state.raw[i] || '');
     if (bi0.tagForm && bi0.align === 'center' && bi0.type === ('h' + hEl.tagName[1])) {
-      state.raw[i] = '<h1 align="center">' + text + '</h1>';
+      /* v3.38（ALIGN-1）：按实际级别输出 —— 旧代码硬编码 h1，h2~h6 的居中态
+         编辑回写后会被抬成 h1（级别被悄悄改掉） */
+      state.raw[i] = '<h' + hEl.tagName[1] + ' align="center">' + text +
+                     '</h' + hEl.tagName[1] + '>';
     } else {
       state.raw[i] = '#'.repeat(+hEl.tagName[1]) + ' ' + text;
     }
@@ -8722,10 +8789,14 @@ img.img-broken { display: none; }
     if (action === 'h1center') {
       var _hr = state.raw[info.idx] || '';
       var _hb = blockInfo(_hr);
-      if (_hb.type === 'h1') {
+      /* v3.38（ALIGN-1）：放开到 h1~h6 —— blockInfo 的 tagForm 分支与渲染层
+         本就支持任意级别，旧代码只认 h1：h2~h6 既没有按钮入口、动作也静默 */
+      if (/^h[1-6]$/.test(_hb.type)) {
+        var _lv = +_hb.type[1];
         var _wasC = _hb.tagForm && _hb.align === 'center';
-        state.raw[info.idx] = _wasC ? '# ' + headingTextOf(_hr)
-                                    : '<h1 align="center">' + headingTextOf(_hr) + '</h1>';
+        state.raw[info.idx] = _wasC ? ('#'.repeat(_lv) + ' ' + headingTextOf(_hr))
+                                    : ('<h' + _lv + ' align="center">' + headingTextOf(_hr) +
+                                       '</h' + _lv + '>');
         markDirty(); scheduleSnapshot(); rebuild();
         toastStatus(_wasC ? '标题已向左对齐' : '标题已居中');
       }
@@ -9297,7 +9368,8 @@ img.img-broken { display: none; }
       lastFB = info;  // 记录快照，供行菜单按钮点击兜底
       /* v3.31.2（#4/#5b）：当前块为标题 1 时传状态（1=向左 / 2=居中） */
       var _fbi = blockInfo(state.raw[info.idx] || '');
-      var _h1s = _fbi.type === 'h1' ? ((_fbi.tagForm && _fbi.align === 'center') ? 2 : 1) : 0;
+      /* v3.38（ALIGN-1）：任意级别标题都给居中入口（与 C 处动作一致） */
+      var _h1s = /^h[1-6]$/.test(_fbi.type) ? ((_fbi.tagForm && _fbi.align === 'center') ? 2 : 1) : 0;
       buildFloatbar(fbDelOnly(info), info.plainLen, !!cellFormatCtx(), _h1s,
                     selCrossesBlocks() ? 0 : selHeadingCount());   // 代码/图表/公式上下文：仅保留删除按钮；跨块降级见 FMTB-4
       FB.classList.add('show');
@@ -10336,6 +10408,12 @@ img.img-broken { display: none; }
   }
   function transformTo(raw, target) {
     function strip(r) {
+      /* v3.38（ALIGN-1）：居中标题的持久形态是 <hN align="center">…</hN>，
+         旧 strip 只认 # / > / 列表 / 围栏四种前缀 → 转换后留下
+         `# <hN …>…</hN>`，界面把标签当正文显示（用户看到 HTML 源码）。
+         先剥该形态外壳，并去掉内部可能残留的标签取纯文本。 */
+      var _tf = /^\s*<h([1-6])(?:\s[^>]*)?>([\s\S]*?)<\/h\1>\s*$/i.exec(r);
+      if (_tf) r = _tf[2].replace(/<[^>]*>/g, '');
       return r.replace(/^#{1,6}\s+/, '').replace(/^>\s?/gm, '')
         .replace(/^(\s*)(?:[-*+]|\d+[.)])[ \t]*/gm, '$1').replace(/```[a-z]*\n?/g, '');
     }
@@ -14586,6 +14664,14 @@ img.img-broken { display: none; }
   };
   window.__objSel = function () { return objSel ? JSON.stringify({ kind: objSel.kind, idx: objSel.idx }) : null; };
   /* v3.25 测试辅助：直调浮动工具栏动作（选区保持不变） */
+  /* v3.38 测试钩子：跳过链接弹层直接落 URL（供探针复现重复格式化链路） */
+  window.__linkNow = function (u) { var r = applyLinkTo(linkCtx, u); return String(r); };
+  /* v3.38 测试钩子：块菜单动作不可从外部触发，供探针验证 transformTo 链路 */
+  window.__blkAct = function (act, idx) {
+    if (typeof idx === 'number') handleIdx = idx;
+    applyBlockAct(act);
+    return String(state.raw[handleIdx] || '');
+  };
   window.__applyFloat = function (action) { applyFloatAction(action); return 'ok'; };
   /* v3.37（测试钩子）：单元格内插入 —— 聚焦指定格后按 cellSlashApply 落项（t 取
      SLASH_DEFS 列表子项的 t 值，如 '- ' / '1. ' / '- [ ] '） */
