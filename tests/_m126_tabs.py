@@ -45,6 +45,8 @@ class FakeAct:
         pass
 
     def setChecked(self, v):
+        if not isinstance(v, bool):
+            raise TypeError("QAction.setChecked expects bool, got %r" % (v,))
         self._checked = bool(v)
 
     def isChecked(self):

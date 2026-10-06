@@ -952,3 +952,11 @@ CommonMark 主流形状一致），是否做完整移植请用户二次拍板。
 - 探针必须先 `QApplication(sys.argv)` 再 `MainWindow()`，否则 0xC0000409 硬崩无栈（runner 只包 subprocess 不建 app）。
 - FakeBox 需要 `QMessageBox.Question` 等类常量；`clickedButton` 必须返回 `addButton` 创建的**同一实例**（产品用 `is` 比较）。
 - 批量确认里当前文档脏标记以实时 `_dirty` 为准（`_capture_current_md` 后覆写）——探针造脏数据要造在**非当前**标签，或同时置 `_dirty`。
+
+### 24.6 补遗（同日）：右键菜单整体弹不出的真根因——setChecked(None)
+
+- **现象**：真实应用中右键任何标签，菜单完全弹不出（用户报「批量关闭仍未生效」「右键没反应」）。
+- **根因**：`_add_doc` 建的文档字典只有 path/content/dirty 三个键，`doc.get("pinned")` 返回 **None**；`_on_tab_menu` 里 `a.setChecked(pinned)` 抛 `TypeError`，菜单构建在 exec 之前中断。TAB-1 引入「固定/取消固定」checkable 项起即存在。
+- **为何探针没抓住**：m126/m133 的 FakeAct.setChecked 是无条件 pass，不校验类型——打桩盲区。
+- **修复**：`pinned = bool(doc.get("pinned"))`；同时把 m133/m126 的 FakeAct.setChecked **严格化**（非 bool 直接 raise TypeError，镜像真实 QAction），防同类缺陷再逃逸。
+- **真实验证**：新增 `tests/_demo_tabmenu.py` 真实 GUI 演示（真实 QMenu 非打桩）：右键菜单含全部批量关闭项（关闭其它/左侧/右侧/所有未修改/所有标签页），Ctrl+单击多选 [1,2] → 右键菜单首位「关闭选中的 2 个标签页」→ 真实点击执行 → 4 标签变 2（甲、丁 保留）。截图存 `_demo/`。

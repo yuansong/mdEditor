@@ -114,7 +114,10 @@ class FakeAct:
         pass
 
     def setChecked(self, v):
-        pass
+        # 严格镜像真实 QAction：非 bool 直接抛 TypeError（防 setChecked(None) 类缺陷逃逸）
+        if not isinstance(v, bool):
+            raise TypeError("QAction.setChecked expects bool, got %r" % (v,))
+        self._checked = bool(v)
 
     @property
     def triggered(self):

@@ -2410,7 +2410,9 @@ class MainWindow(QMainWindow):
             self._tabbar.setCurrentIndex(idx)        # 右键即选中
         doc = self._docs[idx]
         has_path = doc.get("path") is not None
-        pinned = doc.get("pinned")
+        # v3.38（TAB-B 修正）：_add_doc 的文档没有 pinned 键 → get 返回 None，
+        # setChecked(None) 会 TypeError 令整个右键菜单弹不出来，必须转 bool
+        pinned = bool(doc.get("pinned"))
         last = len(self._docs) - 1
         m = QMenu(self)
         # v3.38（TAB-B）：多选生效 → 首位给「关闭选中标签页」+「取消多选」（N++ 对标）
