@@ -77,11 +77,34 @@ def slash_pick(item_id, sub=None):
     return r
 
 
+# v3.38（WYS-4）：编辑宿主兼容 —— raw-edit（源码态）或渲染态 p[contenteditable]
+HOST_JS = ("(function(){var el=document.querySelector('.raw-edit');"
+           "if(!el){var bs=document.querySelectorAll('#editor .blk');"
+           "for(var i=0;i<bs.length;i++){var pp=bs[i].querySelector('p[contenteditable]');"
+           "if(pp){el=pp;break;}}}"
+           "if(!el) return 'NOHOST';el.focus();"
+           "var rg=document.createRange();rg.selectNodeContents(el);rg.collapse(true);"
+           "var s=getSelection();s.removeAllRanges();s.addRange(rg);return 'HOST';})()")
+
+
 def clear_block():
-    """把当前 raw-edit 内容清空（构造真实空段，绕过 setMarkdown 首尾空块裁剪）"""
-    js("(function(){var el=document.querySelector('.raw-edit');"
+    """把当前编辑宿主内容清空（raw-edit / 渲染态 p，绕过首尾空块裁剪）"""
+    js("(function(){var el=document.querySelector('.raw-edit');if(!el){"
+       "var bs=document.querySelectorAll('#editor .blk');"
+       "for(var i=0;i<bs.length;i++){var pp=bs[i].querySelector('p[contenteditable]');"
+       "if(pp){el=pp;break;}}}"
+       "if(!el) return 'NOHOST';"
        "el.focus();document.execCommand('selectAll');document.execCommand('delete');return 'x'})()")
     wait(250)
+
+
+def key_on_host(k):
+    """在当前编辑宿主（raw-edit / 渲染态 p）光标处派发按键（WYS-4 兼容）"""
+    js("(function(){var r=" + HOST_JS + ";if(r!=='HOST') return r;"
+       "var el=document.activeElement;"
+       "el.dispatchEvent(new KeyboardEvent('keydown',{key:'" + k + "',bubbles:true,cancelable:true}));"
+       "return 'x'})()")
+    wait(150)
 
 
 def raw0():
@@ -99,7 +122,7 @@ js("(function(){var b=document.querySelectorAll('#editor .blk');"
    "b[b.length-1].dispatchEvent(new MouseEvent('mousedown',{bubbles:true,detail:1}));return 'x'})()")
 wait(300)
 clear_block()
-key("Backspace", sel="document.querySelector('.raw-edit')")
+key_on_host("Backspace")
 wait(400)
 r = js("(function(){return JSON.stringify({src:!!document.querySelector('.raw-edit'),"
        "focus:document.activeElement===document.querySelector('.codeblock code'),"
@@ -115,7 +138,7 @@ js("(function(){var b=document.querySelectorAll('#editor .blk');"
    "b[0].dispatchEvent(new MouseEvent('mousedown',{bubbles:true,detail:1}));return 'x'})()")
 wait(300)
 clear_block()
-key("Delete", sel="document.querySelector('.raw-edit')")
+key_on_host("Delete")
 wait(400)
 r = js("(function(){return JSON.stringify({src:!!document.querySelector('.raw-edit'),"
        "focus:document.activeElement===document.querySelector('.codeblock code'),"
@@ -151,7 +174,7 @@ r = js("(function(){return JSON.stringify({srcT:!!document.querySelector('.raw-e
 d = json.loads(r or "{}")
 check("slash insert hr rendered, caret moves to next line",
       d.get("hr") is True and d.get("srcT") is False and d.get("focus") is True, d)
-key("Backspace", sel="document.querySelector('.raw-edit')")
+key_on_host("Backspace")
 wait(400)
 r = js("(function(){return JSON.stringify({hr:!!document.querySelector('#editor .b-hr hr'),"
        "bhr:!!document.querySelector('#editor .b-hr'),"
@@ -169,7 +192,7 @@ js("(function(){var b=document.querySelectorAll('#editor .blk');"
    "b[0].dispatchEvent(new MouseEvent('mousedown',{bubbles:true,detail:1}));return 'x'})()")
 wait(300)
 clear_block()
-key("Delete", sel="document.querySelector('.raw-edit')")
+key_on_host("Delete")
 wait(400)
 r = js("(function(){return JSON.stringify({bhr:!!document.querySelector('#editor .b-hr'),"
        "n:document.querySelectorAll('#editor .blk').length,"

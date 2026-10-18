@@ -157,6 +157,92 @@ def icon_settings(size: int = 20) -> QIcon:
     return QIcon(pm)
 
 
+def icon_history(size: int = 20) -> QIcon:
+    """历史版本：时钟（圆盘 + 分针时针）——R7 UI-SPEC 左工具栏「历史版本」钮。"""
+    pm, p = _painter(size)
+    p.drawEllipse(QPointF(12, 12), 8.5, 8.5)
+    p.drawPath(_path([(12, 7.5), (12, 12), (15.5, 14)]))
+    p.end()
+    return QIcon(pm)
+
+
+def icon_sidepanel(size: int = 20, collapsed: bool = False) -> QIcon:
+    """侧栏面板（R3.5：统一为线性面板图标，替代「«/»」文本钮）。
+
+    collapsed=False：左列着色（面板展开态）；collapsed=True：左列仅描边（收起态）。
+    """
+    pm, p = _painter(size)
+    p.drawRoundedRect(QRectF(3.5, 5, 17, 14), 2, 2)
+    p.drawPath(_path([(9.5, 5), (9.5, 19)]))
+    if not collapsed:
+        p.setBrush(QColor(_STROKE))
+        p.setPen(Qt.NoPen)
+        p.drawRect(QRectF(4.6, 6.1, 3.8, 11.8))
+        p.setPen(QPen(_STROKE))
+    p.end()
+    return QIcon(pm)
+
+
+def icon_toolbar_expand(size: int = 16) -> QIcon:
+    """工具条展开钮（左缘常驻，工具条隐藏时显形）：双右指箭头（»）线性矢量，
+    替代旧式文字「»」钮，与整体线性图标风格（_painter 线宽/圆头/描边色）一致。
+    点击展开被隐藏的左侧工具条。"""
+    pm, p = _painter(size)
+    p.drawPath(_path([(8.0, 7.0), (14.0, 12.0), (8.0, 17.0)]))
+    p.drawPath(_path([(13.0, 7.0), (19.0, 12.0), (13.0, 17.0)]))
+    p.end()
+    return QIcon(pm)
+
+
+def _fill_painter(size: int) -> tuple:
+    """生成透明底 Pixmap + 已缩放画笔（用于主题色填充图标，无描边）。"""
+    pm = QPixmap(size, size)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    p.scale(size / _VIEW, size / _VIEW)
+    return pm, p
+
+
+def icon_folder(color: str = "#0052d9", size: int = 16) -> QIcon:
+    """文件列表文件夹：主题强调色填充（对齐设计01 .ficon 语义，随主题变色）。
+
+    - 24 视窗内绘制单路径文件夹轮廓（含顶部标签凸起），纯填充；
+    - color 默认取浅色主题 accent，运行时由 sidebar.set_folder_theme 按主题重填。
+    """
+    pm, p = _fill_painter(size)
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor(color))
+    p.drawPath(_path([
+        (2.4, 5.4), (9.0, 5.4), (11.1, 7.65), (20.9, 7.65),
+        (20.9, 18.0), (2.4, 18.0),
+    ], close=True))
+    p.end()
+    return QIcon(pm)
+
+
+def icon_file(color: str = "#6b7280", size: int = 16) -> QIcon:
+    """文件列表文件项（md / 其他）：中性灰描边文档图标，与文件夹主题色区分。
+
+    仅描边、不填充，视觉上比文件夹图标更「轻」，避免与强调色文件夹争夺注意力。
+    """
+    pm, p = _painter(size)
+    p.setPen(QPen(QColor(color)))
+    p.drawPath(_path([(6, 3), (13, 3), (18, 8), (18, 21), (6, 21)], True))
+    p.drawPath(_path([(13, 3), (13, 8), (18, 8)]))
+    p.end()
+    return QIcon(pm)
+
+
+def icon_up(size: int = 16) -> QIcon:
+    """面包屑「返回上一级目录」：上箭头（替代可能缺字形的 ↑ 文本）。"""
+    pm, p = _painter(size)
+    p.drawPath(_path([(12, 16), (12, 9)]))
+    p.drawPath(_path([(8, 12.5), (12, 9), (16, 12.5)]))
+    p.end()
+    return QIcon(pm)
+
+
 # 便捷映射：config.MODES 中的图标名 -> 绘制函数
 MODE_ICONS = {
     "write": icon_write,

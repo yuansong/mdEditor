@@ -17,7 +17,7 @@
  [
   "PASS",
   "write_docx 成功",
-  "已导出 Word · C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\mdexport_j7thuom6\\out.docx"
+  "已导出 Word · C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\mdexport_3bq3fqfz\\out.docx"
  ],
  [
   "PASS",
@@ -42,7 +42,7 @@
  [
   "PASS",
   "write_epub 成功",
-  "已导出 EPUB（2 章节 / 1 图）· C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\mdexport_j7thuom6\\out.epub"
+  "已导出 EPUB（2 章节 / 1 图）· C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\mdexport_3bq3fqfz\\out.epub"
  ],
  [
   "PASS",
@@ -77,12 +77,12 @@
  [
   "PASS",
   "空文档导出 docx 不报错",
-  "已导出 Word · C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\mdexport_j7thuom6\\empty.docx"
+  "已导出 Word · C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\mdexport_3bq3fqfz\\empty.docx"
  ],
  [
   "PASS",
   "单章 epub 正常",
-  "已导出 EPUB（1 章节 / 0 图）· C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\mdexport_j7thuom6\\one.epub"
+  "已导出 EPUB（1 章节 / 0 图）· C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\mdexport_3bq3fqfz\\one.epub"
  ],
  [
   "PASS",

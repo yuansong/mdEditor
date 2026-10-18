@@ -236,10 +236,24 @@ wait(700)
 js("(function(){var b=document.querySelectorAll('#editor .blk');"
    "b[b.length-1].dispatchEvent(new MouseEvent('mousedown',{bubbles:true,detail:1}));return 'x'})()")
 wait(300)
-js("(function(){var el=document.querySelector('.raw-edit');"
+# v3.38（WYS-4）：双态兼容 —— raw-edit 或渲染态 p，清空后派发 Backspace
+# （渲染态空段走 WYS-4b 兜底重派 → 源码态分支进表格末格）
+js("(function(){var el=document.querySelector('.raw-edit');if(!el){"
+   "var bs=document.querySelectorAll('#editor .blk');"
+   "for(var i=0;i<bs.length;i++){var pp=bs[i].querySelector('p[contenteditable]');"
+   "if(pp){el=pp;break;}}}"
+   "if(!el) return 'NOHOST';"
    "el.focus();document.execCommand('selectAll');document.execCommand('delete');return 'x'})()")
 wait(300)
-key("Backspace", sel="document.querySelector('.raw-edit')")
+js("(function(){var el=document.querySelector('.raw-edit');if(!el){"
+   "var bs=document.querySelectorAll('#editor .blk');"
+   "for(var i=0;i<bs.length;i++){var pp=bs[i].querySelector('p[contenteditable]');"
+   "if(pp){el=pp;break;}}}"
+   "if(!el) return 'NOHOST';el.focus();"
+   "var rg=document.createRange();rg.selectNodeContents(el);rg.collapse(true);"
+   "var s=getSelection();s.removeAllRanges();s.addRange(rg);"
+   "el.dispatchEvent(new KeyboardEvent('keydown',{key:'Backspace',bubbles:true,cancelable:true}));"
+   "return 'x'})()")
 wait(400)
 r = js("(function(){return JSON.stringify({src:!!document.querySelector('.raw-edit'),"
        "sel:window.__tblSel ? window.__tblSel() : null})})()")
@@ -257,8 +271,10 @@ js("(function(){var ed=document.getElementById('editor');"
 wait(400)
 r = js("(function(){return JSON.stringify({tag:document.activeElement.tagName})})()")
 d = json.loads(r or "{}")
-check("click below content focuses last editable block (heading rendered)",
-      d.get("tag") == "DIV", d)
+# v3.38（WYS-4）：末块（正文段落）渲染态聚焦 —— activeElement 为渲染态 p
+# （旧实现进源码态 raw-edit 容器 DIV）；「聚焦最后可编辑位置」语义不变
+check("click below content focuses last editable block (WYS-4 rendered p)",
+      d.get("tag") == "P", d)
 
 # ---------- 10) 代码块插入：语言选择优先，默认 C，↑↓切换，回车进代码区 ----------
 js("window.setMarkdown('')")

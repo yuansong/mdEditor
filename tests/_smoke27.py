@@ -145,8 +145,8 @@ wait(300)
 st = jj("window.__blkMenuState()")
 check("R1 图片块右键被接管（不再只给系统复制菜单）", r == "prevented", r)
 check("R1 图片块右键弹出自定义块菜单", st.get("show") is True, st)
-check("R1 图片块菜单项 = 图注/重置尺寸/大小设置/对齐×3/全部转本地/显示图片/复制图片/上移/下移/删除块（v3.31.3 IMG-9 对齐一级化）",
-      st.get("items") == ["edit", "imgreset", "imgsize", "imgalign:l", "imgalign:c", "imgalign:r", "imglocalall", "viewimg", "copyimg", "up", "down", "del"], st.get("items"))
+check("R1 图片块菜单项 = 对齐动态两项/重置尺寸/大小设置/转存置灰/替换/显示/裁剪/图注/复制图片/上移/下移/删除块（v3.39.5 MENU-4 并排化 + v3.39.6 裁剪）",
+      st.get("items") == ["imgalign:l", "imgalign:r", "imgreset", "imgsize", "imgstorewait", "imgreplace", "viewimg", "imgcrop", "edit", "copyimg", "dup", "up", "down", "del"], st.get("items"))
 
 res = click_act("#blkmenu", "edit")
 wait(400)
@@ -172,8 +172,8 @@ r = ctxmenu("#editor .mermaidblock", 200, 200)
 wait(300)
 st = jj("window.__blkMenuState()")
 # v3.34（MMD-11）：图表菜单新增「图表主题」二级入口，项数 5 → 6
-check("R1 图表块右键弹出块菜单（编辑源码 + v3.34 图表主题 + 复制块）",
-      r == "prevented" and st.get("items") == ["edit", "mmd-theme-sub", "dup", "up", "down", "del"], [r, st.get("items")])
+check("R1 图表块右键弹出块菜单（源码/图注/重置/大小/对齐两项/转图片/主题子菜单/复制块，v3.39.9 MMD-22）",
+      r == "prevented" and st.get("items") == ["edit", "mmdcap", "mmdreset", "mmdsize", "mmdalign:l", "mmdalign:r", "mmdtoimgwait", "mmd-theme-sub", "dup", "up", "down", "del"], [r, st.get("items")])
 close_pops()
 
 # R1 普通段落仍保留系统右键菜单

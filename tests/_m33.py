@@ -134,28 +134,21 @@ rr = raw()
 check("B6 引用多行还原", len(rr) == 1 and "> 原有行粘贴一" in rr[0] and "> 粘贴二" in rr[0],
       json.dumps(rr, ensure_ascii=False))
 
-# B7 raw-edit：富文本 HTML → Markdown 转块
+# B7 渲染态粘贴富文本 HTML → Markdown（v3.38 PARA-WYS 后段落不再经 raw-edit，
+#     mousedown 即进源码态的旧入口已移除 —— 粘贴管线在渲染态宿主上验证）
 js("window.setMarkdown('第一段\\n\\n第二段')"); wait(600)
-js("(function(){var el=document.querySelectorAll('#editor .blk')[0];"
-   "el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));return 'ok'})()")
-wait(300)
-d = jj("(function(){return JSON.stringify({edit: !!document.querySelector('#editor .raw-edit')})})()")
-check("B7 进入源码态", d.get("edit") is True, d)
-r = paste("#editor .raw-edit", "<h2>网页标题</h2><p><b>加粗</b>正文</p>", None, 3)
+r = paste("#editor .blk p[contenteditable]", "<h2>网页标题</h2><p><b>加粗</b>正文</p>", None, 3)
 wait(400)
 rr = raw()
-check("B7 富文本转 Markdown", "## 网页标题" in rr and "**加粗**正文" in rr,
+check("B7 富文本转 Markdown（渲染态 p）", "## 网页标题" in rr and "**加粗**正文" in rr,
       json.dumps(rr, ensure_ascii=False))
 
-# B8 raw-edit：纯文本多行拆块（回归）
+# B8 渲染态粘贴：纯文本多行拆块（回归）
 js("window.setMarkdown('唯一段')"); wait(600)
-js("(function(){var el=document.querySelector('#editor .blk');"
-   "el.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));return 'ok'})()")
-wait(300)
-r = paste("#editor .raw-edit", None, "行一\n行二", 3)
+r = paste("#editor .blk p[contenteditable]", None, "行一\n行二", 3)
 wait(300)
 rr = raw()
-check("B8 纯文本拆块回归", rr[0] == "唯一段行一" and rr[1] == "行二", json.dumps(rr, ensure_ascii=False))
+check("B8 纯文本拆块回归（渲染态 p）", rr[0] == "唯一段行一" and rr[1] == "行二", json.dumps(rr, ensure_ascii=False))
 
 out.append("DONE")
 flush()

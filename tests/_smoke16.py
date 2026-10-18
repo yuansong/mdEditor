@@ -58,8 +58,9 @@ r = js("(function(){try{var blks=document.querySelectorAll('#editor .blk');"
        "b.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,"
        "clientX:rct.left+10,clientY:rct.top+5}));"
        "return 'EDIT:'+!!document.querySelector('.raw-edit')}catch(e){return 'ERR:'+e.message}})()")
-check("click enters edit on block", (r or "").startswith("EDIT:true"), r)
-r = js("(function(){try{var el=document.querySelector('.raw-edit');"
+# v3.38（WYS-4）：段落单击保持渲染态（白名单），不再切源码 —— 光标仍可定位
+check("click keeps paragraph rendered (WYS-4)", (r or "").startswith("EDIT:false"), r)
+r = js("(function(){try{var el=document.querySelectorAll('#editor .blk')[1].querySelector('p[contenteditable]');"
        "el.focus();var sel=getSelection();var rg=document.createRange();"
        "rg.selectNodeContents(el);rg.collapse(false);"
        "sel.removeAllRanges();sel.addRange(rg);"

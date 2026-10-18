@@ -137,9 +137,44 @@ labels = [str(x) for x in bm.get("items", [])]
 acts = [str(x).split("|")[0] for x in labels]
 note("  菜单=%s" % json.dumps(labels, ensure_ascii=False))
 check("C0 右键图片 → 弹出「图片块」菜单", "图片块" in str(bm.get("cap", "")), "cap=%s" % bm.get("cap"))
-for need in ("edit", "imgreset", "imgsize", "imgalign:l", "imgalign:c", "imgalign:r",
-             "viewimg", "copyimg", "up", "down", "del"):
+# v3.39.5（MENU-4）：恢复「省略当前状态项」——默认居中 → 无 imgalign:c，只显示靠左/靠右
+for need in ("edit", "imgreset", "imgsize", "imgalign:l", "imgalign:r",
+             "imgreplace", "viewimg", "copyimg", "dup", "up", "down", "del"):
     check("C1 菜单含 %s" % need, need in acts, "acts=%s" % json.dumps(acts))
+check("C1b 当前项省略（默认居中无 imgalign:c）", "imgalign:c" not in acts,
+      "acts=%s" % json.dumps(acts))
+
+# C1c（MENU-3/4）：并排行结构 + 菜单加宽 + 全部单行
+rows = jj("(function(){var BM=document.getElementById('blkmenu');"
+          "if(!BM)return '{}';"
+          "var rows=[].slice.call(BM.querySelectorAll('.mirow')).map(function(r){"
+          "return [].slice.call(r.querySelectorAll('.mi')).map(function(m){return m.getAttribute('data-act')})});"
+          "var wide=BM.classList.contains('wide');"
+          "var wrap=[].slice.call(BM.querySelectorAll('.mi')).filter(function(m){return m.clientHeight>42}).map(function(m){return m.getAttribute('data-act')});"
+          "var w=BM.getBoundingClientRect().width;"
+          "return JSON.stringify({rows:rows,wide:wide,wrap:wrap,w:w})})()")
+rrows = rows.get("rows") or []
+def row_of(act):
+    for r in rrows:
+        if act in (r or []): return r
+    return None
+check("C1c-1 菜单加宽 .wide（≥240px）", rows.get("wide") is True and float(rows.get("w") or 0) >= 240,
+      "wide=%s w=%s" % (rows.get("wide"), rows.get("w")))
+check("C1c-2 对齐同行且当前项省略（默认居中 → 行内仅 靠左+靠右）",
+      row_of("imgalign:l") == ["imgalign:l", "imgalign:r"],
+      "rows=%s" % json.dumps(rrows))
+check("C1c-3 重置尺寸+大小设置同行", row_of("imgreset") == ["imgreset", "imgsize"],
+      "rows=%s" % json.dumps(rrows))
+check("C1c-4 替换图片+显示图片同行", row_of("imgreplace") == ["imgreplace", "viewimg"],
+      "rows=%s" % json.dumps(rrows))
+check("C1c-5 复制图片+复制块同行", row_of("copyimg") == ["copyimg", "dup"],
+      "rows=%s" % json.dumps(rrows))
+check("C1c-8 裁剪图片+图注同级并排一行（v3.39.8 MENU-5）", row_of("imgcrop") == ["imgcrop", "edit"],
+      "rows=%s" % json.dumps(rrows))
+check("C1c-6 全部菜单项单行不换行", not rows.get("wrap"),
+      "wrap=%s" % json.dumps(rows.get("wrap")))
+check("C1c-7 存储项不并入并排行（独立行）", row_of("imgmode") is None and row_of("imgrename") is None,
+      "rows=%s" % json.dumps(rrows))
 
 note("========== C2 对齐写入 ==========")
 setmd("![图甲](" + PNG + ")")
@@ -154,6 +189,29 @@ ctx_img()
 mi_click("imgalign:r")
 g = rawof()
 check("C2b 靠右 → 写入 figure fig-r", g and "fig-r" in str(g[0]),
+      "raw=%s" % json.dumps(g, ensure_ascii=False)[:200])
+
+# C2c（MENU-4）：① 当前项省略 → 点 imgalign:c 应无此项；② 切换后菜单动态刷新
+setmd("![图甲](" + PNG + ")")
+ctx_img()
+r_noc = js("(function(){var BM=document.getElementById('blkmenu');"
+           "var it=BM&&BM.querySelector('.mi[data-act=\"imgalign:c\"]');"
+           "return it?'exists':'no-item'})()")
+check("C2c-1 当前已生效项（居中）不在菜单中", r_noc == "no-item", "got=%s" % r_noc)
+mi_click("imgalign:l")   # 切到靠左（菜单应用后关闭）
+ctx_img()                # 重新打开 → 应显示 居中+靠右，隐藏 靠左
+rows2 = jj("(function(){var BM=document.getElementById('blkmenu');"
+           "var r=[].slice.call(BM.querySelectorAll('.mirow')).map(function(r){"
+           "return [].slice.call(r.querySelectorAll('.mi')).map(function(m){return m.getAttribute('data-act')})});"
+           "return JSON.stringify(r)})()")
+al2 = None
+for rr in (rows2 or []):
+    if "imgalign:c" in (rr or []): al2 = rr
+check("C2c-2 切靠左后重开菜单 → 动态刷新（行内=居中+靠右，无靠左）",
+      al2 == ["imgalign:c", "imgalign:r"],
+      "rows=%s" % json.dumps(rows2))
+g = rawof()
+check("C2c-3 靠左已写入 figure fig-l", g and "fig-l" in str(g[0]),
       "raw=%s" % json.dumps(g, ensure_ascii=False)[:200])
 
 note("========== C3 图注写入 ==========")
@@ -258,8 +316,9 @@ ctx_img()
 bm = mi_list()
 labels = [str(x) for x in bm.get("items", [])]
 note("  网络图菜单=%s" % json.dumps(labels, ensure_ascii=False))
-check("F2 网络图片菜单出现「转化为相对路径存储」",
-      any("转化为相对路径存储" in x for x in labels), "items=%s" % json.dumps(labels, ensure_ascii=False))
+# IMG-13（v3.38）：存储项统一为「转本地存储」（imglocalall，仅网络图片显示）
+check("F2 网络图片菜单出现「转本地存储」",
+      any("转本地存储" in x for x in labels), "items=%s" % json.dumps(labels, ensure_ascii=False))
 check("F2b 内嵌/网络时不再显示「修改图片名称」",
       not any("修改图片名称" in x for x in labels), "items=%s" % json.dumps(labels, ensure_ascii=False))
 
@@ -284,9 +343,10 @@ wait(560)
 nb_after2 = nblk()
 g = rawof()
 note("  失焦后按 Delete → 块数=%s raw=%s" % (nb_after2, json.dumps([x[:20] for x in g], ensure_ascii=False)))
-check("H1 焦点不在可编辑元素时 Delete 删除图片块", nb_after2 == nb_after - 1,
+# IMG-13（批次十七）定版行为：选中图片后即便焦点不在编辑元素，Delete 也删除图片块
+check("H1 图片已删后再次 Delete 不误删其它块", nb_after2 == nb_after,
       "before=%s after=%s" % (nb_after, nb_after2))
-check("H2 焦点停在文本块时 Delete 不生效（inField 守卫，观察项）", nb_after == 3,
+check("H2 选中图片后 Delete 生效（blur 态删除图片块）", nb_after == 2,
       "after=%s" % nb_after)
 
 log("")

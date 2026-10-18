@@ -34,8 +34,12 @@ win.show()
 
 
 def caret_end():
-    """把当前 raw-edit 光标移到内容末尾"""
-    js("(function(){var el=document.querySelector('.raw-edit');if(!el)return 'x';"
+    """把当前编辑宿主（raw-edit / WYS-4 渲染态 p）光标移到内容末尾"""
+    js("(function(){var el=document.querySelector('.raw-edit');if(!el){"
+       "var bs=document.querySelectorAll('#editor .blk');"
+       "for(var i=0;i<bs.length;i++){var pp=bs[i].querySelector('p[contenteditable]');"
+       "if(pp){el=pp;break;}}}"
+       "if(!el)return 'NOHOST';"
        "el.focus();var r=document.createRange();r.selectNodeContents(el);r.collapse(false);"
        "var s=getSelection();s.removeAllRanges();s.addRange(r);return 'x'})()")
     wait(150)
@@ -79,10 +83,30 @@ def open_slash():
 
 
 def clear_block():
-    """把当前 raw-edit 内容清空（构造真实空段，绕过 setMarkdown 首尾空块裁剪）"""
-    js("(function(){var el=document.querySelector('.raw-edit');"
+    """把当前编辑宿主内容清空（raw-edit / WYS-4 渲染态 p，绕过首尾空块裁剪）"""
+    js("(function(){var el=document.querySelector('.raw-edit');if(!el){"
+       "var bs=document.querySelectorAll('#editor .blk');"
+       "for(var i=0;i<bs.length;i++){var pp=bs[i].querySelector('p[contenteditable]');"
+       "if(pp){el=pp;break;}}}"
+       "if(!el) return 'NOHOST';"
        "el.focus();document.execCommand('selectAll');document.execCommand('delete');return 'x'})()")
     wait(250)
+
+
+def key_on_host(k, at_end=False):
+    """在当前编辑宿主（raw-edit / 渲染态 p）光标处派发按键（WYS-4 兼容）
+    at_end=True 时光标落宿主末尾（Delete@段尾场景需要）"""
+    col = "false" if at_end else "true"
+    js("(function(){var el=document.querySelector('.raw-edit');if(!el){"
+       "var bs=document.querySelectorAll('#editor .blk');"
+       "for(var i=0;i<bs.length;i++){var pp=bs[i].querySelector('p[contenteditable]');"
+       "if(pp){el=pp;break;}}}"
+       "if(!el) return 'NOHOST';el.focus();"
+       "var rg=document.createRange();rg.selectNodeContents(el);rg.collapse(" + col + ");"
+       "var s=getSelection();s.removeAllRanges();s.addRange(rg);"
+       "el.dispatchEvent(new KeyboardEvent('keydown',{key:'" + k + "',bubbles:true,cancelable:true}));"
+       "return 'x'})()")
+    wait(150)
 
 
 def raws():
@@ -133,7 +157,7 @@ js(f"window.setMarkdown('![]({IMG})\\n\\nX')")
 wait(700)
 click_blk(1)          # 点击末块 X
 clear_block()         # 构造空段（图片下方）
-key("Backspace", sel="document.querySelector('.raw-edit')")
+key_on_host("Backspace")
 wait(400)
 r = js("(function(){return JSON.stringify({img:!!document.querySelector('#editor .blk img'),"
        "n:document.querySelectorAll('#editor .blk').length,raw:window.__raw()})})()")
@@ -148,7 +172,7 @@ js(f"window.setMarkdown('X\\n\\n![]({IMG})')")
 wait(700)
 click_blk(0)
 clear_block()
-key("Delete", sel="document.querySelector('.raw-edit')")
+key_on_host("Delete")
 wait(400)
 r = js("(function(){return JSON.stringify({img:!!document.querySelector('#editor .blk img'),"
        "n:document.querySelectorAll('#editor .blk').length,raw:window.__raw()})})()")
@@ -163,7 +187,7 @@ js(f"window.setMarkdown('X\\n\\n![]({IMG})')")
 wait(700)
 click_blk(0)          # X 块（非空）
 caret_end()           # 光标移到末尾
-key("Delete", sel="document.querySelector('.raw-edit')")
+key_on_host("Delete", at_end=True)   # v3.38（WYS-4）：段尾 Delete → 删下方图片
 wait(400)
 r = js("(function(){return JSON.stringify({img:!!document.querySelector('#editor .blk img'),"
        "raw:window.__raw()})})()")
@@ -282,15 +306,19 @@ check("after insert cursor is in code area", d.get("inCode") is True, d)
 js("(function(){var ed=document.getElementById('editor');"
    "ed.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,detail:1}));return 'x'})()")
 wait(400)
+# v3.38（WYS-4）：末空段渲染态化 —— 点击空白后光标落在末空段渲染态 p
+# （不再切源码态 raw-edit），同样实现「跳出代码块到最近可编辑点」
 r = js("(function(){var code=document.querySelector('.codeblock code');"
+       "var b=document.querySelectorAll('#editor .blk');"
+       "var last=b[b.length-1];var p=last.querySelector('p[contenteditable]');"
        "return JSON.stringify({inCode:document.activeElement===code,"
        "edit:!!document.querySelector('.raw-edit'),"
-       "n:document.querySelectorAll('#editor .blk').length,"
-       "lastEmpty:(function(){var b=document.querySelectorAll('#editor .blk');"
-       "return b[b.length-1].classList.contains('raw-edit')})()})})()")
+       "n:b.length,"
+       "lastPar:p&&document.activeElement===p,"
+       "lastEmpty:last.classList.contains('raw-edit')||!!p})})()")
 d = json.loads(r or "{}")
 check("clicking blank moves caret out of code block to latest editable spot",
-      d.get("inCode") is False and d.get("edit") is True and d.get("lastEmpty") is True, d)
+      d.get("inCode") is False and (d.get("lastPar") is True or d.get("lastEmpty") is True), d)
 
 # 代码块是末块时点击空白：追加空段进入（不再跳回代码块）
 js("window.setMarkdown('```c\\nhi\\n```')")

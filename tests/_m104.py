@@ -151,10 +151,13 @@ def main():
       if (!b) return JSON.stringify({err:'no-bar'});
       return JSON.stringify({btns: [].slice.call(b.querySelectorAll('button')).map(function(x){return x.textContent;})});
     })()""")
-    check("N1 顶栏只剩 语言 / 风格", bar.get("btns") == ["python", "风格"],
+    # v3.38（CODE-14）+ v3.39.x：顶栏 = 语言/风格/行号/换行/⧉复制/⛶全屏/✕退出
+    check("N1 顶栏平级按钮 = 语言/风格/行号/换行（+复制/全屏）",
+          (bar.get("btns") or [])[:4] == ["python", "风格", "行号", "换行"]
+          and "⧉" in (bar.get("btns") or []) and "⛶" in (bar.get("btns") or []),
           json.dumps(bar.get("btns"), ensure_ascii=False))
-    check("N1b 顶栏已无 复制 / 行号 按钮",
-          "复制" not in (bar.get("btns") or []) and "行号" not in (bar.get("btns") or []),
+    check("N1b CODE-14：行号 / 换行 已提级为顶栏平级按钮",
+          "行号" in (bar.get("btns") or []) and "换行" in (bar.get("btns") or []),
           json.dumps(bar.get("btns"), ensure_ascii=False))
 
     js(win, "(function(){var b=document.querySelector('#editor .codebar .style-btn');if(b)b.click();return 'ok'})()")
@@ -166,14 +169,20 @@ def main():
         items: [].slice.call(sp.querySelectorAll('.si')).map(function(d){
           return {st: d.getAttribute('data-st'), ln: d.getAttribute('data-ln'), lb: d.textContent};})});
     })()""")
-    check("N2 风格弹层打开且含分隔线", sp.get("show") is True and sp.get("sep") is True,
+    check("N2 风格弹层打开（CODE-14 后无分隔线、无行号项）",
+          sp.get("show") is True and sp.get("sep") is False,
           json.dumps(sp, ensure_ascii=False))
     styles = [x for x in (sp.get("items") or []) if x.get("st")]
     lnitems = [x for x in (sp.get("items") or []) if x.get("ln") is not None]
-    check("N2b 弹层 = 4 风格 + 1 行号项", len(styles) == 4 and len(lnitems) == 1,
+    check("N2b 弹层 = 4 风格 + 0 行号项（行号已提级）", len(styles) == 4 and len(lnitems) == 0,
           json.dumps(sp.get("items"), ensure_ascii=False))
-    check("N2c 行号项文案（默认开启 → 「关闭行数显示」）",
-          bool(lnitems) and "关闭行数显示" in lnitems[0]["lb"], json.dumps(lnitems, ensure_ascii=False))
+    check("N2c 行号按钮 title（默认开启 → 「行数显示：开（点击关闭）」）",
+          "行数显示：开" in str(jj(win, """(function(){
+            var b = document.querySelector('#editor .codebar .lnum-btn');
+            return JSON.stringify({t: b ? b.title : null});})()""").get("t") or ""),
+          str(jj(win, """(function(){
+            var b = document.querySelector('#editor .codebar .lnum-btn');
+            return JSON.stringify({t: b ? b.title : null});})()""")))
 
     # ==================== N3/N4 行号开关 ====================
     log("---------- N3/N4 行号开关 ----------")
@@ -186,9 +195,12 @@ def main():
     })()""")
     check("N3-pre 初始：行号槽在、首行无 lnum", g0.get("hasGutter") is True and "lnum" not in (g0.get("firstLine") or ""),
           json.dumps(g0, ensure_ascii=False))
-    check("N3-pre2 点行号前弹层是打开的", g0.get("popShow") is True, str(g0.get("popShow")))
+    check("N3-pre2 行号按钮存在于顶栏",
+          (jj(win, """(function(){
+            return JSON.stringify({has: !!document.querySelector('#editor .codebar .lnum-btn')});})()""").get("has")) is True,
+          "lnum-btn missing")
 
-    js(win, "(function(){var it=document.querySelector('#stylepop .si[data-ln]');if(it)it.click();return 'ok'})()")
+    js(win, "(function(){var b=document.querySelector('#editor .codebar .lnum-btn');if(b)b.click();return 'ok'})()")
     wait(500)
     g1 = jj(win, """(function(){
       var pre = document.querySelector('#editor .codeblock pre.fence');
@@ -197,19 +209,17 @@ def main():
       return JSON.stringify({hasGutter: !!pre.querySelector('.gutter'), firstLine: raw,
         popShow: document.getElementById('stylepop').classList.contains('show')});
     })()""")
-    check("N3 关闭行号 → lnum=0 + 行号槽消失 + 弹层收起",
-          "lnum=0" in (g1.get("firstLine") or "") and g1.get("hasGutter") is False and g1.get("popShow") is False,
+    check("N3 点行号按钮关闭 → lnum=0 + 行号槽消失",
+          "lnum=0" in (g1.get("firstLine") or "") and g1.get("hasGutter") is False,
           json.dumps(g1, ensure_ascii=False))
 
-    js(win, "(function(){var b=document.querySelector('#editor .codebar .style-btn');if(b)b.click();return 'ok'})()")
-    wait(350)
     ln2 = jj(win, """(function(){
-      var it = document.querySelector('#stylepop .si[data-ln]');
-      return JSON.stringify({lb: it ? it.textContent : null, val: it ? it.getAttribute('data-ln') : null});
+      var b = document.querySelector('#editor .codebar .lnum-btn');
+      return JSON.stringify({lb: b ? b.title : null});
     })()""")
-    check("N4-pre 关闭后行号项变「开启行数显示」",
-          "开启行数显示" in (ln2.get("lb") or "") and ln2.get("val") == "1", json.dumps(ln2, ensure_ascii=False))
-    js(win, "(function(){var it=document.querySelector('#stylepop .si[data-ln]');if(it)it.click();return 'ok'})()")
+    check("N4-pre 关闭后按钮 title 变「行数显示：关（点击开启）」",
+          "行数显示：关" in (ln2.get("lb") or ""), json.dumps(ln2, ensure_ascii=False))
+    js(win, "(function(){var b=document.querySelector('#editor .codebar .lnum-btn');if(b)b.click();return 'ok'})()")
     wait(500)
     g2 = jj(win, """(function(){
       var pre = document.querySelector('#editor .codeblock pre.fence');
@@ -229,8 +239,8 @@ def main():
       var lnb = bar.querySelector('.lnum-btn');
       return JSON.stringify({copyBtn: !!cb, lnumBtn: !!lnb, btnCount: bar.querySelectorAll('button').length});
     })()""")
-    check("N5 按钮实体已移除（copy-btn / lnum-btn 均不存在）",
-          n5.get("copyBtn") is False and n5.get("lnumBtn") is False and n5.get("btnCount") == 2,
+    check("N5 CODE-10/14：copy-btn（⧉ hover 复制）与 lnum-btn 平级共存",
+          n5.get("copyBtn") is True and n5.get("lnumBtn") is True and n5.get("btnCount") == 7,
           json.dumps(n5, ensure_ascii=False))
 
     # ==================== N6/N7 图表留白 ====================
@@ -292,10 +302,11 @@ def main():
 
     setmd(win, "```mermaid w=420\nflowchart TD\n  A[开始] --> B{是否继续?}\n  B -->|是| C[处理任务]\n  B -->|否| D[结束]\n  C --> D\n```")
     sized = jj(win, CHART_JS)
-    check("N9 显式 w=420 → .sized 且宽度=420（用户设的尺寸优先）",
+    # v3.39.9（MMD-23）：显式 w= 只决定背景盒宽，图表保持自然尺寸（盒内钳制）
+    check("N9 显式 w=420 → 背景盒 .sized 且宽=420，图表保持自然宽（不铺满）",
           sized.get("sized") is True and abs((sized.get("mbW") or 0) - 420) <= 6
-          and (sized.get("svgW") or 0) <= (sized.get("mbW") or 0) + 1
-          and (sized.get("svgW") or 0) >= (sized.get("mbW") or 0) - 40,
+          and (sized.get("svgW") or 0) <= (sized.get("vbW") or 0) + 4
+          and (sized.get("svgW") or 0) < (sized.get("mbW") or 0),
           json.dumps(sized, ensure_ascii=False))
 
     # ==================== N10 拖拽跟随 ====================
@@ -330,9 +341,10 @@ def main():
     except Exception:
         mid = {}
     after = jj(win, CHART_JS)
-    check("N10 拖动期间 SVG 跟随容器（拖中宽 > 自然宽）",
-          (mid.get("sv") or 0) > (flow.get("svgW") or 0)
-          and abs((mid.get("sv") or 0) - (mid.get("mb") or 0)) <= 40,
+    # v3.39.9（MMD-23）：拖拽只缩放背景盒，图表本体保持自然尺寸（解耦）
+    check("N10 拖动期间背景变宽、SVG 不跟随（保持自然宽）",
+          (mid.get("mb") or 0) > (flow.get("svgW") or 0) + 60
+          and abs((mid.get("sv") or 0) - (flow.get("svgW") or 0)) <= 6,
           "mid=%s | after=%s" % (json.dumps(mid), json.dumps(after, ensure_ascii=False)))
     check("N10b 落盘写出 w= 且仍出图",
           "w=" in (after.get("raw0") or "") and after.get("hasSvg") is True and after.get("sized") is True,

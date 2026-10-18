@@ -339,16 +339,22 @@ js("(function(){document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Es
 wait(200)
 
 # C2 表格合并后编辑相邻段落 → raw 完整（m32「挤在一起」回归）
+# v3.38 PARA-WYS：段落 mousedown 保持渲染态（不再进 raw-edit）——
+# 改为渲染态 p 聚焦 + insertText 输入 + blur 失焦回写
 setmd("# 标题一\n\n正文段。\n\n| 名称 | 数量 |\n| --- | --- |\n| 苹果 | 3 |\n| 香蕉 | 12 |\n\n```python\nprint(1)\n```")
 wait(800)
 js("window.__tblSelSet(2, 1, 0, 1, 1)"); wait(300)
 js("window.__tblOp('merge')"); wait(400)
 d = jj("(function(){var b=document.querySelectorAll('#editor .blk')[1];"
-       "b.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,detail:1}));return 'x'})()")
+       "var t=b.querySelector('p[contenteditable]')||b.querySelector('p');"
+       "if(!t)return 'no-host';"
+       "t.focus();"
+       "var rg=document.createRange();rg.selectNodeContents(t);rg.collapse(false);"
+       "var s=getSelection();s.removeAllRanges();s.addRange(rg);"
+       "document.execCommand('insertText',false,'追加文字');"
+       "return 'ok'})()")
 wait(300)
-type_text(".raw-edit", "追加文字")
-wait(300)
-js("(function(){var el=document.querySelector('.raw-edit');if(el)el.blur();return 'x'})()")
+js("(function(){var el=document.querySelector('#editor .blk p[contenteditable]');if(el)el.blur();return 'x'})()")
 wait(500)
 rr = raw()
 # v3.30.3：合并格（colspan）按存储规则升级为 HTML 表格（能原生 MD 才原生，

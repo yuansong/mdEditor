@@ -179,9 +179,9 @@ r3 = js("(function(){var img=document.querySelector('#editor .blk img');"
         "function(x){return x.getAttribute('data-act')})})})()")
 wait(300)
 d3 = json.loads(r3 or "{}")
-check("相对路径图右键菜单 = 图注/重置尺寸/大小设置/对齐×3/全部转本地/转内嵌/改名/显示/复制图片/上移/下移/删除（v3.31.3 IMG-9 对齐一级化）",
+check("相对路径图右键菜单 = 对齐动态两项/重置尺寸/大小设置/转内嵌/改名/替换/显示/裁剪/图注/复制图片/上移/下移/删除（v3.39.5 MENU-4 + v3.39.6 裁剪）",
       d3.get("sel", {}).get("kind") == "img" and d3.get("acts") ==
-      ["edit", "imgreset", "imgsize", "imgalign:l", "imgalign:c", "imgalign:r", "imglocalall", "imgmode", "imgrename", "viewimg", "copyimg", "up", "down", "del"], r3)
+      ["imgalign:l", "imgalign:r", "imgreset", "imgsize", "imgmode", "imgrename", "imgreplace", "viewimg", "imgcrop", "edit", "copyimg", "dup", "up", "down", "del"], r3)
 # 修改图片名称弹层 → 请求通道
 r3b = img_menu_act("imgrename")
 wait(300)
@@ -234,8 +234,8 @@ wait(700)
 ctxmenu("#editor .blk img", 10, 10)
 wait(300)
 st4 = jj("window.__blkMenuState()")
-check("图片右键菜单（未保存文档，无存储项）= 图注/重置尺寸/大小设置/对齐×3/全部转本地/显示/复制图片/上移/下移/删除（v3.31.3 IMG-9 对齐一级化）",
-      st4.get("items") == ["edit", "imgreset", "imgsize", "imgalign:l", "imgalign:c", "imgalign:r", "imglocalall", "viewimg", "copyimg", "up", "down", "del"], st4.get("items"))
+check("图片右键菜单（未保存文档，存储项置灰）= 对齐动态两项/重置尺寸/大小设置/转存置灰/替换/显示/裁剪/图注/复制图片/上移/下移/删除（v3.39.5 MENU-4 + v3.39.6 裁剪）",
+      st4.get("items") == ["imgalign:l", "imgalign:r", "imgreset", "imgsize", "imgstorewait", "imgreplace", "viewimg", "imgcrop", "edit", "copyimg", "dup", "up", "down", "del"], st4.get("items"))
 click_act("#blkmenu", "up")
 wait(500)
 rw4 = raw()

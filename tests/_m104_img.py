@@ -126,9 +126,12 @@ def click_img():
 
 
 def open_blkmenu_via_handle():
-    js("(function(){var h=document.getElementById('blkhandle');"
-       "if(!h)return 'no-handle';"
-       "h.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));return 'ok'})()")
+    # IMG-13 回归改走右键路径：块手柄绑定 mousedown 且依赖真实 hover 定位 handleIdx，
+    # 合成事件无法 hover 会把菜单开到陈旧块上（正文段落）；右键图片是产品主路径
+    js("(function(){var im=document.querySelector('#editor img');if(!im)return 'no-img';"
+       "var r=im.getBoundingClientRect();"
+       "im.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,"
+       "clientX:r.left+2,clientY:r.top+2}));return 'ok'})()")
     wait(560)
 
 
@@ -221,9 +224,12 @@ bm = mi_list()
 acts = [str(x).split("|")[0] for x in bm.get("items", [])]
 labels = [str(x) for x in bm.get("items", [])]
 note("  图片菜单项=%s" % json.dumps(labels, ensure_ascii=False))
-for need in ("edit", "imgreset", "imgsize", "imgalign:l", "imgalign:c", "imgalign:r",
-             "viewimg", "copyimg", "up", "down", "del"):
+# v3.39.5（MENU-4）：恢复「省略当前状态项」——默认居中 → 无 imgalign:c
+for need in ("edit", "imgreset", "imgsize", "imgalign:l", "imgalign:r",
+             "imgreplace", "viewimg", "copyimg", "dup", "up", "down", "del"):
     check("C1 菜单含 %s" % need, need in acts, "acts=%s" % json.dumps(acts))
+check("C1b 当前项省略（默认居中无 imgalign:c）", "imgalign:c" not in acts,
+      "acts=%s" % json.dumps(acts))
 
 mi_click("imgalign:l")
 g = rawof()
@@ -360,8 +366,9 @@ open_blkmenu_via_handle()
 bm = mi_list()
 labels = [str(x) for x in bm.get("items", [])]
 note("  F2 网络图片菜单项=%s" % json.dumps(labels, ensure_ascii=False))
-check("F2 网络图片菜单出现「转化为相对路径存储」（而非转内嵌）",
-      any("转化为相对路径存储" in x for x in labels), "items=%s" % json.dumps(labels, ensure_ascii=False))
+# IMG-13（v3.38）：存储项统一为「转本地存储」（imglocalall，仅网络图片显示）
+check("F2 网络图片菜单出现「转本地存储」",
+      any("转本地存储" in x for x in labels), "items=%s" % json.dumps(labels, ensure_ascii=False))
 st2 = js("window.__imgStatusLabel(0)")
 note("  F2b 网络图片状态文案=%s" % json.dumps(st2, ensure_ascii=False))
 

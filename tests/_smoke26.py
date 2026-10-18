@@ -218,8 +218,17 @@ check("图表拖拉 → 围栏属性 w 落盘（围栏本体不变）",
       r5.startswith("```mermaid w=") and "flowchart TD" in r5, r5.split("\n")[0])
 check("图表宽度渲染生效", 'style="width:' in js("window.getMarkdown()") or True)
 
-click_btn("#objbar", "图注")
+# v3.39.13 同步：v3.38（MMD-16）起图注/重置尺寸已从 objbar 移入块菜单
+# （objbar 仅剩「源码」单钮），本段改走右键菜单 mmdcap / mmdreset
+js("(function(){var b=document.querySelector('#editor .blk .mermaidblock');"
+   "if(!b)return 'nob';b.dispatchEvent(new MouseEvent('contextmenu',"
+   "{bubbles:true,cancelable:true,clientX:300,clientY:200}));return 'x'})()")
 wait(250)
+js("(function(){var mi=document.querySelector('#blkmenu .mi[data-act=\"mmdcap\"]');"
+   "if(!mi)return 'nomi';"
+   "mi.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true}));"
+   "mi.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));return 'ok'})()")
+wait(300)
 js("(function(){document.getElementById('cap-input').value='流程图说明';return 'x'})()")
 js("document.getElementById('cap-ok').click()")
 wait(500)
@@ -228,8 +237,14 @@ check("图表图注写入围栏属性 cap", 'cap="流程图说明"' in r6, r6.sp
 cap_dom = jj("(function(){var c=document.querySelector('#editor .mmd-cap');"
              "return JSON.stringify({t:c?c.textContent:'',top:!!document.querySelector('#editor .mmd-wrap.top')})})()")
 check("图表图注渲染在下方", cap_dom.get("t") == "流程图说明" and cap_dom.get("top") is False, cap_dom)
-click_btn("#objbar", "图注")
+js("(function(){var b=document.querySelector('#editor .blk .mermaidblock');"
+   "b.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:300,clientY:200}));return 'x'})()")
 wait(250)
+js("(function(){var mi=document.querySelector('#blkmenu .mi[data-act=\"mmdcap\"]');"
+   "if(!mi)return 'nomi';"
+   "mi.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true}));"
+   "mi.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));return 'ok'})()")
+wait(300)
 js("(function(){var r=document.querySelectorAll('#cappop input[name=\"cappos\"]');r[1].checked=true;return 'x'})()")
 js("document.getElementById('cap-ok').click()")
 wait(500)
@@ -238,7 +253,13 @@ check("图注可切到上方（captop）",
       raw()[0].split("\n")[0])
 mdown("#editor .mermaidblock", 200, 200)
 wait(200)
-click_btn("#objbar", "重置尺寸")
+js("(function(){var b=document.querySelector('#editor .blk .mermaidblock');"
+   "b.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:300,clientY:200}));return 'x'})()")
+wait(250)
+js("(function(){var mi=document.querySelector('#blkmenu .mi[data-act=\"mmdreset\"]');"
+   "if(!mi)return 'nomi';"
+   "mi.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true}));"
+   "mi.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));return 'ok'})()")
 wait(500)
 check("图表重置尺寸 → 围栏属性回到 ```mermaid",
       raw()[0].split("\n")[0] == "```mermaid" or raw()[0].startswith("```mermaid cap="), raw()[0].split("\n")[0])

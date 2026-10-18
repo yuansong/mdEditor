@@ -11,12 +11,15 @@ import subprocess
 import tempfile
 import time
 import zipfile
+import sys
 
-from PySide6.QtCore import QEvent, QTimer, QUrl, QSize, Qt, QSettings, QMimeData
-from PySide6.QtGui import QAction, QActionGroup, QColor, QGuiApplication, QImage, QKeySequence
+from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QTimer, QUrl, QSize, Qt, QSettings, QMimeData
+from PySide6.QtGui import (QAction, QActionGroup, QBrush, QColor, QGuiApplication,
+                           QIcon, QImage, QKeySequence, QPainter, QPen, QPixmap)
 from PySide6.QtWidgets import (
-    QApplication, QDialog, QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
-    QMainWindow, QMenu, QMessageBox, QSplitter, QStackedWidget, QTabBar, QToolBar,
+    QApplication, QButtonGroup, QDialog, QFileDialog, QFrame, QHBoxLayout,
+    QInputDialog, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
+    QProxyStyle, QSplitter, QStackedWidget, QStyle, QTabBar, QToolBar,
     QToolButton, QVBoxLayout, QWidget,
 )
 from PySide6.QtWebEngineCore import (
@@ -25,7 +28,53 @@ from PySide6.QtWebEngineCore import (
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
 import exporters
-from config import APP_NAME, APP_VERSION, BUILTIN_TEMPLATES, DEMO_MD, DRAFT_DIR, FILE_LIST_DEFAULT_DIR, HERE, LOG_DIR, MD_EXTS, MMD_LEGACY, MMD_THEME_LABELS, MODES, TEMPLATE_FILE, TPL_FILE_VERSION, TPL_MAX_BYTES, TPL_NAME_MAX, UPDATE_URL, USER_DATA_DIR, js
+
+# v3.44.5（DESIGN01）：标签栏选中指示条 —— 设计稿 .tab.on::after 为 inset 10px 的
+# 2px accent 短线；QSS 的 border-bottom 无法 inset，故在 paintEvent 中自绘。
+
+# v3.44.8（TB-DWM）：Windows 原生标题栏沉浸式暗色同步（仅 win32 + 原生标题栏路径）。
+# 原生标题栏由 DWM 绘制、不在 Qt 主题系统内，故单独随深色主题族切换亮/暗。
+_DARK_THEMES = {"dark", "night", "panda"}
+
+
+def _win_set_immersive_dark(hwnd, enabled):
+    """通过 DwmSetWindowAttribute 切换原生标题栏亮/暗（仅 win32 生效）。"""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        dwmapi = ctypes.windll.dwmapi
+        DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+        proto = ctypes.WINFUNCTYPE(
+            ctypes.HRESULT, wintypes.HWND, ctypes.c_int, ctypes.c_void_p, ctypes.c_int)
+        DwmSetWindowAttribute = proto(("DwmSetWindowAttribute", dwmapi))
+        value = ctypes.c_int(1 if enabled else 0)
+        DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                             ctypes.byref(value), ctypes.sizeof(value))
+    except Exception:
+        pass
+
+
+class _TabBar(QTabBar):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._accent = QColor("#0052d9")
+
+    def set_accent(self, color):
+        self._accent = QColor(color) if not isinstance(color, QColor) else color
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        i = self.currentIndex()
+        if i < 0:
+            return
+        r = self.tabRect(i)
+        x0 = r.left() + 10
+        x1 = r.right() - 10
+        if x1 <= x0:
+            x0, x1 = r.left(), r.right()
+        p = QPainter(self)
+        p.fillRect(x0, r.bottom() - 1, x1 - x0, 2, self._accent)
+from config import APP_NAME, APP_VERSION, BUILTIN_TEMPLATES, CODE_STYLES, DEMO_MD, DRAFT_DIR, FILE_LIST_DEFAULT_DIR, FMTLOG_DIR, HERE, LOG_DIR, MD_EXTS, MMD_LEGACY, MMD_THEMES, MMD_THEME_LABELS, MODES, TEMPLATE_FILE, TPL_FILE_VERSION, TPL_MAX_BYTES, TPL_NAME_MAX, UPDATE_URL, USER_DATA_DIR, js
 
 # 斜杠（/）菜单可配置项：一级菜单 id 集与默认顺序 / 默认项 / 二级默认下标
 # v3.30.3：按用户要求移除「上标 / 下标」（supsub）一级项；^x^ / ~x~ 语法仍可输入
@@ -74,14 +123,17 @@ IMG_DATA_RE = re.compile(
     r"!\[([^\]]*)\]\(\s*(data:image/([A-Za-z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+))\s*\)")
 from dialogs import (
     CommandPaletteDialog, FindDialog, HistoryDialog, InsertImageDialog,
-    SettingsDialog, ShortcutDialog,
+    SettingsDialog, ShortcutDialog, StyleManagerDialog,
 )
 from icons import (
-    MODE_ICONS, icon_find, icon_new, icon_open, icon_redo, icon_save,
-    icon_settings, icon_undo,
+    icon_find, icon_history, icon_new, icon_open, icon_redo,
+    icon_save, icon_settings, icon_sidepanel, icon_toolbar_expand, icon_undo,
 )
 from sidebar import Sidebar
 import styles
+import uistyles
+import mactitlebar
+import ribbonchrome
 
 # v3.32（P0-5）：模块级日志器（main.setup_logging 已装配滚动文件输出）。
 _log = logging.getLogger("mdEditor.app")
@@ -154,6 +206,7 @@ class MainWindow(QMainWindow):
         self.resize(1240, 830)
         self.file_path = None
         self._dirty = False
+        self._saving = False   # v3.40（UI-R7）：状态栏保存格「⟳ 保存中」标记
         self._pdf_view = None
         self._pdf_path = None
         self._quitting = False
@@ -163,8 +216,24 @@ class MainWindow(QMainWindow):
         self._theme = self._settings.value("theme", "light")
         if self._theme not in styles.THEME_IDS:
             self._theme = "light"
+        # v3.39.15（UISTYLE-1）：界面风格（Qt 层皮肤，默认 ps01 现代经典）。
+        # 非法 / 已删除的风格 ID 在 set_active 内自动回退默认风格。
+        uistyles.set_active(str(self._settings.value("uiStyle", uistyles.DEFAULT_ID) or uistyles.DEFAULT_ID))
+        self._uistyle = uistyles.active()
+        # v3.41.0（UISTYLE-2 方案 A）：mac 统一工具栏 + 无边框窗口（懒创建，切换风格装/卸）
+        self._mac_wrap = None
+        self._mac_title = None
+        self._mac_frame_on = False
+        self._mac_prev_tb_vis = True
         self._zoom = float(self._settings.value("zoom", 1.0) or 1.0)
         self._autosave = self._settings.value("autosave", True, type=bool)
+        # v3.44（AUTOSAVE-INT）：自动保存节流间隔（秒，0=实时写盘）
+        self._autosave_interval = int(self._settings.value("autosaveInterval", 0) or 0)
+        # v3.44（RECENT-MAX）：最近文件保留条数（0=不保留）
+        self._recent_max = int(self._settings.value("recentMax", 10) or 10)
+        # v3.44（SESSION）：会话保存 / 自动保存节流时间戳
+        self._session_ts = 0.0
+        self._autosave_ts = 0.0
         # 代码块默认语言（插入代码块时预选，可在 系统设置→编辑器 修改）
         self._code_lang = str(self._settings.value("codeLang", "C") or "C")
         # v3.25 代码块行号 / 代码风格（系统设置→编辑器 可改；代码栏「风格」按钮可临时切换）
@@ -176,11 +245,11 @@ class MainWindow(QMainWindow):
         # P1-1 自动配对 / P1-8 Emoji 补全（默认开，系统设置→编辑器可关）
         self._auto_pair = self._settings.value("autoPair", True, type=bool)
         self._emoji = self._settings.value("emojiComplete", True, type=bool)
-        # P1-6 版本历史保留份数
+        # P1-6 版本历史保留份数（v3.43.1：默认 20 → 5，上限 200 → 100）
         try:
-            self._history_keep = max(1, min(200, int(self._settings.value("historyKeep", 20))))
+            self._history_keep = max(1, min(100, int(self._settings.value("historyKeep", 5))))
         except (TypeError, ValueError):
-            self._history_keep = 20
+            self._history_keep = 5
         # 斜杠（/）菜单配置（系统设置→编辑器 可改）
         raw_order = str(self._settings.value("slashMenuOrder", "") or "")
         saved_order = [x for x in raw_order.split(",") if x in SLASH_IDS]
@@ -207,6 +276,8 @@ class MainWindow(QMainWindow):
         self._file_list_mode = "blank" if _flm == "blank" else "current"
         # v3.31.2（#3）：大纲分节字数后缀显示开关（默认关）
         self._outline_words = self._settings.value("outlineWords", False, type=bool)
+        # v3.44.8（OUT-STRIP）：大纲不再暴露 H1/H2/H3 级别过滤 UI，强制全部显示（filter=0）。
+        self._outline_filter = 0
         # v3.31.2（#8）：段落首行缩进格数（0~4，默认 0）
         try:
             self._para_indent = max(0, min(4, int(self._settings.value("paraIndent", 0))))
@@ -218,6 +289,8 @@ class MainWindow(QMainWindow):
         #              embed =内嵌 data URL（图片写入 Markdown 本身）
         _imgm = str(self._settings.value("imageMode", "assets") or "assets")
         self._image_mode = "embed" if _imgm == "embed" else "assets"
+        # v3.39.8（FMT-LOG）：格式化操作日志开关（默认开；内核经 collect 差量上报落盘）
+        self._fmt_log = self._settings.value("fmtLog", True, type=bool)
         # 外部 pandoc 路径（导出 docx / EPUB 时优先使用；留空则自动探测 PATH）
         self._pandoc_path = str(self._settings.value("pandocPath", "") or "")
         # P1-7 外部编辑器可执行文件（留空 = 用系统默认关联程序打开）
@@ -259,7 +332,8 @@ class MainWindow(QMainWindow):
         }
 
         # v3.38（OUT-5）：启动行为默认值（设置页可改，QSettings 持久化）
-        self._startup_action = "blank"
+        # v3.44.1：默认改为「session」——启动时优先恢复上次多标签会话
+        self._startup_action = "session"
         self._startup_folder = ""
         # v3.38（FLP-1）：文件列表默认打开路径（config 默认值 + QSettings 覆盖）
         self._file_list_default_dir = str(
@@ -269,30 +343,38 @@ class MainWindow(QMainWindow):
         self._init_menu_toolbar()
         self.apply_theme(self._theme, persist=False)
 
-        # 初始文档：v3.38（OUT-5）「启动时」设置 —— blank=欢迎页（默认，行为不变）/
-        # lastFile=恢复上次打开的文件 / lastFileSide=恢复上次文件与侧栏位置 /
-        # folder=打开指定文件夹（仅侧栏定位，不打开文档）
-        _sa = str(self._settings.value("startupAction", self._startup_action) or "blank")
+        # 初始文档：v3.38（OUT-5）「启动时」；v3.44（SESSION）新增「session」完整会话恢复。
+        # session=恢复上次多标签会话（默认）/ lastFile=恢复上次单个文件 / blank=欢迎页 /
+        # folder=打开指定文件夹（仅侧栏定位，不打开文档）。旧 lastFileSide 值兼容映射为 session。
+        _sa = str(self._settings.value("startupAction", self._startup_action) or "session")
+        if _sa == "lastFileSide":
+            _sa = "session"
         _lf = str(self._settings.value("lastFile", "") or "")
-        if _sa in ("lastFile", "lastFileSide") and _lf and os.path.isfile(_lf):
+
+        if _sa == "session":
+            if not self._restore_session():
+                self._add_doc(path=None, text=DEMO_MD)
+                self._sidebar.restore_initial_dir()
+        elif _sa == "lastFile" and _lf and os.path.isfile(_lf):
             self._add_doc(path=_lf, text=self._read_file(_lf))
             self._add_recent(_lf)
-        else:
+        elif _sa == "folder":
             self._add_doc(path=None, text=DEMO_MD)
-            if _sa == "folder":
-                _sf = str(self._settings.value("startupFolder", "") or "")
-                if _sf and os.path.isdir(_sf):
-                    self._sidebar.set_root(_sf)
-        if _sa == "lastFileSide" and self.file_path:
-            _sd = str(self._settings.value("lastSidebarDir", "") or "")
-            if _sd and os.path.isdir(_sd):
-                self._sidebar.set_root(_sd)   # 侧栏位置恢复（优先于文件目录）
+            # v3.44：folder 档复用「默认打开位置」(files/defaultDir)，去重 startupFolder
+            _sf = str(self._settings.value("files/defaultDir", "") or "")
+            if _sf and os.path.isdir(_sf):
+                self._sidebar.set_root(_sf)
+        else:  # blank（默认）
+            self._add_doc(path=None, text=DEMO_MD)
 
         # v3.38（FLP-1）：文件列表默认打开路径 —— 上次访问目录（优先）→ 默认路径 → 根层。
-        # 只在「启动时 = 打开欢迎页」（默认档）接管：lastFile / lastFileSide / folder 三档
-        # 已各自决定侧栏位置（OUT-5），再覆盖会与既有语义打架。
+        # session / folder / lastFile 三档已由上方各自决定侧栏位置（OUT-5），
+        # 仅 blank 档（默认）接管 restore_initial_dir；folder 已定位则标记不再二次接管。
         if _sa == "blank":
             self._sidebar.restore_initial_dir()
+        elif _sa == "folder" and self._sidebar._cur_dir:
+            self._sidebar._initial_restored = True
+        # session 档在 _restore_session 内部已完成侧栏定位并标记 _initial_restored
 
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._poll)
@@ -333,7 +415,7 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._view)        # 0 单栏 WYSIWYG（1 = 双栏，惰性添加）
 
         # 多文件标签页
-        self._tabbar = QTabBar(self)
+        self._tabbar = _TabBar(self)
         self._tabbar.setTabsClosable(True)
         self._tabbar.setMovable(True)
         self._tabbar.setExpanding(False)
@@ -350,7 +432,9 @@ class MainWindow(QMainWindow):
         tab_wrap = QWidget(self)
         tab_wrap.setObjectName("tabstrip")
         tl = QHBoxLayout(tab_wrap)
-        tl.setContentsMargins(8, 0, 0, 0)
+        # v3.39.14（HEAD-1）：页面头对齐——左右 10px 与侧栏基准线一致；行高 42px
+        # 与侧栏「文件/大纲」头行同高，页签垂直居中
+        tl.setContentsMargins(12, 3, 12, 3)
         tl.addWidget(self._tabbar)
         # v3.38（TAB-9）：标签溢出下拉（N++ / VS Code 对标）—— 列出全部标签带
         # • 未保存 / 📌 固定标记，点击切换；仅在总宽超出可视宽度时启用
@@ -364,8 +448,10 @@ class MainWindow(QMainWindow):
         self._btn_tb_more.setEnabled(False)
         tl.addWidget(self._btn_tb_more)
         tl.addStretch(1)
+        tab_wrap.setFixedHeight(40)  # HEAD-2：与侧栏头行同高（40px，紧凑适中）
 
         right = QWidget(self)
+        right.setObjectName("contentArea")   # v3.44.3（DESIGN01）：编辑区显式底色
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
         rl.setSpacing(0)
@@ -378,6 +464,7 @@ class MainWindow(QMainWindow):
         self._sidebar.set_outline_words(self._outline_words)
         self._sidebar.set_file_mode(self._file_list_mode)
         split = QSplitter(Qt.Horizontal, self)
+        split.setObjectName("mainSplit")   # v3.44.4（DESIGN01 修复）：主分栏手柄着 chrome_line 分隔线
         split.setChildrenCollapsible(False)
         split.addWidget(self._sidebar)
         split.addWidget(right)
@@ -391,18 +478,23 @@ class MainWindow(QMainWindow):
         self.statusBar().addWidget(self._status)
         # v3.29d（B3）：临时提示独立区域（右侧、3 秒自动还原），不再覆盖左侧常驻信息
         self._toast = QLabel("")
-        self._toast.setStyleSheet("color: #0052d9; padding-right: 12px;")
+        self._toast.setStyleSheet("padding-right: 12px;")
         self.statusBar().addPermanentWidget(self._toast)
         self._toast_timer = QTimer(self)
         self._toast_timer.setSingleShot(True)
         self._toast_timer.timeout.connect(lambda: self._toast.setText(""))
-        # v3.29d（UX #26）：状态栏常驻「⌘ 命令」入口，提高命令面板发现率
-        self._cmd_entry = QLabel("⌘ 命令")
-        self._cmd_entry.setToolTip("打开命令面板（Ctrl+Shift+P）")
-        self._cmd_entry.setCursor(Qt.PointingHandCursor)
-        self._cmd_entry.setStyleSheet("color: #0052d9; padding: 0 8px;")
-        self._cmd_entry.mousePressEvent = lambda _e: self.show_command_palette()
-        self.statusBar().addPermanentWidget(self._cmd_entry)
+        # v3.30.10（HP-1）：状态栏「当前块」——光标进入任何块即显示类型 / 标题级别，
+        # （数据随 getCaretLineCol 轮询通道返回）
+        self._blktype = QLabel("")
+        self._blktype.setStyleSheet("padding-right: 4px;")
+        self.statusBar().addPermanentWidget(self._blktype)
+        # v3.40（UI-R7①）：状态栏六格 —— 消息区 | 模式 | 字数 | 行,列 | 缩放 | 保存态
+        # （UI-SPEC PS-03；模式格点击循环切换、缩放格点击重置 100%）
+        self._cell_mode = QLabel("写作")
+        self._cell_mode.setToolTip("当前模式 · 点击循环切换（写作 → 源码 → 分屏）")
+        self._cell_mode.setCursor(Qt.PointingHandCursor)
+        self._cell_mode.mousePressEvent = lambda _e: self.cycle_mode()
+        self.statusBar().addPermanentWidget(self._cell_mode)
         self._count = QLabel("字数 0 · 约 0 分钟")
         self._count.setCursor(Qt.PointingHandCursor)
         self._count.setToolTip("字数统计（中文按字 / 英文按词）· 点击查看详情")
@@ -411,11 +503,27 @@ class MainWindow(QMainWindow):
         self._pos = QLabel("行 1 · 列 1")
         self._pos.setToolTip("光标所在行 / 列（Ctrl+G 可跳转到指定行）")
         self.statusBar().addPermanentWidget(self._pos)
-        # v3.30.10（HP-1）：状态栏「当前块」——光标进入任何块即显示类型 / 标题级别，
-        # 零遮挡确认「选中的标题是几级」（数据随 getCaretLineCol 轮询通道返回）
-        self._blktype = QLabel("")
-        self._blktype.setStyleSheet("color: #6b7280; padding-right: 4px;")
-        self.statusBar().addPermanentWidget(self._blktype)
+        self._cell_zoom = QLabel("100%")
+        self._cell_zoom.setToolTip("编辑区缩放 · 点击重置 100%（Ctrl+= 放大 / Ctrl+- 缩小）")
+        self._cell_zoom.setCursor(Qt.PointingHandCursor)
+        self._cell_zoom.mousePressEvent = lambda _e: self.set_zoom(1.0)
+        self.statusBar().addPermanentWidget(self._cell_zoom)
+        self._cell_save = QLabel("✓ 已保存")
+        self._cell_save.setToolTip("当前文档保存状态（自动保存开启时停留时间极短）")
+        self._save_state = ""
+        self.statusBar().addPermanentWidget(self._cell_save)
+        # v3.29d（UX #26）：状态栏常驻「⌘ 命令」入口，提高命令面板发现率
+        self._cmd_entry = QLabel("⌘ 命令")
+        self._cmd_entry.setToolTip("打开命令面板（Ctrl+Shift+P）")
+        self._cmd_entry.setCursor(Qt.PointingHandCursor)
+        self._cmd_entry.setStyleSheet("padding: 0 8px;")
+        self._cmd_entry.mousePressEvent = lambda _e: self.show_command_palette()
+        self.statusBar().addPermanentWidget(self._cmd_entry)
+        # v3.40（UI-R7②）：状态栏可见性持久化（视图 → 显示 / 隐藏状态栏）
+        self.statusBar().setVisible(
+            self._settings.value("ui/statusbarVisible", True, type=bool))
+        self._update_save_cell()
+        self._cell_zoom.setText(f"{int(round(self._zoom * 100))}%")
 
     def _ensure_dual_views(self):
         """首次进入分屏时才创建源码 / 预览视图并加载编辑器页面（启动提速）。"""
@@ -433,7 +541,9 @@ class MainWindow(QMainWindow):
             v.setContextMenuPolicy(Qt.CustomContextMenu)
             v.customContextMenuRequested.connect(
                 lambda pos, view=v: self._show_ctx_menu(view, pos))
-            v.load(QUrl.fromLocalFile(os.path.join(os.path.dirname(__file__), "editor.html")))
+            _ed_url = QUrl.fromLocalFile(os.path.join(os.path.dirname(__file__), "editor.html"))
+            _ed_url.setQuery("dual")   # v3.44.9（SPLIT-EDGE）：分屏视图带 ?dual 触发 body.dual 贴边
+            v.load(_ed_url)
 
         self._dual_split = QSplitter(Qt.Horizontal, self)
         self._dual_split.setChildrenCollapsible(False)
@@ -452,21 +562,45 @@ class MainWindow(QMainWindow):
 
     # ================= 工具栏 + 菜单 =================
     def _init_menu_toolbar(self):
+        # v3.41.3（UI-R7 校准）：QToolBar 条目间距由样式 PM_ToolBarItemSpacing 控制
+        # （QSS spacing/margin 对 QToolBar 均不生效，实测 _m173），代理样式对齐设计稿 gap 2px
+        class _SideTBStyle(QProxyStyle):
+            def pixelMetric(self, pm, option=None, widget=None):
+                if pm == QStyle.PM_ToolBarItemSpacing and widget is not None \
+                        and widget.objectName() == "sideTB":
+                    return 2
+                return super().pixelMetric(pm, option, widget)
+
         # ---- 左侧竖向工具栏：只保留文件级高频操作，统一线性图标 ----
         tb = QToolBar("主工具栏", self)
         tb.setObjectName("sideTB")
+        tb.setStyle(_SideTBStyle(tb.style()))
         tb.setMovable(False)
         tb.setOrientation(Qt.Vertical)
         tb.setIconSize(QSize(20, 20))
+        # v3.39.14（HEAD-2）：三列比例调优——左按钮列钉宽 42px（原 ~53px），
+        # 层次感：窄按钮列(42) : 侧栏(224) : 内容区(其余)
+        tb.setFixedWidth(46)
         self.addToolBar(Qt.LeftToolBarArea, tb)
         self._tool_tb = tb
 
+        def v_sep():
+            # v3.41.3：分组分隔线 24x1（对齐设计稿 .vsep 24px 宽居中；
+            # QSS ::separator 宽度/margin 同样不生效，改用受控 QFrame）
+            s = QFrame(tb)
+            s.setObjectName("sideSep")
+            s.setFixedSize(24, 1)
+            tb.addWidget(s)
+
         # v3.38（TB-1）：工具栏可被隐藏（右键菜单 / 视图菜单 / 快捷键），而隐藏后原本
-        # 没有任何恢复入口 —— 连工具栏顶部的侧栏开关 « 也一起消失，等同死局。
-        # 这里在窗口左侧边缘常驻一个「»」展开按钮，只在工具栏隐藏时显形、始终置顶可点。
+        # 没有任何恢复入口 —— 连工具栏顶部的侧栏开关也一起消失，等同死局。
+        # 这里在窗口左侧边缘常驻一个展开按钮，只在工具栏隐藏时显形、始终置顶可点。
+        # v3.44.9（TB-EXP）：原文字「»」钮改为线性双右箭头矢量图标（icon_toolbar_expand），
+        # 与整体线性图标风格统一，去除老式文字钮观感。
         self._btn_tb_show = QToolButton(self)
         self._btn_tb_show.setObjectName("tbExpand")
-        self._btn_tb_show.setText("»")
+        self._btn_tb_show.setIcon(icon_toolbar_expand(16))
+        self._btn_tb_show.setIconSize(QSize(16, 16))
         self._btn_tb_show.setToolTip("展开工具栏（视图 → 显示 / 隐藏工具栏，或 Ctrl+Shift+B）")
         self._btn_tb_show.setCursor(Qt.PointingHandCursor)
         self._btn_tb_show.setAutoRaise(True)
@@ -481,41 +615,40 @@ class MainWindow(QMainWindow):
             a.setToolTip(tooltip)
             a.triggered.connect(slot)
             tb.addAction(a)
+            # v3.39.14（HEAD-2）：三列比例调优——按钮统一 36px，左列收窄到 ~42px
+            # v3.41.3（UI-R7 校准）：按钮 36x32 对齐设计稿 .vbtn（36x32）；
+            # 间隙 2px 由 styles.py 的 QSS margin 驱动（QToolBar 无 spacing API）
+            wd = tb.widgetForAction(a)
+            if wd is not None:
+                wd.setFixedSize(38, 34)
             return a
 
-        # 顶部：侧边栏开关（« 收起 / » 展开，Typora 同款侧栏位置）
+        # 顶部：侧边栏开关（v3.40 UI-R7③：R3.5 定稿——「«」文本钮统一为线性侧栏面板图标）
         self._btn_side = QToolButton(tb)
         self._btn_side.setAutoRaise(True)
-        self._btn_side.setText("«")
+        self._btn_side.setIcon(icon_sidepanel(20))
+        self._btn_side.setIconSize(QSize(20, 20))
         self._btn_side.setToolTip("收起侧边栏 (Ctrl+Shift+L)")
         self._btn_side.setCursor(Qt.PointingHandCursor)
-        # v3.26：收拢/展开符号加大加粗，保证可见性（用户反馈原字体太小）。
-        # 用按钮级 QSS 覆盖（全局 QSS 的 px 字号会压过 QFont，pointSize 方式无效）
-        self._btn_side.setStyleSheet("font-size: 17px; font-weight: 800; padding: 0 6px;")
+        self._btn_side.setFixedSize(38, 34)  # v3.44.5（DESIGN01）：对齐设计稿 .vbtn 38x34
         self._btn_side.clicked.connect(self.toggle_sidebar)
         tb.addWidget(self._btn_side)
-        tb.addSeparator()
+        v_sep()
 
         tb_act(icon_new(), "新建 (Ctrl+N)", self.new_file)
         tb_act(icon_open(), "打开 (Ctrl+O)", lambda: self.open_file(None))
         tb_act(icon_save(), "保存 (Ctrl+S)", self.save_file)
-        tb.addSeparator()
+        v_sep()
         # 撤销 / 重做：快捷键仍由编辑菜单注册，这里只放图标按钮
         tb_act(icon_undo(), "撤销 (Ctrl+Z)", lambda: self._js_active('window.cmd("undo")'))
         tb_act(icon_redo(), "重做 (Ctrl+Y)", lambda: self._js_active('window.cmd("redo")'))
-        tb.addSeparator()
+        v_sep()
         tb_act(icon_find(), "查找 / 替换 (Ctrl+F)", lambda: self.show_find(False))
-        tb.addSeparator()
-        # 模式切换按钮：单击循环 写作 → 源码 → 分屏 → 写作
-        self._btn_mode = QToolButton(tb)
-        self._btn_mode.setAutoRaise(True)
-        self._btn_mode.setIconSize(QSize(20, 20))
-        self._btn_mode.setCursor(Qt.PointingHandCursor)
-        self._btn_mode.clicked.connect(self.cycle_mode)
-        tb.addWidget(self._btn_mode)
-        self._update_mode_button()
-        # 系统设置入口（左侧工具栏底部齿轮按钮）
-        tb.addSeparator()
+        v_sep()
+        # v3.40（UI-R7④）：R4 定稿——历史版本前置为高频安全操作（工具菜单保留同源入口）
+        tb_act(icon_history(), "历史版本 (Ctrl+Shift+H)", self.show_history)
+        # v3.40（UI-R7⑤）：R4 定稿——设置齿轮上移，紧随历史版本之后（不再沉底）；
+        # 原模式循环钮移除，模式切换改由菜单栏右端分段钮承担（单击直切）
         tb_act(icon_settings(), "系统设置", self.show_settings)
         # v3.38（TB-1）：工具栏被隐藏（右键菜单 / 视图菜单 / 快捷键）→ 同步边缘展开按钮。
         # 注意只同步 UI、不写 QSettings：窗口关闭 / 隐藏时 Qt 也会给子控件发 HideToParent，
@@ -546,22 +679,17 @@ class MainWindow(QMainWindow):
         # 故改用 Ctrl+Alt+T，避免抢键。
         self._reg_act("文件", "重新打开关闭的标签", "Ctrl+Alt+T", self._reopen_closed_tab, menu=m_file)
         m_file.addSeparator()
-        self._reg_act("文件", "导出 HTML…", None, self.export_html, menu=m_file)
-        self._reg_act("文件", "导出 PDF…（含书签）", None, self.export_pdf, menu=m_file)
-        self._reg_act("文件", "导出 Word (docx)…", None, self.export_docx, menu=m_file)
-        self._reg_act("文件", "导出 EPUB…", None, self.export_epub, menu=m_file)
-        self._reg_act("文件", "迁移内嵌图片为文件…", None, self.migrate_embedded_images, menu=m_file)
-        m_file.addSeparator()
-        # P1-6 / P1-7：版本历史（v3.25：「资源管理器显示 / 外部程序打开」移入侧栏文件列表右键）
-        self._reg_act("文件", "历史版本…", "Ctrl+Shift+H", self.show_history, menu=m_file)
-        # v3.32（P0-3）：命令面板同款「立即留档」在文件菜单也可见，主动打点
-        self._reg_act("文件", "立即留档（版本快照）", None, self.manual_snapshot, menu=m_file)
-        # v3.32（P0-7）：本地唯一副本的最低成本容灾出口
-        self._reg_act("文件", "归档整个工作区…", None, self.archive_workspace, menu=m_file)
-        # v3.32（P1-2②）：「复制为 HTML」是中文用户最高频交付动作，从编辑菜单提级
+        # v3.40（UI-R7⑥）：R6/3.2 定稿——导出 5 项收拢为「导出」子菜单（Word/WPS 惯例），
+        # 文件菜单只留文档生命周期
+        m_export = m_file.addMenu("导出")
+        self._reg_act("文件", "导出 HTML…", None, self.export_html, menu=m_export)
+        self._reg_act("文件", "导出 PDF…（含书签）", None, self.export_pdf, menu=m_export)
+        self._reg_act("文件", "导出 Word (docx)…", None, self.export_docx, menu=m_export)
+        self._reg_act("文件", "导出 EPUB…", None, self.export_epub, menu=m_export)
+        # v3.32（P1-2②）：「复制为 HTML」是中文用户最高频交付动作（随导出组收拢）
         a = QAction("复制为 HTML（公众号 / Word 富文本）", self)
         a.triggered.connect(self.copy_as_html)
-        m_file.addAction(a)
+        m_export.addAction(a)
         m_file.addSeparator()
         self._reg_act("文件", "退出", "Ctrl+Q", self.close, menu=m_file)
 
@@ -631,13 +759,31 @@ class MainWindow(QMainWindow):
         self._act_toolbar = self._reg_act("视图", "显示 / 隐藏工具栏", "Ctrl+Shift+B",
                                           self.toggle_toolbar, menu=m_view, checkable=True)
         self._act_toolbar.setChecked(True)
-        self._reg_act("视图", "文件列表", "Ctrl+Shift+E", lambda: self._show_sidebar_tab(0), menu=m_view)
-        self._reg_act("视图", "大纲", "Ctrl+Shift+O", lambda: self._show_sidebar_tab(1), menu=m_view)
+        # v3.40（UI-R7⑦）：UI 开关组补「状态栏」（UI-SPEC 3.1 视图=纯视觉与窗口行为）
+        self._act_statusbar = self._reg_act("视图", "显示 / 隐藏状态栏", None,
+                                            self.toggle_statusbar, menu=m_view, checkable=True)
+        self._act_statusbar.setChecked(self._settings.value("ui/statusbarVisible", True, type=bool))
+        # ---- v3.43.0（VIEW-REF）：条目文案与分组对齐设计稿 02_视图菜单 ----
+        m_view.addSeparator()
+        self._reg_act("视图", "文件列表页签", "Ctrl+Shift+E", lambda: self._show_sidebar_tab(0), menu=m_view)
+        self._reg_act("视图", "大纲页签", "Ctrl+Shift+O", lambda: self._show_sidebar_tab(1), menu=m_view)
+        m_view.addSeparator()
         # v3.38（TAB-4）：上一 / 下一标签页（Ctrl+PgUp / Ctrl+PgDn，N++ 与 VS Code 同款）
-        self._reg_act("视图", "上一个标签页", "Ctrl+PgUp", lambda: self._cycle_tab(-1), menu=m_view)
-        self._reg_act("视图", "下一个标签页", "Ctrl+PgDown", lambda: self._cycle_tab(1), menu=m_view)
+        self._reg_act("视图", "上一标签页", "Ctrl+PgUp", lambda: self._cycle_tab(-1), menu=m_view)
+        self._reg_act("视图", "下一标签页", "Ctrl+PgDown", lambda: self._cycle_tab(1), menu=m_view)
         # v3.38（TAB-8）：Ctrl+Tab MRU 快切面板（松开 Ctrl 或回车确认，Esc 取消）
         self._reg_act("视图", "标签快切面板", "Ctrl+Tab", self._open_tab_switcher, menu=m_view)
+        m_view.addSeparator()
+        # v3.40（UI-R7⑧）：缩放组（参照图未含此组，v3.40 起保留；Ctrl+0 已属「正文」格式命令不能抢）
+        self._reg_act("视图", "放大", "Ctrl+=", lambda: self.set_zoom(self._zoom + 0.1), menu=m_view)
+        self._reg_act("视图", "缩小", "Ctrl+-", lambda: self.set_zoom(self._zoom - 0.1), menu=m_view)
+        self._reg_act("视图", "重置缩放", None, lambda: self.set_zoom(1.0), menu=m_view)
+        m_view.addSeparator()
+        # P1-2 标题折叠（参照图：折叠组在打字机 / 专注之前）
+        self._reg_act("视图", "折叠全部标题", "Ctrl+Shift+[",
+                      lambda: self.fold_all_headings(True), menu=m_view)
+        self._reg_act("视图", "展开全部标题", "Ctrl+Shift+]",
+                      lambda: self.fold_all_headings(False), menu=m_view)
         m_view.addSeparator()
         self._act_typewriter = self._reg_act("视图", "打字机模式", None,
                                              self.toggle_typewriter, menu=m_view, checkable=True)
@@ -647,32 +793,166 @@ class MainWindow(QMainWindow):
         self._act_typewriter.setChecked(self._typewriter)
         self._act_focus.setChecked(self._focus)
         m_view.addSeparator()
-        # P1-2 标题折叠
-        self._reg_act("视图", "折叠全部标题", "Ctrl+Shift+[",
-                      lambda: self.fold_all_headings(True), menu=m_view)
-        self._reg_act("视图", "展开全部标题", "Ctrl+Shift+]",
-                      lambda: self.fold_all_headings(False), menu=m_view)
-        m_view.addSeparator()
         self._reg_act("视图", "全屏", "F11", self.toggle_fullscreen, menu=m_view)
         # v3.34（MMD-11）：图表主题入口从视图菜单移到「设置 → 系统设置 → 外观」，
         # 与界面主题 / 字号同处一页集中配置；切换逻辑仍走 _set_mmd_theme
         self._theme_acts = {}
 
-        # ---- 设置 ----
-        m_set = self.menuBar().addMenu("设置(&S)")
-        self._reg_act("设置", "系统设置…", None, self.show_settings, menu=m_set)
-        self._reg_act("设置", "快捷键设置…", None, self.show_shortcut_settings, menu=m_set)
+        # ---- 外观（v3.43.0 LOOK-1）：原「系统设置 → 外观」页整体提升为一级菜单 ----
+        #      位置：视图(V) 之后、工具(T) 之前（设计稿 01~06 顶栏同序）；
+        #      四个子菜单均为 QActionGroup 互斥单选 + 当前项打勾，展开时同步选中态。
+        m_look = self.menuBar().addMenu("外观(&A)")
+        self._m_look = m_look
+        m_look.aboutToShow.connect(self._sync_look_menu)
+
+        # 1) 界面风格 —— 严格取自设计稿的 6 套，名称纯净（无编号 / 后缀）
+        self._sm_style = m_look.addMenu("界面风格")
+        self._style_group = QActionGroup(self)
+        self._style_group.setExclusive(True)
+        self._sm_style.aboutToShow.connect(self._rebuild_style_menu)
+
+        # 2) 主题 —— 六套，色卡图标取 THEMES 的 swatch
+        self._sm_theme = m_look.addMenu("主题")
+        self._theme_group = QActionGroup(self)
+        self._theme_group.setExclusive(True)
+        for t in styles.THEMES:
+            act = QAction(t["label"], self)
+            act.setCheckable(True)
+            act.setIcon(self._chip_icon(t.get("swatch") or "#ffffff"))
+            act.triggered.connect(lambda _=False, tid=t["id"]: self.apply_theme(tid))
+            self._theme_group.addAction(act)
+            self._sm_theme.addAction(act)
+            self._theme_acts[t["id"]] = act
+
+        # 3) 图表风格（mermaid）—— 与图表块右键子菜单共用 QSettings.mmdTheme
+        self._sm_mmd = m_look.addMenu("图表风格")
+        self._mmd_group = QActionGroup(self)
+        self._mmd_group.setExclusive(True)
+        self._mmd_acts = {}
+        for _label, _val in MMD_THEMES:
+            act = QAction(_label, self)
+            act.setCheckable(True)
+            act.triggered.connect(lambda _=False, v=_val: self._set_mmd_theme(v))
+            self._mmd_group.addAction(act)
+            self._sm_mmd.addAction(act)
+            self._mmd_acts[_val] = act
+
+        # 4) 代码风格 —— 与代码块默认配置共用 config.CODE_STYLES
+        self._sm_code = m_look.addMenu("代码风格")
+        self._code_group = QActionGroup(self)
+        self._code_group.setExclusive(True)
+        self._code_acts = {}
+        for _sid, _slabel in CODE_STYLES:
+            act = QAction(_slabel, self)
+            act.setCheckable(True)
+            act.triggered.connect(lambda _=False, s=_sid: self.set_code_prefs(style=s))
+            self._code_group.addAction(act)
+            self._sm_code.addAction(act)
+            self._code_acts[_sid] = act
+
+        # v3.43.1（SET-4）：「界面风格管理…」菜单项移除 —— 管理对话框没有就地
+        # 新增能力（新增 = 把风格 JSON 放进风格文件夹再刷新），单独挂一级入口
+        # 价值有限；命令面板（Ctrl+Shift+P）保留「界面风格管理…」兜底，
+        # show_style_manager() 方法与 StyleManagerDialog 均保留。
+
+        # ---- 工具（v3.40 UI-R7⑨：R6 定稿「工具(T)」——版本容灾 / 批量工具 / 设置并入；
+        #      3.2 迁移清单：文件菜单的版本组与批量工具、「设置」菜单整体迁入）----
+        m_tool = self.menuBar().addMenu("工具(&T)")
+        self._reg_act("工具", "历史版本…", "Ctrl+Shift+H", self.show_history, menu=m_tool)
+        # v3.32（P0-3）：命令面板同款「立即留档」在工具菜单也可见，主动打点
+        self._reg_act("工具", "立即留档（版本快照）", None, self.manual_snapshot, menu=m_tool)
+        m_tool.addSeparator()
+        self._reg_act("工具", "迁移内嵌图片为文件…", None, self.migrate_embedded_images, menu=m_tool)
+        # v3.32（P0-7）：本地唯一副本的最低成本容灾出口
+        self._reg_act("工具", "归档整个工作区…", None, self.archive_workspace, menu=m_tool)
+        m_tool.addSeparator()
+        self._reg_act("工具", "系统设置…", "Ctrl+,", self.show_settings, menu=m_tool)
+        self._reg_act("工具", "快捷键设置…", None, self.show_shortcut_settings, menu=m_tool)
 
         # ---- 帮助（始终放最后）----
         m_help = self.menuBar().addMenu("帮助(&H)")
         # v3.38（HELP-1）：使用手册（只读渲染视图，滚动浏览全功能参考指南）
         self._reg_act("帮助", "使用手册", "F12", self._show_manual, menu=m_help)
-        self._reg_act("帮助", "快捷键一览", "F1", self._show_shortcuts, menu=m_help)
+        # v3.44.31（FIX ④）：移除「快捷键一览」F1 对话框，快捷键统一收录于《使用手册》第 10 章
         # v3.32（P0-6①）：检查更新（version.json 只提示不强升）
         self._reg_act("帮助", "检查更新…", None, self.check_update, menu=m_help)
         # v3.32（P0-5②）：复制诊断信息（版本 / 系统 / 依赖 / 最近日志）
         self._reg_act("帮助", "复制诊断信息", None, self.copy_diagnostics, menu=m_help)
         self._reg_act("帮助", "关于", None, self._about, menu=m_help)
+
+        # ---- v3.40（UI-R7⑩）：菜单栏右端「视图状态区」（R5 定稿）——
+        #      ◉ 专注 / ≡ 打字机 快捷开关 + 写作|源码|分屏 分段钮（单击直切）。
+        #      状态唯一源 = self._mode / _typewriter / _focus（性能红线：单向订阅，无双向广播）
+        corner = QWidget(self)
+        corner.setObjectName("vsz")
+        cl = QHBoxLayout(corner)
+        cl.setContentsMargins(0, 0, 6, 0)
+        cl.setSpacing(2)
+
+        def _qk(text, tip, slot):
+            b = QToolButton(corner)
+            b.setText(text)
+            b.setObjectName("qk")
+            b.setToolTip(tip)
+            b.setCursor(Qt.PointingHandCursor)
+            b.setCheckable(True)
+            b.setAutoRaise(True)
+            b.setFixedHeight(22)
+            b.clicked.connect(slot)
+            cl.addWidget(b)
+            return b
+
+        self._qk_focus = _qk("◉ 专注", "专注模式（隐藏侧栏 / 工具栏，居中书写）",
+                             self.toggle_focus)
+        self._qk_tw = _qk("≡ 打字机", "打字机模式（当前行恒居屏幕中部）",
+                          self.toggle_typewriter)
+        self._qk_sep = QLabel(corner)
+        self._qk_sep.setFixedSize(1, 14)
+        cl.addWidget(self._qk_sep)
+        # v3.44.6：模式分段钮（写作|源码|分屏）重构为「立体分段控件」——
+        # 外层圆角容器（浮雕渐变 + 描边）包裹三钮，钮间 1px 分隔线；选中段 accent 实心填充（凸起激活段）。
+        # 与左侧 专注/打字机 的「扁平」风格形成对比，整体仍属同一套现代经典语言。
+        self._seg_group = QButtonGroup(corner)
+        self._seg_group.setExclusive(True)
+        self._seg_btns = {}
+        seg_group = QWidget(corner)
+        seg_group.setObjectName("segGroup")
+        seg_group.setAttribute(Qt.WA_StyledBackground, True)  # 普通 QWidget 需此属性才会绘制 QSS 背景/边框（立体容器）
+        sgl = QHBoxLayout(seg_group)
+        sgl.setContentsMargins(1, 1, 1, 1)
+        sgl.setSpacing(0)
+        self._seg_divs = []
+        for i, (mid, label, tip) in enumerate((
+            ("edit", "写作", "写作模式（所见即所得）"),
+            ("src", "源码", "源码模式（直接编辑 Markdown 源码）"),
+            ("dual", "分屏", "分屏模式（左侧源码 · 右侧实时预览，Ctrl+Shift+D）"),
+        )):
+            if i > 0:
+                dv = QLabel(seg_group)
+                dv.setObjectName("segDiv")
+                dv.setFixedSize(1, 14)
+                sgl.addWidget(dv)
+                self._seg_divs.append(dv)
+            b = QToolButton(seg_group)
+            b.setObjectName("seg")
+            b.setText(label)
+            b.setToolTip(tip)
+            b.setCursor(Qt.PointingHandCursor)
+            b.setCheckable(True)
+            b.setFixedHeight(18)
+            b.clicked.connect(lambda _=False, m=mid: self._set_mode(m))
+            self._seg_group.addButton(b)
+            self._seg_btns[mid] = b
+            sgl.addWidget(b)
+        self._seg_group_widget = seg_group
+        seg_group.setFixedHeight(24)  # v3.44.28 RIBBON-14：容器仅略高于 18px 按钮
+        cl.addWidget(seg_group)
+        self.menuBar().setCornerWidget(corner, Qt.TopRightCorner)
+        self._vsz_corner = corner
+        self._qk_focus.setChecked(self._focus)
+        self._qk_tw.setChecked(self._typewriter)
+        self._seg_btns[self._mode].setChecked(True)
+        self._apply_chrome_styles()
 
         # v3.38（TB-1）：恢复上次的工具栏可见性（隐藏 → 同步显形边缘展开按钮）
         self.set_toolbar_visible(
@@ -749,6 +1029,60 @@ class MainWindow(QMainWindow):
         else:
             self._shortcut_defs.append((group, [(name, seq)]))
         return act
+
+    # ================= v3.43.0（LOOK-1）：外观菜单辅助 =================
+    def _chip_icon(self, hexc):
+        """菜单项色卡图标（圆角小方块）：主题取 swatch、界面风格取风格强调色。"""
+        pm = QPixmap(14, 14)
+        pm.fill(Qt.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setBrush(QBrush(QColor(hexc or "#ffffff")))
+        p.setPen(QPen(QColor("#9aa2ab"), 1))
+        p.drawRoundedRect(1, 1, 12, 12, 3, 3)
+        p.end()
+        return QIcon(pm)
+
+    def _rebuild_style_menu(self):
+        """「外观 → 界面风格」每次展开重建：注册表可增删，菜单需跟随。"""
+        cur = uistyles.active()
+        for act in self._sm_style.actions():
+            self._style_group.removeAction(act)
+        self._sm_style.clear()
+        for sid, label in uistyles.menu_styles():
+            act = QAction(label, self)
+            act.setCheckable(True)
+            act.setChecked(sid == cur)
+            act.setIcon(self._chip_icon(uistyles.style_accent(sid, self._theme)))
+            act.setToolTip(uistyles.get_style(sid).get("desc", "") if uistyles.get_style(sid) else "")
+            act.triggered.connect(lambda _=False, s=sid: self.set_uistyle(s))
+            self._style_group.addAction(act)
+            self._sm_style.addAction(act)
+
+    def _sync_look_menu(self):
+        """展开「外观」时同步主题 / 图表风格 / 代码风格的勾选态。
+
+        三处状态都可能被别处改动（图表块右键主题、代码块「风格」按钮、
+        命令面板、启动恢复），故以 QSettings / 主窗口当前值为准统一回写勾选。
+        """
+        for tid, act in self._theme_acts.items():
+            act.setChecked(tid == self._theme)
+        _mmd = MMD_LEGACY.get(self._settings.value("mmdTheme", "") or "",
+                              self._settings.value("mmdTheme", "") or "")
+        for val, act in self._mmd_acts.items():
+            act.setChecked(val == _mmd)
+        for sid, act in self._code_acts.items():
+            act.setChecked(sid == self._code_style)
+
+    def show_style_manager(self):
+        """界面风格管理（原设置中心「外观」页的风格组，含刷新 / 文件夹 / 删除）。"""
+        if not hasattr(self, "_style_dlg"):
+            self._style_dlg = StyleManagerDialog(self)
+        dlg = self._style_dlg
+        dlg._apply_theme_qss(self._theme)
+        dlg.reload()
+        dlg.show()
+        dlg.raise_()
 
     def shortcut_groups(self):
         """给快捷键设置对话框：[(分组, [动作名, ...]), ...]"""
@@ -832,6 +1166,8 @@ class MainWindow(QMainWindow):
         # 图片相对路径解析依赖文档目录与图片模式，必须在 setMarkdown 之前下发
         self._js_view(view, f"window.setDocDir({js(self._doc_dir())})")
         self._js_view(view, f"window.setImageMode({js(self._image_mode)})")
+        # v3.39.8（FMT-LOG）：日志开关在 setMarkdown 前下发（与图片模式同序）
+        self._js_view(view, f"window.setFmtLog && window.setFmtLog({js(bool(self._fmt_log))})")
         self._js_view(view, f"window.setMarkdown({js(text)})")
         if st["src"]:
             self._js_view(view, "window.setSourceMode(true)")
@@ -841,6 +1177,8 @@ class MainWindow(QMainWindow):
         st["pending"] = ""
         # 主题 / 缩放 / 写作辅助随视图加载同步（含惰性创建的分屏视图）
         self._js_view(view, f"window.setTheme({js(self._theme)})")
+        # v3.42.0：界面风格内容级 CSS 随视图加载注入
+        self._js_view(view, self._style_patch_js())
         view.setZoomFactor(self._zoom)
         self._js_view(view,
                       f"window.setMode({{typewriter: {str(bool(getattr(self, '_typewriter', False))).lower()}, "
@@ -854,6 +1192,9 @@ class MainWindow(QMainWindow):
         # 旧版值归一化到新主题）
         _mmd0 = self._settings.value('mmdTheme', '') or ''
         self._js_view(view, f"window.setMmdTheme({js(MMD_LEGACY.get(_mmd0, _mmd0))})")
+        # v3.40（UI-R7 R6 补偿②）：首次空白文档一次性气泡（写作视图加载完成后判一次）
+        if role == "edit":
+            self._maybe_slash_bubble()
         # v3.31.2（#8/#9）：段首缩进 / 标题 1 居中随视图加载下发
         self._js_view(view, f"window.setParaIndent({int(getattr(self, '_para_indent', 0))})")
         self._js_view(view,
@@ -900,6 +1241,11 @@ class MainWindow(QMainWindow):
                         self._on_caret)
         # v3.29d（S2/C1）：取走编辑器侧的轻量提示（删除可撤销 / 模式提示等）
         self._js_active("window.takeToast ? window.takeToast() : null", self._on_toast)
+        # v3.44（SESSION）：周期性保存会话（每 ~3 秒），崩溃 / 断电可恢复多标签
+        _n = time.time()
+        if _n - self._session_ts >= 3:
+            self._session_ts = _n
+            self.save_session()
 
     def _on_toast(self, res):
         msg = res if isinstance(res, str) else None
@@ -915,7 +1261,8 @@ class MainWindow(QMainWindow):
         if msg == "##quotetip":
             if not self._settings.value("quoteTipShown", False, type=bool):
                 self._settings.setValue("quoteTipShown", True)
-                self.show_status("提示：连续两次回车退出引用；Tab 嵌套 / Shift+Tab 减少嵌套")
+                # v3.38（QUO-12）：提示明确化 —— 退出条件 = 空行上回车
+                self.show_status("提示：引用末尾空行上按回车即可退出（行尾连按两次回车）；Tab 加一层嵌套 / Shift+Tab 减一层")
             return
         self.show_status(msg)
 
@@ -930,7 +1277,10 @@ class MainWindow(QMainWindow):
             self._blktype.setText(data.get("type") or "")
         elif isinstance(data, dict) and data.get("imgsel"):
             # v3.30.17：选中图片 → 状态栏显示存储方式 / 存储文件名；取消选中 → 清空
-            self._blktype.setText(data.get("type") or "")
+            # v3.39.2（IMG-16）：追加完整路径（相对路径由内核按文档目录解析为绝对路径）
+            _t16 = data.get("type") or ""
+            _p16 = data.get("path") or ""
+            self._blktype.setText((_t16 + " · " + _p16) if _p16 else _t16)
 
     def _poll_sync_scroll(self):
         """v3.29 双栏同步滚动：源码视图滚动位置 / 光标段落 → 预览视图。
@@ -1080,6 +1430,19 @@ class MainWindow(QMainWindow):
         for t in styles.THEMES:
             rows.append({"group": "外观", "name": f"切换主题：{t['label']}", "seq": "",
                          "enabled": True, "run": theme_cmd(t["id"])})
+        # v3.43.0（LOOK-1）：外观四项全部进命令面板 —— mac / zen 两套风格会藏掉菜单栏，
+        # 命令面板是唯一不受布局门控影响、任何风格下都能改回外观的通道。
+        for sid, label in uistyles.menu_styles():
+            rows.append({"group": "外观", "name": f"切换界面风格：{label}", "seq": "",
+                         "enabled": True, "run": (lambda s=sid: self.set_uistyle(s))})
+        for _label, _val in MMD_THEMES:
+            rows.append({"group": "外观", "name": f"切换图表风格：{_label}", "seq": "",
+                         "enabled": True, "run": (lambda v=_val: self._set_mmd_theme(v))})
+        for _sid, _slabel in CODE_STYLES:
+            rows.append({"group": "外观", "name": f"切换代码风格：{_slabel}", "seq": "",
+                         "enabled": True, "run": (lambda s=_sid: self.set_code_prefs(style=s))})
+        rows.append({"group": "外观", "name": "界面风格管理…", "seq": "",
+                     "enabled": True, "run": self.show_style_manager})
         for m_id, _icon, label, _desc in MODES:
             rows.append({"group": "视图", "name": f"切换到{label}", "seq": "",
                          "enabled": True, "run": (lambda m=m_id: self._set_mode(m))})
@@ -1333,9 +1696,9 @@ class MainWindow(QMainWindow):
         self.show_status("Emoji 补全：开" if on else "Emoji 补全：关")
 
     def set_history_keep(self, n):
-        """历史版本保留份数（1~200，系统设置→编辑器）。"""
+        """历史版本保留份数（1~100，系统设置→通用；v3.43.1 上限 200 → 100）。"""
         try:
-            n = max(1, min(200, int(n)))
+            n = max(1, min(100, int(n)))
         except (TypeError, ValueError):
             return
         self._history_keep = n
@@ -1557,6 +1920,46 @@ class MainWindow(QMainWindow):
             "相对路径（保存到「文档名.assets」文件夹）" if mode == "assets"
             else "内嵌 data URL（图片写入文档本身）"))
 
+    # ---- v3.39.8（FMT-LOG）：格式化操作日志 ----
+    def _append_fmt_log(self, entries):
+        """内核 collect 差量带出的格式化操作记录，JSON Lines 追加落盘
+        （%APPDATA%/mdEditor/fmtlog/fmt-YYYYMMDD.log，每行一条 JSON：
+        n 序号 / t 时间 / act 动作 / obj 应用前块源码 / res 应用后 / note 备注 / doc 文档名）。"""
+        try:
+            os.makedirs(FMTLOG_DIR, exist_ok=True)
+            fp = os.path.join(FMTLOG_DIR, time.strftime("fmt-%Y%m%d.log"))
+            doc = ""
+            if 0 <= self._cur < len(self._docs):
+                doc = os.path.basename(self._docs[self._cur].get("path") or "未命名")
+            with open(fp, "a", encoding="utf-8") as f:
+                for e in entries:
+                    if not isinstance(e, dict):
+                        continue
+                    e = dict(e)
+                    e["doc"] = doc
+                    f.write(json.dumps(e, ensure_ascii=False) + "\n")
+        except OSError:
+            pass
+
+    def set_fmt_log(self, on):
+        """设置开关（即时生效）：QSettings 持久化 + 内核侧窗口标志下发。"""
+        self._fmt_log = bool(on)
+        self._settings.setValue("fmtLog", self._fmt_log)
+        self._push_fmt_log_flag()
+        self.show_status("格式化操作日志已开启" if self._fmt_log else "格式化操作日志已关闭")
+
+    def _push_fmt_log_flag(self):
+        """向所有已加载视图下发日志开关（window.setFmtLog）。"""
+        code = f"window.setFmtLog && window.setFmtLog({js(bool(self._fmt_log))})"
+        for role, v in (("edit", self._view), ("src", self._view_src), ("prev", self._view_prev)):
+            if v is not None and self._vstate.get(role, {}).get("loaded"):
+                self._js_view(v, code)
+
+    def show_fmt_log(self):
+        """帮助 → 格式化操作日志：查看 / 复制 / 导出 / 清空。"""
+        dlg = FmtLogDialog(self)
+        dlg.exec()
+
     # ---- v3.25 图片存储操作：重命名 / 内嵌 ↔ 相对路径（编辑器悬浮按钮发起） ----
     def _handle_img_req(self, req):
         """处理编辑器 collect 轮询带出的图片操作请求，完成后回调 imgReqDone。"""
@@ -1573,8 +1976,35 @@ class MainWindow(QMainWindow):
             self._img_to_assets(idx, src)
         elif act == "imgCopy":
             self._img_copy(idx, src)
+        elif act == "imgCrop":                                                     # v3.39.6（IMG-CROP）
+            # v3.39.8：异常兜底 —— 此前未捕获异常会让裁剪静默失败（无提示无回调）
+            try:
+                self._img_crop(idx, src, req)
+            except Exception as e:                                                 # noqa: BLE001
+                self.show_status(f"裁剪失败：{e}")
         elif act == "imgReplace":
             self._img_replace(idx, str(req.get("mode") or "assets"))   # v3.38
+        elif act == "mmdToImg":
+            self._mmd_to_img(idx, str(req.get("dataUrl") or ""))       # v3.38（MMD-TOIMG）
+
+    def _mmd_to_img(self, idx, data_url):
+        """v3.38（MMD-TOIMG）：图表「转化为图片」—— PNG 落盘 assets（相对路径），
+        回调后编辑器整块替换为图片语法；单向不可逆（不保留图表源码）。"""
+        m = re.match(r"^data:image/png;base64,(.*)$", data_url, re.S)
+        if not m:
+            self.show_status("图表转图片失败：图片数据无效")
+            return
+        try:
+            data = base64.b64decode(m.group(1))
+        except (ValueError, binascii.Error):
+            self.show_status("图表转图片失败：图片数据无效")
+            return
+        rel = self._save_image_to_assets(data=data, filename="chart.png")
+        if not rel:
+            self.show_status("图表转图片失败：请先保存文档")
+            return
+        self._js_active(f"window.__doMmdToImg({int(idx)}, {js(rel)})")
+        self.show_status(f"图表已转换为图片 · {rel}")
 
     def _img_replace(self, idx, mode):
         """v3.38（图片报告 §四#9）：右键「替换图片」—— 选图后按当前存储形态替换 src。"""
@@ -1637,6 +2067,104 @@ class MainWindow(QMainWindow):
             return
         QGuiApplication.clipboard().setImage(img)
         self.show_status(f"图片已复制到剪贴板（{img.width()}×{img.height()}）")
+
+    def _img_crop(self, idx, src, req):
+        """v3.39.6（IMG-CROP）：按自然像素裁剪图片并写回。
+        内嵌 → 新 data URL（保留原格式）；本地文件 → 同目录另存 *-crop 新文件
+        （相对路径回相对路径、绝对路径回绝对路径，原图保留不动）；
+        网络图 → 下载后落 assets（未保存文档时内核侧已拦截）。
+        完成后回调 __doImgCrop（保留 alt / 图注 / 对齐，清除旧显示尺寸）。"""
+        try:
+            x = max(0, int(req.get("x") or 0))
+            y = max(0, int(req.get("y") or 0))
+            w = int(req.get("w") or 0)
+            h = int(req.get("h") or 0)
+        except (TypeError, ValueError):
+            self.show_status("裁剪失败：裁剪区域参数无效")
+            return
+        data = self._img_bytes(src)
+        if not data:
+            self.show_status("裁剪失败：取不到图片数据（文件缺失 / 下载失败）")
+            return
+        img = QImage()
+        if not img.loadFromData(data):
+            self.show_status("裁剪失败：无法识别的图片格式")
+            return
+        w = min(w, img.width() - x)
+        h = min(h, img.height() - y)
+        if w < 2 or h < 2:
+            self.show_status("裁剪失败：裁剪区域过小")
+            return
+        crop = img.copy(x, y, w, h)
+
+        def _fmt_of(name_or_mime):
+            n = str(name_or_mime or "").lower()
+            if n.endswith((".jpg", ".jpeg")) or "jpeg" in n:
+                return "JPG"
+            if n.endswith(".webp"):
+                return "WEBP"
+            return "PNG"
+
+        new_src = None
+        if re.match(r"^data:", src, re.I):
+            mm = re.match(r"^data:([^;,]+);base64,", src, re.I)
+            fmt = _fmt_of(mm.group(1) if mm else "png")
+            ba = QByteArray()
+            buf = QBuffer(ba)
+            buf.open(QIODevice.WriteOnly)
+            if not crop.save(buf, fmt):
+                self.show_status("裁剪失败：图片编码失败")
+                return
+            buf.close()
+            mime = "image/jpeg" if fmt == "JPG" else ("image/webp" if fmt == "WEBP" else "image/png")
+            new_src = f"data:{mime};base64,{bytes(ba.toBase64()).decode('ascii')}"
+        else:
+            fp = self._img_local_path(src)
+            if fp and os.path.isfile(fp):
+                out_dir = os.path.dirname(fp)
+                stem, ext = os.path.splitext(os.path.basename(fp))
+                if ext.lower() not in (".png", ".jpg", ".jpeg", ".bmp", ".webp"):
+                    ext = ".png"
+                new_name = self._unique_name(out_dir, f"{stem}-crop{ext}")
+                out_path = os.path.join(out_dir, new_name)
+                if not crop.save(out_path, _fmt_of(ext)):
+                    self.show_status("裁剪失败：写入文件失败")
+                    return
+                if re.match(r"^[A-Za-z]:[\\/]", src):
+                    new_src = out_path
+                else:
+                    # v3.39.10（IMG-CROP-2）：按「原 src 携带的相对目录前缀」回写 ——
+                    # 裸文件名（图片与文档同目录）→ 记裸文件名（v3.39.8 语义）；
+                    # 带目录前缀（<doc>.assets/xxx.png 等）→ 原样保留该前缀。
+                    # 旧判据 dirname(abspath(fp)) == out_dir 恒为真（out_dir 本就
+                    # 取自 fp），assets 子目录图片被误记裸文件名 → 相对文档目录
+                    # 解析 404，用户感知「裁剪后未生效」
+                    _norm = src.replace("\\", "/").strip()
+                    while _norm.startswith("./"):
+                        _norm = _norm[2:]
+                    _dir, _ = os.path.split(_norm)
+                    new_src = f"{_dir}/{new_name}" if _dir else new_name
+            elif re.match(r"^https?:", src, re.I) and self.file_path:
+                ba = QByteArray()
+                buf = QBuffer(ba)
+                buf.open(QIODevice.WriteOnly)
+                if crop.save(buf, "PNG"):
+                    buf.close()
+                    rel = self._save_image_to_assets(
+                        data=bytes(ba), filename=f"image-crop-{int(time.time())}.png")
+                    new_src = rel
+                else:
+                    buf.close()
+            if not new_src:
+                # v3.39.11（IMG-CROP-3）：区分「未保存无法定位」与「文件真的缺失」
+                if not self.file_path:
+                    self.show_status("裁剪失败：文档未保存，相对路径图片无法定位原图，请先保存文档")
+                else:
+                    self.show_status(f"裁剪失败：本地图片文件缺失（{src}），请检查路径或重新插入图片")
+                return
+        # v3.39.12（IMG-CROP-7）：回调带原 src，内核比对一致才写回（防跨块 / 跨文档污染）
+        self._js_active(f"window.__doImgCrop && window.__doImgCrop({int(idx)}, {js(new_src)}, {js(src)})")
+        self.show_status(f"已裁剪图片（{crop.width()}×{crop.height()}）")
 
     def _img_local_path(self, src):
         """把图片块的 src 解析成本地文件绝对路径；非本地文件返回 None。"""
@@ -1873,6 +2401,9 @@ class MainWindow(QMainWindow):
             self._handle_pasted_image(data.get("img"))
         if data.get("req"):
             self._handle_img_req(data.get("req"))
+        # v3.39.8（FMT-LOG）：内核格式化操作日志差量上报 → JSON Lines 追加落盘
+        if data.get("fmt"):
+            self._append_fmt_log(data["fmt"])
         if data.get("border"):
             self._theme_border = str(data.get("border"))   # v3.38（HR-8②）
         if data.get("outline") is not None:
@@ -1893,27 +2424,33 @@ class MainWindow(QMainWindow):
             self._dirty = bool(_doc.get("dirty"))
         else:
             self._dirty = dirty
+        # v3.40（UI-R7）：保存态格跟随脏态（内部有变化检测，无变化零开销）
+        self._update_save_cell()
         if self._autosave and 0 <= self._cur < len(self._docs):
             doc = self._docs[self._cur]
             if dirty and doc.get("path"):
-                # 自动保存（保证文件以单个换行结尾）
-                try:
-                    out = md or ""
-                    if out and not out.endswith("\n"):
-                        out += "\n"
-                    # v3.29d（B1）：写盘前先把上一版留档到版本历史 —— 此前自动保存
-                    # 直接写盘，磁盘内容永远等于新内容，之后手动保存的快照被去重
-                    # 跳过，默认配置下版本历史形同虚设。加 60 秒节流控制 IO 频率。
-                    last = getattr(self, "_snap_ts", {})
-                    now = time.time()
-                    if now - last.get(doc["path"], 0) >= 60:
-                        self.snapshot_history(doc["path"], out)
-                        last[doc["path"]] = now
-                        self._snap_ts = last
-                    self._write_text(doc["path"], out)   # v3.29d（B2）：按原编码写盘
-                    self.show_status(f"已自动保存 · {doc['path']}")
-                except OSError as e:
-                    self._status.setText(f"自动保存失败：{e}")
+                # v3.44（AUTOSAVE-INT）：非实时档按间隔节流写盘
+                _iv = int(getattr(self, "_autosave_interval", 0) or 0)
+                _now = time.time()
+                if _iv <= 0 or (_now - getattr(self, "_autosave_ts", 0)) >= _iv:
+                    self._autosave_ts = _now
+                    # 自动保存（保证文件以单个换行结尾）
+                    try:
+                        out = md or ""
+                        if out and not out.endswith("\n"):
+                            out += "\n"
+                        # v3.29d（B1）：写盘前先把上一版留档到版本历史 —— 此前自动保存
+                        # 直接写盘，磁盘内容永远等于新内容，之后手动保存的快照被去重
+                        # 跳过，默认配置下版本历史形同虚设。加 60 秒节流控制 IO 频率。
+                        last = getattr(self, "_snap_ts", {})
+                        if _now - last.get(doc["path"], 0) >= 60:
+                            self.snapshot_history(doc["path"], out)
+                            last[doc["path"]] = _now
+                            self._snap_ts = last
+                        self._write_text(doc["path"], out)   # v3.29d（B2）：按原编码写盘
+                        self.show_status(f"已自动保存 · {doc['path']}")
+                    except OSError as e:
+                        self._status.setText(f"自动保存失败：{e}")
         # v3.32（P0-1）：未命名文档影子草稿 —— 10 秒节流写入 %APPDATA%/mdEditor/drafts/，
         # 崩溃 / 断电后启动可恢复；内容清空即删草稿；保存到路径后由 save_file_as 收走。
         if 0 <= self._cur < len(self._docs):
@@ -1949,7 +2486,8 @@ class MainWindow(QMainWindow):
     def _update_multi_highlight(self):
         """多选标签着主题强调色；未选中的恢复默认文字色（QColor() = 清除覆盖）。"""
         self._tab_multi = {i for i in self._tab_multi if 0 <= i < len(self._docs)}
-        col = QColor(styles.palette(self._theme)["accent"]) if self._tab_multi else None
+        # v3.39.15（UISTYLE-1）：强调色取「主题 + 风格」合并调色板，与界面观感一致
+        col = QColor(uistyles.merge_palette(self._theme)["accent"]) if self._tab_multi else None
         for i in range(self._tabbar.count()):
             self._tabbar.setTabTextColor(i, col if (col and i in self._tab_multi)
                                          else QColor())
@@ -2663,6 +3201,8 @@ class MainWindow(QMainWindow):
 
     def new_file(self):
         self._add_doc(path=None, text="")
+        # v3.40（UI-R7 R6 补偿②）：新空白文档 → 首次一次性「试试输入 /」气泡
+        self._maybe_slash_bubble()
 
     # ================= v3.32（P0-1）未命名文档影子草稿 =================
     def _save_draft(self, doc, md):
@@ -2785,6 +3325,10 @@ class MainWindow(QMainWindow):
     def _load_path(self, path):
         """打开文件：已在标签页中则切换，否则新开标签。"""
         path = os.path.abspath(path)
+        # v3.38（FLP-2）：记录「最近一次成功打开文件所在目录」（覆盖对话框 /
+        # 最近文件 / 侧栏双击 / 拖放 / 启动恢复全部入口；记录失败不影响打开）
+        if os.path.isfile(path):
+            self._remember_open_dir(path)
         for i, doc in enumerate(self._docs):
             if doc.get("path") == path:
                 self._tabbar.setCurrentIndex(i)
@@ -2813,8 +3357,10 @@ class MainWindow(QMainWindow):
                     self._docs[self._cur]["content"] = md
                 self._update_title()
                 self._refresh_tab_texts()
+                self._update_save_cell()   # v3.40（UI-R7）：✓ 已保存（静默）
                 self.show_status(f"已保存 · {self.file_path}")
             except OSError as e:
+                self._update_save_cell()
                 QMessageBox.critical(self, "保存失败", str(e))
 
         self._js_active("window.getMarkdown()", cb)
@@ -2829,6 +3375,7 @@ class MainWindow(QMainWindow):
         if not path:
             return False
         self._remember_dir("save", path)
+        self._remember_open_dir(path)   # v3.39.2（PATH-1）：保存目录纳入上次使用路径
         self.file_path = os.path.abspath(path)
         if 0 <= self._cur < len(self._docs):
             self._docs[self._cur]["path"] = self.file_path
@@ -2942,7 +3489,17 @@ class MainWindow(QMainWindow):
 
     # v3.29d（B7/UX #28）：按用途记忆文件对话框的上次目录（导出 / 另存 / 打开）
     def _dlg_dir(self, key):
-        return getattr(self, "_dir_map", {}).get(key, "")
+        """v3.39.2（PATH-1）：对话框起点目录三级回退 ——
+        进程内按用途记忆 → QSettings 持久（重启沿用）→ 上次使用目录（lastOpenDir）。"""
+        d = getattr(self, "_dir_map", {}).get(key, "")
+        if not d:
+            try:
+                d = str(self._settings.value("files/dlgDir/%s" % key, "") or "")
+            except Exception:      # noqa: BLE001
+                d = ""
+        if not d:
+            d = self.last_open_dir()
+        return d if (d and os.path.isdir(d)) else ""
 
     def _dlg_start(self, key, fallback=""):
         d = self._dlg_dir(key)
@@ -2956,6 +3513,12 @@ class MainWindow(QMainWindow):
         d = os.path.dirname(os.path.abspath(str(path)))
         if os.path.isdir(d):
             self._dir_map[key] = d
+            # v3.39.2（PATH-1）：按用途持久化，重启后打开 / 保存 / 导出对话框
+            # 默认路径仍为上次使用的目录
+            try:
+                self._settings.setValue("files/dlgDir/%s" % key, d)
+            except Exception:      # noqa: BLE001
+                pass
 
     def export_html(self):
         def cb(html):
@@ -3176,8 +3739,8 @@ class MainWindow(QMainWindow):
                 if not ok:
                     QMessageBox.warning(self, f"导出 {label} 失败", msg)
                 return
-            # v3.30.19（MMD-2）：内置导出前先把已渲染图表位图化（SVG→PNG）
-            self._export_with_mmd(kind, label, md, path, base_dir, title)
+            # v3.30.19（MMD-2）+ v3.44.31（MATH-EXP）：内置导出前把已渲染图表与公式位图化
+            self._export_with_render(kind, label, md, path, base_dir, title)
 
         self._js_active("window.getMarkdown()", cb)
 
@@ -3215,12 +3778,75 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(300, lambda: self._mmd_poll(kind, label, md, path, base_dir, title))
         self._js_active("window.__mmdExportState || null", got)
 
-    def _export_now(self, kind, label, md, path, base_dir, title, mmd_png):
+    def _export_with_render(self, kind, label, md, path, base_dir, title):
+        """v3.44.31（MATH-EXP）：内置导出前把已渲染图表(MMD-2)与公式位图化，收齐后导出。
+
+        与 _export_with_mmd 同构，但并行启动图表(__mmdExportStart)与公式(__mathExportStart)
+        两侧收集；公式位图化需在 foreignObject 内携带 KaTeX 字体，这里先把内联 katex CSS
+        注入页面（缺失则给空串，仍尝试位图化、回落默认字体）。"""
+        import json as _json
+        css = self._inline_katex_css("__KATEX_CSS__")
+        if "__KATEX_CSS__" in css:
+            css = ""   # 字体缺失（异常安装）：不阻塞导出，位图化回落默认字体
+        js = ("(function(){window.__KATEX_CSS__=" + _json.dumps(css) +
+              ";var n=0;if(window.__mmdExportStart)n+=window.__mmdExportStart();"
+              "if(window.__mathExportStart)n+=window.__mathExportStart();return n;})()")
+
+        def start(_total):
+            self._export_render_poll(kind, label, md, path, base_dir, title, time.time())
+
+        self._js_active(js, start)
+
+    def _export_render_poll(self, kind, label, md, path, base_dir, title, t0):
+        def got(payload):
+            st = payload or {}
+            mmd = st.get("mmd") or {}
+            math = st.get("math") or {}
+            md_done = int(mmd.get("done", 0) or 0)
+            md_total = int(mmd.get("total", 0) or 0)
+            mt_done = int(math.get("done", 0) or 0)
+            mt_total = int(math.get("total", 0) or 0)
+            if (md_done >= md_total and mt_done >= mt_total) or (time.time() - t0 > 12):
+                mmd_png, math_png = {}, {}
+                for it in (mmd.get("items") or []):
+                    src = str(it.get("src") or "")
+                    data = str(it.get("data") or "")
+                    if not src or not data or src in mmd_png:
+                        continue
+                    try:
+                        fd, tmp = tempfile.mkstemp(suffix=".png")
+                        with os.fdopen(fd, "wb") as f:
+                            f.write(base64.b64decode(data.split(",", 1)[-1]))
+                        mmd_png[src] = tmp
+                    except Exception as e3:
+                        _log.debug("图表 PNG 落盘失败: %s", e3)
+                for it in (math.get("items") or []):
+                    src = str(it.get("src") or "")
+                    data = str(it.get("data") or "")
+                    if not src or not data or src in math_png:
+                        continue
+                    try:
+                        fd, tmp = tempfile.mkstemp(suffix=".png")
+                        with os.fdopen(fd, "wb") as f:
+                            f.write(base64.b64decode(data.split(",", 1)[-1]))
+                        math_png[src] = tmp
+                    except Exception as e3:
+                        _log.debug("公式 PNG 落盘失败: %s", e3)
+                self._export_now(kind, label, md, path, base_dir, title, mmd_png, math_png)
+                return
+            QTimer.singleShot(
+                300, lambda: self._export_render_poll(kind, label, md, path, base_dir, title, t0))
+
+        self._js_active(
+            "({mmd:(window.__mmdExportState||null),math:(window.__mathExportState||null)})", got)
+
+    def _export_now(self, kind, label, md, path, base_dir, title, mmd_png, math_png=None):
         if kind == "docx":
-            ok, msg = exporters.write_docx(md, path, base_dir, title, mmd_png=mmd_png)
+            ok, msg = exporters.write_docx(md, path, base_dir, title,
+                                          mmd_png=mmd_png, math_png=math_png)
         else:
             ok, msg = exporters.write_epub(
-                md, path, base_dir, title, mmd_png=mmd_png,
+                md, path, base_dir, title, mmd_png=mmd_png, math_png=math_png,
                 border_color=getattr(self, "_theme_border", "") or "#ddd")   # v3.38（HR-8②）
         self.show_status(msg)
         if not ok:
@@ -3325,7 +3951,7 @@ class MainWindow(QMainWindow):
         ret = QMessageBox.question(
             self, "关于",
             f"<b>{APP_NAME}</b>　<span style='color:#888;'>v{APP_VERSION}</span><br>"
-            "Typora 风格的所见即所得 Markdown 编辑器<br>"
+            "由YY先生研发的一款所见即所得 Markdown 编辑器<br>"
             "支持多文件标签页、双栏（源码 / 预览）模式、数学公式<br>"
             "基于 Python + PySide6 (QtWebEngine) 构建。<br><br>"
             "是否查看更新日志（CHANGELOG.md）？",
@@ -3388,47 +4014,6 @@ class MainWindow(QMainWindow):
         self._manual_dlg.activateWindow()
         self.show_status("已打开使用手册（滚动浏览，Esc 关闭）")
 
-    def _show_shortcuts(self):
-        """快捷键一览：从快捷键管理体系动态生成（含用户自定义值）。"""
-        rows = []
-        for group, items in self._shortcut_defs:
-            rows.append(f"<p style='margin:10px 0 4px;'><b>{group}</b></p>")
-            for name, _default in items:
-                act = self._shortcut_acts.get(name)
-                key = act.shortcut().toString(QKeySequence.NativeText) if act else ""
-                rows.append(
-                    f"<div style='margin:2px 0 2px 12px;'>{name} — "
-                    f"<code style='background:#f2f3f5;padding:1px 6px;border-radius:4px;'>{key}</code>"
-                    f"</div>")
-        rows.append("<p style='margin:10px 0 2px; color:#6b7280;'>"
-                    "在「设置 → 快捷键设置」中可修改以上快捷键。编辑器内操作："
-                    "空行输入 / 唤起插入菜单（也可点块手柄或 Ctrl+/）· 选中文字浮现行菜单 · "
-                    "悬停块左侧 ⠿ 块菜单（空块直接唤起插入菜单）· "
-                    "Ctrl+Enter 跳出代码块/引用。</p>")
-        # v3.31.3（QUO-6）：引用块 / 代码块常用按键说明（含退出方式）
-        # v3.38（QUO-11）：按键说明对齐《引用模块交互规范-v3.37》
-        rows.append("<p style='margin:10px 0 4px;'><b>引用块常用按键</b></p>"
-                    "<div style='margin:2px 0 2px 12px;'>回车 —— 延续引用（自动补 &gt; 前缀）</div>"
-                    "<div style='margin:2px 0 2px 12px;'>末行空行再按回车 —— 引用保留，其后新建空段落</div>"
-                    "<div style='margin:2px 0 2px 12px;'>Tab / Shift+Tab —— 嵌套加 / 减一级</div>"
-                    "<div style='margin:2px 0 2px 12px;'>行首退格 —— 逐级降级；顶层行仅当前行脱离引用</div>"
-                    "<div style='margin:2px 0 2px 12px;'>Esc —— 失焦退出编辑（内容不动）；Ctrl+Enter —— 跳出引用</div>"
-                    "<p style='margin:10px 0 4px;'><b>代码块常用按键</b></p>"
-                    "<div style='margin:2px 0 2px 12px;'>Tab / Shift+Tab —— 插入 2 空格缩进 / 反缩进（跨行选区批量处理）</div>"
-                    # v3.38（CODE-9/10/11/12/13）：按键与入口说明对齐《代码块模块交互规范-v3.37》
-                    "<div style='margin:2px 0 2px 12px;'>Esc 或 Ctrl+Enter —— 退出编辑跳到下一块；已是末块则在其后新建空段落</div>"
-                    "<div style='margin:2px 0 2px 12px;'>复制：悬停代码块 → 顶栏 ⧉ 复制全部代码（或右键语言栏）</div>"
-                    "<div style='margin:2px 0 2px 12px;'>顶栏「风格」弹层：4 种风格 + 行数显示 + 自动换行开关</div>"
-                    "<div style='margin:2px 0 2px 12px;'>长代码（&gt;20 行）顶栏 ▾ 可折叠；⛶ 全屏编辑（Esc 退出全屏）</div>"
-                    "<div style='margin:2px 0 2px 12px;'>顶栏「命令」/ 空块命令条：按语言插入安装依赖、构建、运行、测试、格式化命令</div>"
-                    "<div style='margin:2px 0 2px 12px;'>代码区右键 —— 复制代码 / 复制（选区）/ 粘贴 / 删除块</div>"
-                    # v3.38（HR-11）：分割线使用指引（正向用法 + 慎用约束）
-                    "<p style='margin:10px 0 4px;'><b>分割线（hr）使用指引</b></p>"
-                    "<div style='margin:2px 0 2px 12px;'>插入：空行输入 / → 分割线；点击选中（Delete / Backspace 删除，Esc 取消）</div>"
-                    "<div style='margin:2px 0 2px 12px;'>↑ / ↓ 键跨过分割线时自动建立选中态，可直接键盘删除</div>"
-                    "<div style='margin:2px 0 2px 12px;'>用途：章节级内容分隔（把文章切成章节）</div>"
-                    "<div style='margin:2px 0 2px 12px;'>慎用：不要连续使用或用分割线替代标题 / 留白 —— 过度分割会产生视觉噪音（Material Design 建议）</div>")
-        QMessageBox.information(self, "快捷键一览", "".join(rows))
 
     # ---- 最近文件 ----
     def _add_recent(self, path):
@@ -3439,7 +4024,18 @@ class MainWindow(QMainWindow):
         if path in lst:
             lst.remove(path)
         lst.insert(0, path)
-        self._settings.setValue("recentFiles", lst[:10])
+        self._trim_recent(lst)
+
+    def _trim_recent(self, lst=None):
+        """v3.44（RECENT-MAX）：按 _recent_max 裁剪最近文件列表（0=清空）。"""
+        if lst is None:
+            lst = self._settings.value("recentFiles", []) or []
+            if isinstance(lst, str):
+                lst = [lst]
+        if self._recent_max <= 0:
+            self._settings.setValue("recentFiles", [])
+        else:
+            self._settings.setValue("recentFiles", lst[:self._recent_max])
 
     def _rebuild_recent_menu(self):
         self._recent_menu.clear()
@@ -3462,18 +4058,26 @@ class MainWindow(QMainWindow):
         self._update_side_btn()
 
     def _update_side_btn(self):
-        """左侧工具栏顶部开关：侧栏可见时显示 «（收起），隐藏时显示 »（展开）。"""
+        """左侧工具栏顶部开关（v3.40 UI-R7③：线性侧栏面板图标，展开/收起双态）。"""
         vis = self._sidebar.isVisible()
-        self._btn_side.setText("«" if vis else "»")
+        self._btn_side.setIcon(icon_sidepanel(20, collapsed=not vis))
         self._btn_side.setToolTip(
             ("收起" if vis else "展开") + "侧边栏 (Ctrl+Shift+L)")
         if getattr(self, "_act_sidebar", None) is not None:
             self._act_sidebar.setChecked(vis)
+        mtb = getattr(self, "_mac_title", None)   # v3.41.0：mac 统一工具栏同款钮同步
+        if mtb is not None:
+            mtb.sync_side_icon(vis)
 
     def _show_sidebar_tab(self, tab):
         self._sidebar.setVisible(True)
         self._update_side_btn()
         self._sidebar.select_tab(tab)
+        # v3.38（FLP-2）：启动时未定位过侧栏（如 lastFile 档 / 定位失败）→
+        # 首次打开文件列表 tab 时按 FLP-2 优先级链补定位（once 仅一次，
+        # 不打断用户后续浏览；已定位过则此调用是空操作）
+        if tab == 0:
+            self._sidebar.restore_initial_dir(once=True)
 
     # ---- 主工具栏 显示 / 隐藏（v3.38 TB-1）----
     def set_toolbar_visible(self, vis, toast=True):
@@ -3518,12 +4122,23 @@ class MainWindow(QMainWindow):
         return "写作模式", ""
 
     def _update_mode_button(self):
-        name, desc = self._mode_label()
-        icon_name = next(m[1] for m in MODES if m[0] == self._mode)
-        self._btn_mode.setIcon(MODE_ICONS[icon_name](20))
-        self._btn_mode.setToolTip(
-            f"当前模式：{name}\n{desc}\n"
-            "单击循环切换：写作 → 源码 → 分屏")
+        """v3.40（UI-R7⑪）：模式状态唯一源 = self._mode，订阅者三处单向刷新——
+        菜单栏右端分段钮 / 状态栏模式格 / 视图菜单单选项（原左工具栏循环钮已退役）。"""
+        name, _desc = self._mode_label()
+        # 菜单栏右端分段钮（blockSignals 防回环）
+        seg = getattr(self, "_seg_btns", {})
+        for mid, b in seg.items():
+            b.blockSignals(True)
+            b.setChecked(mid == self._mode)
+            b.blockSignals(False)
+        # v3.44.12（RIBBON-1）：功能区「模式」大钮同步
+        rb = getattr(self, "_ribbon_body", None)
+        if rb is not None:
+            rb.sync_mode(self._mode)
+        # 状态栏模式格
+        cell = getattr(self, "_cell_mode", None)
+        if cell is not None:
+            cell.setText(name.replace("模式", "") or "写作")
         # 菜单里的模式单选同步勾选状态
         act = getattr(self, "_mode_acts", {}).get(self._mode)
         if act and not act.isChecked():
@@ -3589,6 +4204,12 @@ class MainWindow(QMainWindow):
         self._typewriter = not getattr(self, "_typewriter", False)
         self._settings.setValue("typewriter", bool(self._typewriter))
         self._act_typewriter.setChecked(self._typewriter)
+        # v3.40（UI-R7）：菜单栏右端快捷开关镜像（单向订阅）
+        qk = getattr(self, "_qk_tw", None)
+        if qk is not None:
+            qk.blockSignals(True)
+            qk.setChecked(self._typewriter)
+            qk.blockSignals(False)
         self._js_active(
             f"window.setMode({{typewriter: {str(self._typewriter).lower()}}})")
         self.show_status("打字机模式：开" if self._typewriter else "打字机模式：关")
@@ -3597,6 +4218,12 @@ class MainWindow(QMainWindow):
         self._focus = not getattr(self, "_focus", False)
         self._settings.setValue("focus", bool(self._focus))
         self._act_focus.setChecked(self._focus)
+        # v3.40（UI-R7）：菜单栏右端快捷开关镜像（单向订阅）
+        qk = getattr(self, "_qk_focus", None)
+        if qk is not None:
+            qk.blockSignals(True)
+            qk.setChecked(self._focus)
+            qk.blockSignals(False)
         self._js_active(f"window.setMode({{focus: {str(self._focus).lower()}}})")
         self.show_status("专注模式：开" if self._focus else "专注模式：关")
 
@@ -3605,6 +4232,507 @@ class MainWindow(QMainWindow):
             self.showNormal()
         else:
             self.showFullScreen()
+
+    # ---- v3.40（UI-R7）：状态栏 / 视图状态区辅助 ----
+    def toggle_statusbar(self, checked=True):
+        """视图 → 显示 / 隐藏状态栏（checkable 动作，QSettings 持久化）。"""
+        vis = bool(checked)
+        self.statusBar().setVisible(vis)
+        self._settings.setValue("ui/statusbarVisible", vis)
+
+    def _update_save_cell(self):
+        """保存态格：✓ 已保存（静默绿）/ ● 未保存（琥珀）/ ⟳ 保存中（强调色）。
+
+        性能红线：状态变化才 setText（_on_collect 轮询驱动 + 保存流程主动推送）。"""
+        cell = getattr(self, "_cell_save", None)
+        if cell is None:
+            return
+        state = "saving" if getattr(self, "_saving", False) else (
+            "dirty" if self._dirty else "saved")
+        if state == getattr(self, "_save_state", None):
+            return
+        self._save_state = state
+        text, color = {
+            "saved": ("✓ 已保存", "#1d9e75"),     # UI-SPEC --success
+            "dirty": ("● 未保存", "#b7791f"),
+            "saving": ("⟳ 保存中", "#0052d9"),
+        }[state]
+        cell.setText(text)
+        cell.setStyleSheet(f"color: {color}; padding: 0 4px;")
+
+    def _apply_chrome_styles(self):
+        """v3.40（UI-R7⑫）：菜单栏右端视图状态区 + 状态栏交互格随主题 / 风格调色。
+
+        令牌取「主题调色板 + 界面风格覆盖」合并结果（uistyles.merge_pipeline 同源）。"""
+        if getattr(self, "_vsz_corner", None) is None:
+            return
+        p = uistyles.merge_palette(self._theme)
+        # 专注 / 打字机：扁平风格（无边框、无实底，仅文字 + 轻量 hover / 选中浅色强调）
+        qk_css = (
+            f"QToolButton#qk {{ border: none; background: transparent;"
+            f" padding: 0 8px; color: {p['text_muted']}; }}"
+            f"QToolButton#qk:hover {{ background: {p['menu_hover_bg']}; color: {p['accent']}; }}"
+            f"QToolButton#qk:checked {{ background: {p['accent_soft']}; color: {p['accent']}; }}")
+        # 写作 / 源码 / 分屏：分段控件内的钮（无独立边框，靠容器描边成组；选中段 accent 凸起）
+        # v3.44.29：极简无界(zen)风格要求「统一配色、无强调蓝」——选中段改用中性灰
+        # （hover 同族底色 + 正文色），避免与主题强调蓝割裂；其余风格沿用主题 accent。
+        _is_zen = (uistyles.active() == "zen")
+        if _is_zen:
+            seg_css = (
+                f"QToolButton#seg {{ border: none; background: transparent;"
+                f" padding: 0 12px; color: {p['text_muted']}; }}"
+                f"QToolButton#seg:hover {{ background: {p['menu_hover_bg']}; color: {p['text']}; }}"
+                f"QToolButton#seg:checked {{ background: {p['hover_bg']}; color: {p['text']};"
+                f" border-radius: 6px; }}")
+        else:
+            seg_css = (
+                f"QToolButton#seg {{ border: none; background: transparent;"
+                f" padding: 0 12px; color: {p['text_muted']}; }}"
+                f"QToolButton#seg:hover {{ background: {p['menu_hover_bg']}; color: {p['accent']}; }}"
+                f"QToolButton#seg:checked {{ background: {p['accent']}; color: #ffffff;"
+                f" border-radius: 6px; }}")
+        for b in (self._qk_focus, self._qk_tw):
+            b.setStyleSheet(qk_css)
+        for b in self._seg_btns.values():
+            b.setStyleSheet(seg_css)
+        self._qk_sep.setStyleSheet(f"background: {p['sep']};")
+        # 分段控件容器：扁平浅底 + 细描边 + 小圆角（v3.44.28 RIBBON-14：去浮雕渐变，仅略高于按钮）
+        seg_group_css = (
+            f"QWidget#segGroup {{ border: 1px solid {p['input_border']}; border-radius: 8px;"
+            f" background: {p['input_bg']}; }}")
+        if getattr(self, "_seg_group_widget", None) is not None:
+            self._seg_group_widget.setStyleSheet(seg_group_css)
+        # 分段控件内部分隔线
+        for dv in getattr(self, "_seg_divs", []):
+            dv.setStyleSheet(f"background: {p['input_border']};")
+        # 状态栏可点击格：hover 提示强调色
+        for c in (self._cell_mode, self._cell_zoom):
+            c.setStyleSheet(f"color: {p['text_muted']}; padding: 0 6px;")
+        # 状态栏常驻格随主题着色（令牌驱动，避免写死浅色强调/次级字色导致深主题割裂）
+        if getattr(self, "_toast", None) is not None:
+            self._toast.setStyleSheet(f"color: {p['accent']}; padding-right: 12px;")
+        if getattr(self, "_blktype", None) is not None:
+            self._blktype.setStyleSheet(f"color: {p['text_muted']}; padding-right: 4px;")
+        if getattr(self, "_cmd_entry", None) is not None:
+            self._cmd_entry.setStyleSheet(f"color: {p['accent']}; padding: 0 8px;")
+        self._cell_mode.setToolTip(self._cell_mode.toolTip())
+        # v3.44.8（TB-DWM）：同步原生标题栏亮/暗（窗口未显示时由 showEvent 兜底）
+        self._sync_titlebar_dark()
+
+    # v3.44.8（TB-DWM）：Windows 原生标题栏沉浸式暗色同步
+    def _sync_titlebar_dark(self):
+        """仅 win32 + 窗口已显示时，按当前主题族切换原生标题栏亮/暗。"""
+        if sys.platform != "win32" or not self.isVisible():
+            return
+        try:
+            hwnd = int(self.winId())
+        except Exception:
+            return
+        _win_set_immersive_dark(hwnd, self._theme in _DARK_THEMES)
+
+    def showEvent(self, event):
+        """v3.44.8（TB-DWM）：窗口显示时（含首次）同步原生标题栏亮/暗。"""
+        super().showEvent(event)
+        self._sync_titlebar_dark()
+
+    def _maybe_slash_bubble(self):
+        """v3.40（UI-R7 R6 补偿②）：首次空白文档一次性气泡「试试输入 /」。
+
+        一次性（QSettings 已读标记），3s 自动淡出（内核 showSlashBubble 内置）。"""
+        if self._settings.value("ui/slashTipShown", False, type=bool):
+            return
+        self._settings.setValue("ui/slashTipShown", True)
+        QTimer.singleShot(900, lambda: self._js_active(
+            "window.showSlashBubble ? window.showSlashBubble() : null"))
+
+    # ================= v3.41.0（UISTYLE-2 方案 A）：mac 风格统一工具栏 =================
+    def _mac_source_menus(self):
+        """MacTitleBar 胶囊菜单条数据源：menubar 既有 5 个 QMenu（同源，不复制）。"""
+        out = []
+        for act in self.menuBar().actions():
+            m = act.menu()
+            if m is not None:
+                out.append((re.sub(r"\s*\(&.\)", "", str(act.text())), m))
+        return out
+
+    def _mac_toggle_max(self):
+        """红绿灯绿钮 / 标题栏双击：最大化 ↔ 还原（全屏时先退出全屏）。"""
+        if self.isFullScreen() or self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
+
+    def setWindowTitle(self, title):
+        super().setWindowTitle(title)
+        tb = getattr(self, "_mac_title", None)
+        if tb is not None:
+            tb.set_doc_title(str(title).split(" — ")[0])
+        rb = getattr(self, "_ribbon_bar", None)
+        if rb is not None:
+            rb.set_doc_title(str(title).split(" — ")[0])
+
+    def nativeEvent(self, eventType, message):
+        # v3.41.0：mac 无边框窗口（WM_NCCALCSIZE 去标题栏 + WM_NCHITTEST 拖拽/缩放）；
+        # 非 mac 形态下直通默认处理，零影响
+        r = mactitlebar.handle_native_event(self, message, self)
+        if r is not None:
+            return r
+        return super().nativeEvent(eventType, message)
+
+    def _force_mac_frame(self):
+        """窗口形态标记变化后强制重算非客户区（SetWindowPos FRAMECHANGED，不闪烁）。"""
+        try:
+            mactitlebar.force_frame_recalc(int(self.winId()))
+        except Exception:
+            pass
+
+    def _apply_layout_chrome(self):
+        """v3.42.0：按风格 layout 标记做结构门控。
+
+        - "mac"：macOS 统一工具栏形态（_apply_mac_chrome 全权处理）；
+        - "hide_vtool"：隐藏左竖工具栏（notion/paper/ribbon/term——设计稿无竖列）；
+        - "zen"：hide_vtool 基础上再隐藏菜单栏 + 收起侧栏（无界沉浸）；
+        - ""（标准）：全部还原。工具栏可见性偏好（ui/toolbarVisible）不受门控影响，
+          切回标准布局时按记忆还原；zen 收起的侧栏同样记忆还原。
+        """
+        layout = uistyles.active_layout()
+        self._apply_mac_chrome(layout == "mac")
+        if layout == "mac":
+            return
+        # v3.44.12（RIBBON-1）：PS01-RIBBON 结构化布局（chrome 全权处理菜单/工具栏/边框）
+        self._apply_ribbon_chrome(layout == "ribbon")
+        if layout == "ribbon":
+            return
+        if layout in ("hide_vtool", "zen"):
+            if getattr(self, "_layout_vtool_was", None) is None:
+                self._layout_vtool_was = self._tool_tb.isVisible()
+            self._tool_tb.setVisible(False)
+            # 偏好保持不变（persist=False），仅门控级隐藏；左缘展开钮不出现
+            self._btn_tb_show.hide()
+            # v3.44.27(REQ2)：极简 / 隐藏竖工具栏形态均保留菜单栏（顶栏始终可访问），
+            # 不再依赖 zen hover 召回——该机制在 QWebEngineView 原生控件下鼠标事件不
+            # 向上传递到主窗口过滤器，导致顶栏消失且无法召回。卸载可能存在的 zen hover 监听。
+            self.menuBar().setVisible(True)
+            if getattr(self, "_mac_frame_on", False):
+                self._mac_frame_on = False
+                self._force_mac_frame()
+            if getattr(self, "_zen_autohide", False):
+                self._zen_autohide = False
+                self._zen_filter_installed = False
+                self.removeEventFilter(self)
+            if layout == "zen":
+                # 仅收起侧栏（保持极简沉浸），菜单栏常驻可访问
+                if getattr(self, "_zen_sidebar_was", None) is None:
+                    self._zen_sidebar_was = self._sidebar.isVisible()
+                if self._sidebar.isVisible():
+                    self._sidebar.setVisible(False)
+                    self._update_side_btn()
+        else:
+            self.menuBar().setVisible(True)
+            # v3.44.9（ZEN-HOVER）：从 zen 退出到标准布局时卸掉顶部 hover 监听
+            if getattr(self, "_zen_autohide", False):
+                self._zen_autohide = False
+                self._zen_filter_installed = False
+                self.removeEventFilter(self)
+            was = getattr(self, "_layout_vtool_was", None)
+            if was is not None:
+                self._layout_vtool_was = None
+                self._tool_tb.setVisible(was)
+                self._sync_toolbar_state(persist=False, vis=was)
+            zs = getattr(self, "_zen_sidebar_was", None)
+            if zs is not None:
+                self._zen_sidebar_was = None
+                if zs:
+                    self._sidebar.setVisible(True)
+                    self._update_side_btn()
+
+    def _install_zen_autohide(self):
+        """v3.44.9（ZEN-HOVER）：zen 顶部 hover 监听的安装入口。
+
+        标记 _zen_autohide=True 并向自身安装事件过滤器（顶部 MouseMove 检测）。
+        幂等：已安装（_zen_filter_installed）时不重复 install，避免重复派发。
+        卸载在 _apply_layout_chrome 非 zen 分支完成。"""
+        self._zen_autohide = True
+        if getattr(self, "_zen_filter_installed", False):
+            return
+        try:
+            self.installEventFilter(self)
+            self._zen_filter_installed = True
+        except Exception:
+            self._zen_filter_installed = False
+
+    def _style_patch_js(self):
+        """v3.42.0：界面风格 editor_css → 独立 <style id=uiStylePatch> 注入脚本。
+
+        独立 id（非 #app-style）：getExportHTML 只收集 app-style，风格纸张/窄栏
+        观感属界面层，不随导出走。"""
+        css = uistyles.editor_css(self._theme)
+        return ("(function(){var s=document.getElementById('uiStylePatch');"
+                "if(!s){s=document.createElement('style');s.id='uiStylePatch';"
+                "document.head.appendChild(s);}s.textContent=" + js(css) + ";})()")
+
+    def _apply_mac_chrome(self, on):
+        """进入 / 退出 macOS 形态（PS01-MAC 设计稿）。
+
+        - 统一工具栏（红绿灯 + ☰菜单条 + 工具钮 + 居中标题 + 右端视图状态区）
+          装在 central widget 上方（包装容器懒创建一次）；
+        - _vsz_corner 在菜单栏 ↔ 统一工具栏之间反_parent（模式/专注/打字机状态单一源不复制）；
+        - 无边框不改窗口 flags（避免 re-show 闪烁），只切 nativeEvent 命中标记；
+        - 退出时菜单栏 / 左工具栏 / corner / 无边框全部还原。"""
+        tb = getattr(self, "_mac_title", None)
+        if on:
+            # v3.44.12（RIBBON-1）：从功能区形态切入 mac 时，先把主区取回 mac 包装
+            self._unwrap_ribbon_for_mac()
+            if tb is None:
+                tb = mactitlebar.MacTitleBar(self)
+                self._mac_title = tb
+                split = self.centralWidget()
+                wrap = QWidget(self)
+                wrap.setObjectName("macWrap")
+                wl = QVBoxLayout(wrap)
+                wl.setContentsMargins(0, 0, 0, 0)
+                wl.setSpacing(0)
+                wl.addWidget(tb)
+                wl.addWidget(split)
+                self.setCentralWidget(wrap)
+                self._mac_wrap = wrap
+            tb.set_doc_title(str(self.windowTitle()).split(" — ")[0])
+            tb.apply_palette(uistyles.merge_palette(self._theme))
+            tb.show()
+            if self._vsz_corner is not None and self._vsz_corner.parent() is not tb:
+                self._vsz_corner.setParent(tb)
+                tb.relayout_vsz()
+            self._mac_prev_tb_vis = self._tool_tb.isVisible()
+            self.menuBar().setVisible(False)
+            self._tool_tb.setVisible(False)
+            self._btn_tb_show.hide()
+            if not self._mac_frame_on:
+                self._mac_frame_on = True
+                self._force_mac_frame()
+        else:
+            if tb is None:
+                return
+            if self._mac_frame_on:
+                self._mac_frame_on = False
+                self._force_mac_frame()
+            tb.hide()
+            if self._vsz_corner is not None and self._vsz_corner.parent() is not self.menuBar():
+                self.menuBar().setCornerWidget(self._vsz_corner, Qt.TopRightCorner)
+            self.menuBar().setVisible(True)
+            self._tool_tb.setVisible(bool(getattr(self, "_mac_prev_tb_vis", True)))
+            self._sync_toolbar_state(persist=False)
+
+    # ================= v3.44.12（RIBBON-1）：PS01-RIBBON 结构化功能区 =================
+    def _central_split(self):
+        """真实主区控件（穿透 mac / ribbon 包装层）。"""
+        cw = self.centralWidget()
+        mac_wrap = getattr(self, "_mac_wrap", None)
+        if mac_wrap is not None and cw is mac_wrap:
+            lay = mac_wrap.layout()
+            for i in range(lay.count()):
+                wgt = lay.itemAt(i).widget()
+                if wgt is not None and wgt is not getattr(self, "_mac_title", None):
+                    return wgt
+        rib_wrap = getattr(self, "_ribbon_wrap", None)
+        if rib_wrap is not None and cw is rib_wrap:
+            return getattr(self, "_ribbon_split", None) or cw
+        return cw
+
+    def _unwrap_ribbon_for_mac(self):
+        """从功能区形态切入 mac：把主区 split 从 ribbon 包装取回 mac 包装。"""
+        rib_wrap = getattr(self, "_ribbon_wrap", None)
+        if rib_wrap is None or self.centralWidget() is not rib_wrap:
+            return
+        split = getattr(self, "_ribbon_split", None)
+        if split is None:
+            return
+        rib_wrap.layout().removeWidget(split)
+        mac_wrap = getattr(self, "_mac_wrap", None)
+        if mac_wrap is not None:
+            mac_wrap.layout().insertWidget(1, split)
+            self.setCentralWidget(mac_wrap)
+        else:
+            # mac 包装尚未创建（本会话未进过 mac 形态）：直接还原 split 为 central
+            self.setCentralWidget(split)
+
+    def _apply_ribbon_chrome(self, on):
+        """进入 / 退出 Office 功能区形态（PS01-RIBBON 设计稿，RIBBON-1）。
+
+        - 标题栏 + 页签行 + 四页功能区装在 central widget 上方（包装容器懒创建一次）；
+        - _vsz_corner 在菜单栏 ↔ 页签行之间反_parent（与 mac 形态同构，状态单一源）；
+        - 无边框复用 mac 机制（_mac_frame_on 标记；mactitlebar 命中白名单已泛化）；
+        - Ctrl+F1 / ▴ 折叠功能区内容（折叠后仅剩页签行）；
+        - 退出时菜单栏 / 左工具栏 / corner / 无边框全部还原。"""
+        bar = getattr(self, "_ribbon_bar", None)
+        if on:
+            if bar is None:
+                bar = ribbonchrome.RibbonTitleBar(self)
+                self._ribbon_bar = bar
+            tabs = getattr(self, "_ribbon_tabs", None)
+            if tabs is None:
+                tabs = ribbonchrome.RibbonTabsRow(self)
+                self._ribbon_tabs = tabs
+                body = ribbonchrome.RibbonBody(self)
+                self._ribbon_body = body
+                tabs.tab_selected.connect(self._on_ribbon_tab)
+                tabs.pinbtn.clicked.connect(self._toggle_ribbon_pin)
+                # v3.44.27(REQ1)：默认「固定」（始终展开），状态由图钉钮明确反映
+                self._ribbon_pinned = True
+                self._ribbon_collapsed = False
+                tabs.set_pin_state(True)
+                # v3.44.27(REQ1)：收拢模式下，焦点离开功能区进入编辑区即自动收起
+                app = QApplication.instance()
+                if app is not None and not getattr(self, "_rib_focus_conn", False):
+                    app.focusChanged.connect(self._on_focus_changed)
+                    self._rib_focus_conn = True
+
+                def _fire(name):
+                    a = self._shortcut_acts.get(name)
+                    if a is not None:
+                        a.trigger()
+                bar.qat_save.clicked.connect(lambda: _fire("保存"))
+                bar.qat_undo.clicked.connect(lambda: _fire("撤销"))
+                bar.qat_redo.clicked.connect(lambda: _fire("重做"))
+                # Ctrl+F1 折叠（仅 ribbon 形态在位期间注册）
+                self._rib_sc = ribbonchrome.QShortcut(
+                    ribbonchrome.QKeySequence("Ctrl+F1"), self)
+                self._rib_sc.activated.connect(self._toggle_ribbon_collapse)
+            # 主区包装（穿透 mac 包装取回 split；容器懒建一次）
+            split = self._central_split()
+            wrap = getattr(self, "_ribbon_wrap", None)
+            if wrap is None:
+                wrap = QWidget(self)
+                wrap.setObjectName("ribbonWrap")
+                wl = QVBoxLayout(wrap)
+                wl.setContentsMargins(0, 0, 0, 0)
+                wl.setSpacing(0)
+                wl.addWidget(bar)
+                wl.addWidget(tabs)
+                wl.addWidget(self._ribbon_body)
+                self._ribbon_wrap = wrap
+            self._ribbon_split = split
+            rl = wrap.layout()
+            for wgt in (bar, tabs, self._ribbon_body, split):
+                if rl.indexOf(wgt) < 0:
+                    rl.addWidget(wgt)
+            if self.centralWidget() is not wrap:
+                self.setCentralWidget(wrap)
+            bar.set_doc_title(str(self.windowTitle()).split(" — ")[0])
+            _rib_p = uistyles.merge_palette(self._theme)
+            bar.apply_palette(_rib_p)
+            bar.show()
+            tabs.show()
+            tabs.apply_palette(_rib_p)
+            self._ribbon_body.apply_palette(_rib_p)
+            self._ribbon_body.setVisible(
+                not getattr(self, "_ribbon_collapsed", False))
+            if self._vsz_corner is not None and \
+                    self._vsz_corner.parent() is not tabs.right_zone:
+                self._vsz_corner.setParent(tabs.right_zone)
+            self._ribbon_prev_tb = self._tool_tb.isVisible()
+            self.menuBar().setVisible(False)
+            self._tool_tb.setVisible(False)
+            self._btn_tb_show.hide()
+            self._ribbon_body.sync_mode(self._mode)
+            self._ribbon_body.sync_display()
+            if not self._mac_frame_on:
+                self._mac_frame_on = True
+                self._force_mac_frame()
+        else:
+            if bar is None:
+                return
+            if self._mac_frame_on:
+                self._mac_frame_on = False
+                self._force_mac_frame()
+            bar.hide()
+            self._ribbon_tabs.hide()
+            self._ribbon_body.hide()
+            if getattr(self, "_rib_sc", None) is not None:
+                self._rib_sc.setParent(None)
+                self._rib_sc = None
+            if self._vsz_corner is not None and \
+                    self._vsz_corner.parent() is not self.menuBar():
+                self.menuBar().setCornerWidget(self._vsz_corner, Qt.TopRightCorner)
+            self.menuBar().setVisible(True)
+            self._tool_tb.setVisible(bool(getattr(self, "_ribbon_prev_tb", True)))
+            self._sync_toolbar_state(persist=False)
+
+    def _toggle_ribbon_collapse(self):
+        """Ctrl+F1 / ▴：手动折叠 / 展开功能区内容（折叠后仅剩页签行，编辑区最大化）。"""
+        body = getattr(self, "_ribbon_body", None)
+        if body is None or uistyles.active_layout() != "ribbon":
+            return
+        vis = not body.isVisible()
+        body.setVisible(vis)
+        self._ribbon_collapsed = not vis
+        self.show_status("功能区已折叠（Ctrl+F1 还原）" if not vis else "功能区已展开")
+
+    def _on_ribbon_tab(self, pid):
+        """页签切换：切页 + 外观页刷新勾选；收拢模式下点页签临时展开功能区。"""
+        body = getattr(self, "_ribbon_body", None)
+        if body is None:
+            return
+        order = ("home", "view", "look", "tools")
+        try:
+            body.setCurrentIndex(order.index(pid))
+        except ValueError:
+            pass
+        if pid == "look":
+            body.sync_look()
+        # v3.44.27(REQ1)：收拢（自动隐藏）模式下，点页签即临时展开功能区
+        if not getattr(self, "_ribbon_pinned", True) and not body.isVisible():
+            body.setVisible(True)
+            self._ribbon_collapsed = False
+
+    def _toggle_ribbon_pin(self):
+        """v3.44.27(REQ1)：固定 ↔ 收拢 双态切换（图钉钮，状态明确可感知）。
+
+        - 固定（pinned=True）：功能区始终展开；
+        - 收拢（pinned=False）：默认仅留页签行，点页签临时展开，点文档自动收起。
+        """
+        if uistyles.active_layout() != "ribbon":
+            return
+        self._ribbon_pinned = not getattr(self, "_ribbon_pinned", True)
+        pinned = self._ribbon_pinned
+        tabs = getattr(self, "_ribbon_tabs", None)
+        body = getattr(self, "_ribbon_body", None)
+        if tabs is not None:
+            tabs.set_pin_state(pinned)
+        if body is not None:
+            body.setVisible(pinned)
+            self._ribbon_collapsed = not pinned
+        self.show_status("功能区已固定（始终展开）" if pinned
+                         else "功能区已设为自动收拢（点页签临时展开，点文档自动收起）")
+
+    def _is_descendant(self, child, ancestor):
+        """child 是否为 ancestor 自身或其后裔控件。"""
+        if child is None or ancestor is None:
+            return False
+        w = child
+        while w is not None:
+            if w is ancestor:
+                return True
+            w = w.parent()
+        return False
+
+    def _on_focus_changed(self, old, now):
+        """v3.44.27(REQ1)：收拢模式下，焦点离开功能区进入编辑区时自动收起功能区。"""
+        if getattr(self, "_ribbon_pinned", True):
+            return   # 固定模式：永不自动收拢
+        if uistyles.active_layout() != "ribbon":
+            return
+        body = getattr(self, "_ribbon_body", None)
+        if body is None or not body.isVisible():
+            return
+        if now is None:
+            return
+        # 焦点落在功能区 chrome（标题栏 / 页签行 / 内容）内 → 不收拢
+        for w in (self._ribbon_bar, self._ribbon_tabs, self._ribbon_body):
+            if w is not None and self._is_descendant(now, w):
+                return
+        # 否则视为进入编辑区（或窗口外）→ 自动收起功能区
+        body.setVisible(False)
+        self._ribbon_collapsed = True
 
     def set_theme(self, name):
         """兼容旧调用：等价于 apply_theme。"""
@@ -3616,13 +4744,17 @@ class MainWindow(QMainWindow):
             name = "light"
         self._theme = name
         # 1) Qt 层：全局 QSS + 侧栏 + 已打开的对话框
-        QApplication.instance().setStyleSheet(styles.app_qss(name))
-        self._sidebar.setStyleSheet(styles.sidebar_qss(name))
+        #    v3.39.15（UISTYLE-1）：QSS 改由 uistyles 生成（当前主题调色板 + 界面风格覆盖，
+        #    默认风格 ps01 不覆盖任何 token，外观与旧管线完全一致）
+        QApplication.instance().setStyleSheet(uistyles.app_qss(name))
+        self._sidebar.setStyleSheet(uistyles.sidebar_qss(name))
         if hasattr(self._sidebar, "set_tree_arrows"):
             self._sidebar.set_tree_arrows(name)   # v3.26：展开/收拢箭头随主题换色
+        if hasattr(self._sidebar, "set_folder_theme"):
+            self._sidebar.set_folder_theme(name)  # v3.44.2：文件夹图标随主题强调色
         # v3.38（TB-1）：左侧边缘「展开工具栏」按钮随主题换色（仅工具栏隐藏时可见）
         if getattr(self, "_btn_tb_show", None) is not None:
-            p = styles.palette(name)
+            p = uistyles.merge_palette(name)   # v3.39.15（UISTYLE-1）：随风格取色
             self._btn_tb_show.setStyleSheet(
                 "QToolButton#tbExpand {{ background: {bg}; border: 1px solid {bd};"
                 " border-radius: 9px; color: {ac}; font-size: 15px; font-weight: 800;"
@@ -3633,17 +4765,45 @@ class MainWindow(QMainWindow):
             dlg = getattr(self, dlg_attr, None)
             if dlg is not None:
                 dlg._apply_theme_qss(name)
+        # v3.40（UI-R7）：菜单栏右端视图状态区 + 状态栏交互格随主题 / 风格调色
+        self._apply_chrome_styles()
+        # v3.44.5（DESIGN01）：标签栏选中指示条 accent 随主题同步
+        try:
+            self._tabbar.set_accent(uistyles.merge_palette(name).get("accent", "#0052d9"))
+            self._tabbar.update()
+        except Exception:
+            pass
+        # v3.41.0（UISTYLE-2）：mac 统一工具栏调色 + 结构形态（进入 / 退出，含启动恢复）
+        self._apply_layout_chrome()  # v3.42.0：mac / hide_vtool / zen 统一布局门控
         # 2) Web 层：所有已加载的编辑器视图
         views = {"edit": self._view, "src": self._view_src, "prev": self._view_prev}
         for role, view in views.items():
             if view is not None and self._vstate[role]["loaded"]:
                 self._js_view(view, f"window.setTheme({js(name)})")
+        # v3.42.0（UISTYLE-3）：风格内容级 CSS（纸张/窄栏）随主题 / 风格刷新
+        for role, view in views.items():
+            if view is not None and self._vstate[role]["loaded"]:
+                self._js_view(view, self._style_patch_js())
         # 3) 菜单勾选状态
         for tid, act in self._theme_acts.items():
             act.setChecked(tid == name)
         if persist:
             self._settings.setValue("theme", name)
         self.show_status(f"主题：{styles.theme_label(name)}")
+
+    def set_uistyle(self, sid):
+        """v3.39.15（UISTYLE-1）：切换界面风格（仅 Qt 层观感皮肤，编辑器主题不变）。
+
+        - 非法 / 已删除的风格 ID 自动回退默认风格 ps01（uistyles.resolve）；
+        - 持久化 QSettings.uiStyle，重启保持；
+        - 重走 apply_theme 完成全局刷新（对话框沿用 _apply_theme_qss 通道）。
+        """
+        sid = uistyles.set_active(sid)
+        self._uistyle = sid
+        self._settings.setValue("uiStyle", sid)
+        self.apply_theme(self._theme, persist=False)
+        # v3.43.0：菜单名是纯净名（无编号 / 后缀），状态栏与菜单保持一致
+        self.show_status(f"界面风格：{uistyles.menu_style_label(sid)}")
 
     def set_zoom(self, factor):
         """编辑区字号缩放（对所有视图生效并持久化）。"""
@@ -3653,6 +4813,10 @@ class MainWindow(QMainWindow):
             if v is not None:
                 v.setZoomFactor(self._zoom)
         self._settings.setValue("zoom", self._zoom)
+        # v3.40（UI-R7）：状态栏缩放格同步
+        cell = getattr(self, "_cell_zoom", None)
+        if cell is not None:
+            cell.setText(f"{int(round(self._zoom * 100))}%")
         self.show_status(f"编辑区缩放：{int(round(self._zoom * 100))}%")
 
     def set_autosave(self, on):
@@ -3705,23 +4869,69 @@ class MainWindow(QMainWindow):
         self._sidebar.set_outline_words(self._outline_words)
         self.show_status("大纲分节字数：" + ("已显示" if self._outline_words else "已隐藏"))
 
+    def set_outline_filter(self, level):
+        """v3.43.0（OUT-LOOK）：大纲级别过滤（0=全部 / 1~3=只看该级及其祖先链）。
+
+        与「大纲显示级别」（通用页，控制默认折叠深度）分工不同：过滤是「看哪些级」，
+        显示级别是「默认展开到第几级」，两者可叠加生效。
+        """
+        try:
+            level = max(0, min(3, int(level)))
+        except (TypeError, ValueError):
+            return
+        self._outline_filter = level
+        self._settings.setValue("ui/outlineFilter", level)
+        self._sidebar.set_outline_filter(level)
+        self.show_status("大纲过滤：" + ("全部标题" if level == 0 else f"只看 H1–H{level}"))
+
     def set_startup_action(self, mode):
-        """v3.38（OUT-5）：启动时行为（blank=欢迎页 / lastFile=恢复上次文件 /
-        lastFileSide=恢复上次文件与侧栏位置 / folder=打开指定文件夹），下次启动生效。"""
+        """v3.38（OUT-5）/ v3.44（SESSION）：启动时行为 ——
+        blank=欢迎页（默认）/ lastFile=恢复上次单个文件 /
+        session=恢复上次完整会话（多标签 + 位置）/ folder=打开指定文件夹。下次启动生效。"""
         mode = str(mode or "blank")
-        if mode not in ("blank", "lastFile", "lastFileSide", "folder"):
+        if mode not in ("blank", "lastFile", "session", "folder"):
             mode = "blank"
         self._startup_action = mode
         self._settings.setValue("startupAction", mode)
 
-    def set_startup_folder(self, path):
-        """v3.38（OUT-5）：『打开指定文件夹』使用的目录路径。"""
-        self._startup_folder = str(path or "")
-        self._settings.setValue("startupFolder", self._startup_folder)
+    def set_autosave_interval(self, sec):
+        """v3.44（AUTOSAVE-INT）：自动保存节流间隔（秒），0=实时写盘（每次改动即写）。"""
+        try:
+            sec = max(0, int(sec))
+        except (TypeError, ValueError):
+            return
+        self._autosave_interval = sec
+        self._settings.setValue("autosaveInterval", sec)
+        self._autosave_ts = time.time()   # 切换间隔后允许立即写一次
+
+    def set_recent_max(self, n):
+        """v3.44（RECENT-MAX）：最近文件保留条数（0=不保留）。"""
+        try:
+            n = max(0, min(50, int(n)))
+        except (TypeError, ValueError):
+            return
+        self._recent_max = n
+        self._settings.setValue("recentMax", n)
+        self._trim_recent()   # 立即按新上限裁剪
 
     def last_sidebar_dir(self):
         """v3.38（FLP-1）：上次访问的侧栏目录（无则空串）。"""
         return str(self._settings.value("lastSidebarDir", "") or "")
+
+    def last_open_dir(self):
+        """v3.38（FLP-2）：最近一次成功打开文件所在目录（无则空串）。"""
+        return str(self._settings.value("files/lastOpenDir", "") or "")
+
+    def _remember_open_dir(self, path):
+        """v3.38（FLP-2）：记录最近一次成功打开文件的所在目录并立即落盘，
+        供文件列表默认定位（重启保留）。"""
+        try:
+            d = os.path.dirname(os.path.abspath(path))
+            if d and os.path.isdir(d):
+                self._settings.setValue("files/lastOpenDir", d)
+                self._settings.sync()      # 立即落盘，防异常退出丢记录
+        except Exception:      # noqa: BLE001 —— 记录失败不影响打开流程
+            pass
 
     def file_list_default_dir(self):
         """v3.38（FLP-1）：文件列表「默认打开路径」的**原始配置值**（未解析，空 = 未配置）。
@@ -3744,6 +4954,51 @@ class MainWindow(QMainWindow):
             sdir = self._sidebar.current_dir()
             if sdir and os.path.isdir(sdir):
                 self._settings.setValue("lastSidebarDir", sdir)
+        except Exception:      # noqa: BLE001
+            pass
+
+    def _restore_session(self):
+        """v3.44（SESSION）：恢复上次完整会话（多标签 + 当前标签 + 侧栏位置）。
+
+        返回 True 表示成功恢复至少 1 个有效文档，False 表示无可恢复内容。
+        """
+        try:
+            paths = self._settings.value("sessionDocs", []) or []
+            if isinstance(paths, str):
+                paths = [paths]
+            paths = [p for p in paths if p and os.path.isfile(p)]
+            if not paths:
+                return False
+            for p in paths:
+                self._add_doc(path=p, text=self._read_file(p))
+            cur = int(self._settings.value("sessionCur", 0) or 0)
+            cur = max(0, min(cur, len(paths) - 1))
+            if cur != self._cur:
+                self._tabbar.setCurrentIndex(cur)
+            # 侧栏位置恢复（优先于文件目录）
+            _sd = str(self._settings.value("lastSidebarDir", "") or "")
+            if _sd and os.path.isdir(_sd):
+                self._sidebar.set_root(_sd)
+            self._sidebar._initial_restored = True
+            return True
+        except Exception:      # noqa: BLE001
+            return False
+
+    def save_session(self):
+        """v3.44（SESSION）：记录当前多标签会话（路径列表 + 当前索引），供下次恢复。"""
+        try:
+            paths = [d.get("path") for d in self._docs
+                     if d.get("path") and os.path.isfile(d.get("path"))]
+            if paths:
+                self._settings.setValue("sessionDocs", paths)
+                cur = self._cur if 0 <= self._cur < len(self._docs) else 0
+                cur_doc = self._docs[cur] if 0 <= cur < len(self._docs) else None
+                cur_path = cur_doc.get("path") if cur_doc else None
+                self._settings.setValue(
+                    "sessionCur", paths.index(cur_path) if cur_path in paths else 0)
+            else:
+                self._settings.remove("sessionDocs")
+                self._settings.remove("sessionCur")
         except Exception:      # noqa: BLE001
             pass
 
@@ -4062,6 +5317,20 @@ class MainWindow(QMainWindow):
             v.setAcceptDrops(True)
 
     def eventFilter(self, obj, ev):
+        # v3.44.9（ZEN-HOVER）：极简（zen）模式下菜单栏默认隐藏；鼠标移到窗口顶部
+        # （标题栏下方客户区顶部阈值内）时显示，离开后自动隐藏（滞回 28/40px 防抖，
+        # 弹出菜单期间不隐藏）。全局事件过滤器仅在 zen 模式安装（见 _apply_layout_chrome）。
+        if getattr(self, "_zen_autohide", False) and ev.type() == QEvent.MouseMove:
+            mb = self.menuBar()
+            gp = ev.globalPosition().toPoint()
+            wr = self.geometry()
+            if wr.contains(gp):
+                if gp.y() <= wr.y() + 28:
+                    if not mb.isVisible():
+                        mb.setVisible(True)
+                elif gp.y() > wr.y() + 40 and mb.isVisible() \
+                        and QApplication.activePopupWidget() is None:
+                    mb.setVisible(False)
         # v3.38（TAB-5）：标签栏鼠标手势 —— 中键点击标签即关闭 / 双击标签即关闭 /
         # 双击空白处新建标签（Notepad++ 与浏览器对标）
         if obj is self._tabbar:
@@ -4161,6 +5430,7 @@ class MainWindow(QMainWindow):
                 need_ask = True
         if not need_ask:
             self._remember_last_session()   # v3.38（OUT-5）
+            self.save_session()             # v3.44（SESSION）
             self._quitting = True
             e.accept()
             return
@@ -4197,5 +5467,6 @@ class MainWindow(QMainWindow):
                     self.file_path = os.path.abspath(path)
                 self._write_text(self.file_path, md)   # v3.29d（B2）
         self._remember_last_session()   # v3.38（OUT-5）
+        self.save_session()             # v3.44（SESSION）
         self._quitting = True
         e.accept()

@@ -39,6 +39,16 @@ def _pal(**kw):
         list_hover="#eceff3", sel_text="#0052d9",
         scroll="#d4d9df", scroll_hover="#bcc3cc",
         tab_text="#57606a", tab_border="#e9ecef",
+        # v3.44.3（DESIGN01）：对齐设计01「现代经典风」区域令牌 ——
+        # chrome2 = 标签条底（设计稿 --chrome2）；chrome_line = 各 chrome 区域
+        # 边界线（设计稿 --line，比 border 更清晰，保证标题栏/侧栏/工具栏边界可见）
+        chrome2="#f2f3f5", chrome_line="#dde1e7", side="#e9edf2",
+        # v3.44.29：风格 chrome 令牌（原仅 office/code 等风格 JSON 强制蓝，切主题后
+        # 不与主题协调；下放到主题调色板，使 menubar/statusbar 主底色随主题）。
+        # chrome_bar = 标题栏 / 状态栏主底色（取各主题 chrome2 同值）；
+        # chrome_bar_text = 其上文字（随主题正/负色自动翻转）；
+        # status_sep = 状态栏内分隔线（浅色主题用深半透明、深色主题用浅半透明）。
+        chrome_bar="#f2f3f5", chrome_bar_text="#1f2328", status_sep="rgba(0,0,0,.08)",
     )
     base.update(kw)
     return base
@@ -55,6 +65,8 @@ PALETTES = {
         btn_hover_border="#c8d9ea", btn_pressed="#d6e6f4",
         list_hover="#e2edf7", sel_text="#2f7bd9",
         scroll="#c7d7e5", scroll_hover="#adc4d8", tab_border="#d8e4ee",
+        chrome2="#e2edf8", chrome_line="#dde8f1", side="#eaf2fa",
+        chrome_bar="#e2edf8", chrome_bar_text="#243342", status_sep="rgba(0,0,0,.08)",
     ),
     "sepia": _pal(
         bg="#f8f2e4", bg_soft="#f3ecda", border="#e7dcc2",
@@ -70,6 +82,8 @@ PALETTES = {
         list_hover="#ede2c8", sel_text="#a06a2c",
         scroll="#d3c6a6", scroll_hover="#bfae8a", tab_border="#e0d4b8",
         tab_text="#7d7264",
+        chrome2="#efe7d3", chrome_line="#e7dcc2", side="#f3ecda",
+        chrome_bar="#efe7d3", chrome_bar_text="#4a4238", status_sep="rgba(0,0,0,.08)",
     ),
     "dark": _pal(
         bg="#1e2227", bg_soft="#191d22", border="#2c3138",
@@ -85,6 +99,8 @@ PALETTES = {
         list_hover="#252b32", sel_text="#5c9dff",
         scroll="#3a424b", scroll_hover="#4a545f", tab_border="#333a42",
         tab_text="#97a1ac", tab_sel_bg="#262c33", tab_sel_text="#e8edf2",
+        chrome2="#222730", chrome_line="#2c3138", side="#191d22",
+        chrome_bar="#222730", chrome_bar_text="#dce2e8", status_sep="rgba(255,255,255,.18)",
     ),
     "night": _pal(
         bg="#17181b", bg_soft="#131417", border="#26282c",
@@ -100,6 +116,8 @@ PALETTES = {
         list_hover="#212428", sel_text="#38b28c",
         scroll="#34383e", scroll_hover="#454b52", tab_border="#2e3238",
         tab_text="#8a939d", tab_sel_bg="#222428", tab_sel_text="#e2e6ea",
+        chrome2="#1f2125", chrome_line="#26282c", side="#131417",
+        chrome_bar="#1f2125", chrome_bar_text="#d5d9de", status_sep="rgba(255,255,255,.18)",
     ),
     "panda": _pal(
         bg="#26292c", bg_soft="#212427", border="#34383d",
@@ -115,12 +133,19 @@ PALETTES = {
         list_hover="#2b2f33", sel_text="#19d3b4",
         scroll="#41474d", scroll_hover="#525a61", tab_border="#3a3f44",
         tab_text="#9aa4ad", tab_sel_bg="#2d3134", tab_sel_text="#eaeef1",
+        chrome2="#2c3034", chrome_line="#34383d", side="#212427",
+        chrome_bar="#2c3034", chrome_bar_text="#e2e6e9", status_sep="rgba(255,255,255,.18)",
     ),
 }
 
 
 def palette(theme_id: str) -> dict:
-    return PALETTES.get(theme_id, PALETTES["light"])
+    pal = dict(PALETTES.get(theme_id, PALETTES["light"]))
+    # v3.42.0：页签选中态 token 缺省（主模板 ::tab:selected 引用；六主题均未
+    # 显式定义 → 回退 bg/text，ps01 等默认外观与历史版本完全一致）
+    pal.setdefault("tab_sel_bg", pal["bg"])
+    pal.setdefault("tab_sel_text", pal["text"])
+    return pal
 
 
 # ---------------------------------------------------------------------------
@@ -134,18 +159,26 @@ QMenuBar {{
 }}
 QMenuBar::item {{
   padding: 6px 12px; margin: 0 1px; border-radius: 6px;
-  color: {text_soft}; background: transparent; font-size: 13px;
+  color: {text_soft}; background: transparent; font-size: 13px; font-family: 'Microsoft YaHei';
 }}
 QMenuBar::item:selected {{ background: {hover_bg}; }}
 QMenuBar::item:pressed {{ background: {accent_soft}; color: {accent}; }}
 QMenu {{
   background: {menu_bg}; border: 1px solid {menu_border};
-  border-radius: 10px; padding: 6px;
+  border-radius: 7px; padding: 5px;
 }}
+/* RIBBON-12（v3.44.26）：命令菜单项间距/字体统一为 WorkBuddy 标准观感 ——
+   Microsoft YaHei 13px，上下 5px 内距 + 5px 菜单内距，单行 ≈ 23px，
+   比 RIBBON-6 的紧凑档略宽松，与各下拉命令菜单整体风格一致。 */
 QMenu::item {{
-  padding: 7px 30px 7px 16px; border-radius: 6px; color: {text}; font-size: 13px;
+  padding: 5px 32px 5px 14px; border-radius: 4px; color: {text};
+  font-size: 13px; font-family: 'Microsoft YaHei';
 }}
-QMenu::item:selected {{ background: {menu_hover_bg}; color: {accent}; }}
+/* v3.43.0（VIEW-REF）：参照 02_视图菜单.png —— hover/选中 = 浅蓝底深字（非实心蓝白字），
+   勾选项整体铺浅蓝底（分屏模式 / 侧边栏 / 工具栏三行的参照形态） */
+QMenu::item:selected {{ background: {menu_hover_bg}; color: {text}; }}
+QMenu::item:checked {{ background: {accent_soft}; }}
+QMenu::item:checked:selected {{ background: {menu_hover_bg}; color: {accent}; }}
 QMenu::item:disabled {{ color: {menu_disabled}; }}
 QMenu::separator {{ height: 1px; background: {sep}; margin: 5px 10px; }}
 QToolBar {{
@@ -155,52 +188,68 @@ QToolBar {{
 QToolBar::separator {{ width: 1px; background: {sep}; margin: 7px 9px; }}
 QToolBar QToolButton {{ padding: 6px 11px; font-size: 13px; }}
 QToolBar#sideTB {{
-  background: {bg_soft}; border: none; border-right: 1px solid {border};
-  padding: 8px 5px; spacing: 3px;
+  background: {bg_soft}; border: none; border-right: 1px solid {chrome_line};
+  padding: 7px 0;
 }}
-QToolBar#sideTB::separator {{ height: 1px; background: {sep}; margin: 7px 6px; }}
-QToolBar#sideTB QToolButton {{ padding: 8px 0; min-width: 36px; font-size: 13px; }}
+/* v3.41.3：对齐设计稿 .vtool——按钮间 gap 2px 由 _SideTBStyle(QProxyStyle) 的
+   PM_ToolBarItemSpacing 驱动（QSS spacing/margin 对 QToolBar 条目均不生效）；
+   分组分隔线为 24x1 QFrame#sideSep（原生 ::separator 宽度不可控） */
+QFrame#sideSep {{ background: {sep}; }}
+QToolBar#sideTB QToolButton {{ padding: 7px 0; min-width: 38px; font-size: 14px; }}
 QToolButton {{
-  border: none; border-radius: 7px; padding: 5px 10px;
+  border: none; border-radius: 6px; padding: 5px 10px;
   color: {text_muted}; background: transparent;
 }}
 QToolButton:hover {{ background: {hover_bg}; color: {hover_text}; }}
 QToolButton:pressed, QToolButton:checked {{ background: {accent_soft}; color: {accent}; }}
 QStatusBar {{
-  background: {bg_soft}; border-top: 1px solid {border}; min-height: 28px;
+  background: {bg_soft}; border-top: 1px solid {chrome_line}; min-height: 28px;
 }}
-QStatusBar QLabel {{ color: {text_muted}; font-size: 12px; padding: 0 6px; }}
+QStatusBar QLabel {{
+  color: {text_muted}; font-size: 11px; padding: 0 8px;
+  border-right: 1px solid {sep};
+}}
 QStatusBar QToolButton {{ padding: 2px 9px; }}
 QToolTip {{
   background: {tooltip_bg}; color: {tooltip_fg}; border: none;
-  border-radius: 6px; padding: 6px 11px; font-size: 12px;
+  border-radius: 8px; padding: 7px 12px; font-size: 12px;
 }}
 QSplitter::handle {{ background: transparent; }}
 QSplitter::handle:hover {{ background: {accent_soft}; }}
-#tabstrip {{ background: {bg_soft}; border-bottom: 1px solid {border}; }}
+/* v3.44.4（DESIGN01 修复）：主分栏手柄着 chrome_line —— 侧栏/编辑区之间的竖向分隔线，
+   由分栏手柄绘制（位于两控件之间，永不被子控件覆盖），保证「边线」稳定可见 */
+#mainSplit::handle {{ background: {chrome_line}; }}
+/* v3.44.3（DESIGN01）：编辑区容器显式底色（设计稿 .content background = mica），
+   标签条底 = chrome2（设计稿 --chrome2），底边线 = chrome_line（--line）；
+   选中页签强调色指示条按设计稿放「底部」（与编辑区卡片连成一体），
+   不再压顶边——即标题栏下缘不再出现蓝色线条 */
+#contentArea {{ background: {bg}; }}
+#tabstrip {{ background: {chrome2}; border-bottom: 1px solid {chrome_line}; }}
 #tabstrip QTabBar {{
   background: transparent; font-size: 12.5px;
 }}
 #tabstrip QTabBar::tab {{
   background: transparent; color: {tab_text};
-  padding: 6px 12px 6px 14px; margin: 4px 2px 0;
-  border-radius: 8px 8px 0 0; border: 1px solid transparent;
+  padding: 6px 12px 5px 14px; margin: 0px 2px 0;
+  border-radius: 6px 6px 0 0; border: 1px solid transparent;
+  border-top: 2px solid transparent;
   border-bottom: none;
 }}
 #tabstrip QTabBar::tab:hover:!selected {{ background: {hover_bg}; color: {hover_text}; }}
 #tabstrip QTabBar::tab:selected {{
-  background: {bg}; color: {text}; font-weight: 600;
+  background: {tab_sel_bg}; color: {tab_sel_text}; font-weight: 600;
   border-color: {tab_border};
+  border-bottom: 2px solid transparent;
 }}
 QDialog QLabel {{ color: {text_soft}; }}
 QDialog QLineEdit, QDialog QCheckBox {{ color: {text}; }}
 QDialog QLineEdit {{
-  border: 1px solid {input_border}; border-radius: 7px;
+  border: 1px solid {input_border}; border-radius: 6px;
   padding: 6px 10px; background: {input_bg};
 }}
 QDialog QLineEdit:focus {{ border-color: {accent}; }}
 QDialog QPushButton {{
-  background: {btn_bg}; border: 1px solid {btn_border}; border-radius: 7px;
+  background: {btn_bg}; border: 1px solid {btn_border}; border-radius: 6px;
   padding: 6px 18px; color: {text};
 }}
 QDialog QPushButton:hover {{ background: {btn_hover_bg}; border-color: {btn_hover_border}; }}
@@ -208,7 +257,7 @@ QDialog QPushButton:pressed {{ background: {btn_pressed}; }}
 QDialog QPushButton:default {{ background: {accent}; color: #ffffff; border-color: {accent}; }}
 QDialog QListWidget {{
   background: {input_bg}; border: 1px solid {menu_border};
-  border-radius: 8px; color: {text}; outline: 0; font-size: 13px;
+  border-radius: 6px; color: {text}; outline: 0; font-size: 13px;
 }}
 QDialog QListWidget::item {{ padding: 7px 10px; border-radius: 6px; }}
 QDialog QListWidget::item:hover {{ background: {list_hover}; }}
@@ -217,56 +266,67 @@ QDialog QSlider::groove:horizontal {{
   height: 4px; background: {sep}; border-radius: 2px;
 }}
 QDialog QSlider::handle:horizontal {{
-  width: 14px; height: 14px; margin: -6px 0; border-radius: 7px; background: {accent};
+  width: 14px; height: 14px; margin: -6px 0; border-radius: 6px; background: {accent};
 }}
 QDialog QSpinBox {{
-  border: 1px solid {input_border}; border-radius: 7px; padding: 4px 8px;
+  border: 1px solid {input_border}; border-radius: 6px; padding: 4px 8px;
   background: {input_bg}; color: {text};
 }}
 """
 
 SIDEBAR_QSS_TPL = """
 #sidebar {{
-  background: {bg_soft}; border-right: 1px solid {border};
+  background: {side};
 }}
+/* v3.39.14（HEAD-1）：页面头配色重设计——胶囊由淡蓝块改为中性分段控件：
+   浅灰描边容器 + 白底选中块，与主区页签（白底+accent 顶线）统一高亮语言 */
 #tabcap {{
-  background: {accent_soft}; border-radius: 9px; padding: 3px;
+  background: transparent; border: none;
+  border-bottom: 1px solid {border};
+  border-radius: 0; padding: 0;
 }}
 #tabcap QToolButton {{
   border: none; background: transparent; color: {text_muted};
-  padding: 5px 16px; border-radius: 7px; font-size: 12.5px;
+  padding: 8px 16px; border-radius: 0; font-size: 12px;
+  border-bottom: 2px solid transparent;
 }}
-#tabcap QToolButton:hover {{ background: rgba(255, 255, 255, 0.35); color: {text}; }}
+#tabcap QToolButton:hover {{ background: {hover_bg}; color: {text}; }}
 #tabcap QToolButton:checked {{
-  background: {bg}; color: {text}; font-weight: 600;
+  background: transparent; color: {text}; font-weight: 600;
+  border-bottom: 2px solid {accent};
 }}
+#sidebar #crumbUp {{
+  border: 1px solid {input_border}; background: {input_bg};
+  color: {text_muted}; border-radius: 6px; font-size: 13px;
+}}
+#sidebar #crumbUp:hover {{ border-color: {accent}; color: {accent}; }}
 #sidebar QToolButton {{
   border: none; background: transparent; color: {text_muted};
-  padding: 5px 12px; border-radius: 7px; font-size: 12px;
+  padding: 5px 12px; border-radius: 6px; font-size: 12px;
 }}
 #sidebar QToolButton:hover {{ background: {list_hover}; color: {text}; }}
 #sidebar QToolButton:checked {{ background: {accent_soft}; color: {accent}; font-weight: 600; }}
 #sidebar QListWidget, #sidebar QTreeWidget {{
   background: transparent; border: none; outline: 0;
-  font-size: 13px; color: {text};
+  font-size: 12px; color: {text};
   show-decoration-selected: 0;
 }}
 /* branch 列（展开箭头区）透明：去掉系统默认的绿色选中阴影 */
 #sidebar QTreeWidget::branch {{ background: transparent; }}
 #sidebar QListWidget::item {{
-  padding: 5px 9px; margin: 1px 10px; border-radius: 7px; color: {text};
+  padding: 5px 10px; margin: 1px 10px; border-radius: 6px; color: {text};
 }}
 #sidebar QListWidget::item:hover {{ background: {list_hover}; }}
 #sidebar QListWidget::item:selected {{
   background: {accent_soft}; color: {accent};
 }}
 #sidebar QTreeWidget::item {{
-  padding: 4px 6px; margin: 1px 8px; border-radius: 7px; color: {text};
+  padding: 4px 6px; margin: 1px 10px; border-radius: 6px; color: {text};
 }}
 #sidebar QTreeWidget::item:hover {{ background: {list_hover}; }}
 #sidebar QTreeWidget::item:selected {{ background: {accent_soft}; color: {accent}; }}
 #sidebar #fileHeader {{
-  text-align: left; padding: 7px 14px; margin: 0; min-height: 0;
+  text-align: left; padding: 7px 10px; margin: 0; min-height: 0;
   border: none; border-radius: 0; font-size: 13px; font-weight: 600;
   color: {text}; background: transparent;
 }}
@@ -276,15 +336,15 @@ SIDEBAR_QSS_TPL = """
 #sidebar QScrollBar::handle:vertical {{ background: {scroll}; border-radius: 4px; min-height: 30px; }}
 #sidebar QScrollBar::handle:vertical:hover {{ background: {scroll_hover}; }}
 #sidebar QScrollBar::add-line:vertical, #sidebar QScrollBar::sub-line:vertical {{ height: 0; }}
-#sidebar QLabel {{ color: {text_muted}; font-size: 11px; padding: 6px 14px 2px; }}
+#sidebar QLabel {{ color: {text_muted}; font-size: 11px; padding: 6px 10px 2px; }}
 /* ---- 搜索面板（跨文件搜索）---- */
 #sidebar QLineEdit {{
-  border: 1px solid {input_border}; border-radius: 7px; padding: 6px 10px;
-  margin: 4px 8px 0 8px; font-size: 12.5px; background: {input_bg}; color: {text};
+  border: 1px solid {input_border}; border-radius: 6px; padding: 6px 10px;
+  margin: 4px 10px 0 10px; font-size: 12.5px; background: {input_bg}; color: {text};
 }}
 #sidebar QLineEdit:focus {{ border-color: {accent}; }}
 #sidebar QComboBox {{
-  border: 1px solid {input_border}; border-radius: 7px; padding: 4px 8px;
+  border: 1px solid {input_border}; border-radius: 6px; padding: 4px 8px;
   font-size: 12px; background: {input_bg}; color: {text};
 }}
 #sidebar QComboBox QAbstractItemView {{
@@ -293,15 +353,15 @@ SIDEBAR_QSS_TPL = """
 }}
 #sidebar QCheckBox {{ color: {text_muted}; font-size: 11.5px; }}
 #sidebar QPushButton {{
-  border: 1px solid {input_border}; border-radius: 7px; padding: 5px 12px;
+  border: 1px solid {input_border}; border-radius: 6px; padding: 5px 12px;
   font-size: 12px; background: {input_bg}; color: {text};
 }}
 #sidebar QPushButton:hover {{ border-color: {accent}; color: {accent}; }}
 #sidebar #searchTitle {{
-  font-size: 12px; font-weight: 600; padding: 6px 12px 0 12px; color: {text};
+  font-size: 12px; font-weight: 600; padding: 6px 10px 0 10px; color: {text};
 }}
 #sidebar #searchScope, #sidebar #searchInfo {{
-  font-size: 11px; padding: 2px 12px; color: {text_muted};
+  font-size: 11px; padding: 2px 10px; color: {text_muted};
 }}
 """
 
@@ -310,12 +370,12 @@ DIALOG_QSS_TPL = """
 #findDlg {{ background: {bg}; }}
 #findDlg QLabel {{ color: {text_muted}; font-size: 12px; }}
 #findDlg QLineEdit {{
-  border: 1px solid {input_border}; border-radius: 7px; padding: 7px 10px;
+  border: 1px solid {input_border}; border-radius: 6px; padding: 7px 10px;
   font-size: 13px; background: {input_bg}; color: {text};
 }}
 #findDlg QLineEdit:focus {{ border-color: {accent}; }}
 #findDlg QPushButton {{
-  background: {btn_bg}; border: 1px solid {btn_border}; border-radius: 7px;
+  background: {btn_bg}; border: 1px solid {btn_border}; border-radius: 6px;
   padding: 7px 14px; color: {text}; font-size: 12.5px;
 }}
 #findDlg QPushButton:hover {{ background: {btn_hover_bg}; border-color: {btn_hover_border}; }}
@@ -325,7 +385,7 @@ DIALOG_QSS_TPL = """
 #findDlg QCheckBox {{ color: {text_soft}; font-size: 12.5px; }}
 /* v3.27：查找面板——范围分段切换 + 计数胶囊 + 正则帮助按钮 */
 #findDlg QToolButton#scopeBtn {{
-  background: transparent; border: 1px solid transparent; border-radius: 7px;
+  background: transparent; border: 1px solid transparent; border-radius: 6px;
   padding: 6px 12px; color: {text_muted}; font-size: 12.5px;
 }}
 #findDlg QToolButton#scopeBtn:hover {{ color: {text}; background: {btn_hover_bg}; }}
@@ -334,7 +394,7 @@ DIALOG_QSS_TPL = """
   font-weight: 600;
 }}
 #findDlg QToolButton#helpBtn {{
-  background: {btn_bg}; border: 1px solid {btn_border}; border-radius: 7px;
+  background: {btn_bg}; border: 1px solid {btn_border}; border-radius: 6px;
   padding: 6px 9px; color: {text_muted}; font-size: 12.5px; font-weight: 600;
 }}
 #findDlg QToolButton#helpBtn:hover {{ color: {accent}; border-color: {accent}; }}
@@ -348,17 +408,17 @@ DIALOG_QSS_TPL = """
 /* v3.24：全局搜索面板状态行与结果树样式 */
 #findDlg #searchScope, #findDlg #searchInfo {{ color: {text_muted}; font-size: 12px; }}
 #findDlg QTreeWidget {{
-  border: 1px solid {menu_border}; border-radius: 8px; background: {input_bg};
+  border: 1px solid {menu_border}; border-radius: 6px; background: {input_bg};
   font-size: 12.5px; color: {text}; outline: 0;
 }}
 #findDlg QTreeWidget::item {{ height: 24px; border-radius: 6px; }}
 #findDlg QTreeWidget::item:selected {{ background: {accent_soft}; color: {accent}; }}
 #findDlg QComboBox {{
-  border: 1px solid {input_border}; border-radius: 7px; padding: 5px 8px;
+  border: 1px solid {input_border}; border-radius: 6px; padding: 5px 8px;
   background: {input_bg}; color: {text}; font-size: 12.5px;
 }}
 #shortcutDlg QTreeWidget {{
-  border: 1px solid {menu_border}; border-radius: 8px; background: {input_bg};
+  border: 1px solid {menu_border}; border-radius: 6px; background: {input_bg};
   font-size: 13px; color: {text}; outline: 0;
 }}
 #shortcutDlg QTreeWidget::item {{ height: 28px; border-radius: 6px; }}
@@ -368,55 +428,70 @@ DIALOG_QSS_TPL = """
   padding: 6px 8px; font-size: 12px; color: {text_muted};
 }}
 #shortcutDlg QKeySequenceEdit {{
-  border: 1px solid {input_border}; border-radius: 7px; padding: 6px 10px; background: {input_bg};
+  border: 1px solid {input_border}; border-radius: 6px; padding: 6px 10px; background: {input_bg};
   color: {text};
 }}
 #shortcutDlg QKeySequenceEdit:focus {{ border-color: {accent}; }}
 #hint {{ color: {text_muted}; font-size: 11.5px; }}
 #settingsDlg {{ background: {bg}; }}
-#settingsDlg QLabel {{ color: {text_soft}; font-size: 13px; background: transparent; }}
+#settingsDlg QLabel {{ color: {text_soft}; font-size: 12.5px; background: transparent; }}
 #settingsDlg #navList {{
   background: {bg_soft}; border: none; border-right: 1px solid {border};
   font-size: 13.5px; color: {text}; outline: 0; padding-top: 8px;
 }}
-#settingsDlg #navList::item {{ padding: 9px 16px; margin: 2px 8px; border-radius: 8px; }}
+#settingsDlg #navList::item {{ padding: 9px 16px; margin: 2px 8px; border-radius: 6px; }}
 #settingsDlg #navList::item:hover {{ background: {list_hover}; }}
 #settingsDlg #navList::item:selected {{ background: {accent_soft}; color: {accent}; }}
 #settingsDlg #pageTitle {{ font-size: 17px; font-weight: 600; color: {text}; }}
 #settingsDlg #pageHint {{ color: {text_muted}; font-size: 12px; }}
 #settingsDlg QGroupBox {{
-  border: 1px solid {border}; border-radius: 10px; margin-top: 12px;
-  background: {bg_soft}; font-weight: 600; padding-top: 6px;
+  border: 1px solid {border}; border-radius: 9px; margin-top: 8px;
+  background: {bg_soft}; font-weight: 600; padding-top: 4px;
 }}
 /* v3.29d：组框标题呈「嵌入式图例」—— 标题垂直中点压在顶部边框线上，
    文字底下垫页面底色，边框线在文字处断开（fieldset legend 视觉效果） */
 #settingsDlg QGroupBox::title {{
   subcontrol-origin: border; subcontrol-position: top left;
-  left: 14px; top: -8px; padding: 0 6px;
-  background: {bg}; color: {accent}; font-size: 12.5px; font-weight: 600;
+  left: 12px; top: -7px; padding: 0 5px;
+  background: {bg}; color: {accent}; font-size: 12px; font-weight: 600;
 }}
-#settingsDlg QCheckBox {{ color: {text}; font-size: 13px; }}
+#settingsDlg QCheckBox {{ color: {text}; font-size: 12.5px; }}
 #settingsDlg QLineEdit, #settingsDlg QComboBox {{
-  border: 1px solid {input_border}; border-radius: 7px; padding: 5px 10px;
+  border: 1px solid {input_border}; border-radius: 6px; padding: 4px 9px;
+  background: {input_bg}; color: {text};
+}}
+#settingsDlg QSpinBox {{
+  border: 1px solid {input_border}; border-radius: 6px; padding: 4px 9px;
   background: {input_bg}; color: {text};
 }}
 #settingsDlg #themeList {{
   background: {input_bg}; border: 1px solid {menu_border};
-  border-radius: 8px; color: {text}; outline: 0;
+  border-radius: 6px; color: {text}; outline: 0;
 }}
 #settingsDlg #themeList::item {{ padding: 8px 10px; border-radius: 6px; }}
 #settingsDlg #themeList::item:hover {{ background: {list_hover}; }}
 #settingsDlg #themeList::item:selected {{ background: {accent_soft}; color: {accent}; }}
 #settingsDlg QSlider::groove:horizontal {{ height: 4px; background: {sep}; border-radius: 2px; }}
 #settingsDlg QSlider::handle:horizontal {{
-  width: 14px; height: 14px; margin: -6px 0; border-radius: 7px; background: {accent};
+  width: 14px; height: 14px; margin: -6px 0; border-radius: 6px; background: {accent};
 }}
 #settingsDlg QPushButton {{
-  background: {btn_bg}; border: 1px solid {btn_border}; border-radius: 7px;
-  padding: 6px 18px; color: {text};
+  background: {btn_bg}; border: 1px solid {btn_border}; border-radius: 6px;
+  padding: 5px 14px; color: {text};
 }}
 #settingsDlg QPushButton:hover {{ background: {btn_hover_bg}; border-color: {btn_hover_border}; }}
 #settingsDlg QPushButton:default {{ background: {accent}; color: #ffffff; border-color: {accent}; }}
+/* v3.39.7（HIST-2）：历史版本对话框 —— 按钮禁用态明显置灰 */
+#historyDlg {{ background: {bg}; }}
+#historyDlg QLabel {{ color: {text_soft}; font-size: 13px; background: transparent; }}
+#historyDlg QPushButton {{
+  background: {btn_bg}; border: 1px solid {btn_border}; border-radius: 6px;
+  padding: 6px 14px; color: {text};
+}}
+#historyDlg QPushButton:hover {{ background: {btn_hover_bg}; border-color: {btn_hover_border}; }}
+#historyDlg QPushButton:disabled {{
+  background: {bg_soft}; color: {text_muted}; border-color: {sep};
+}}
 """
 
 

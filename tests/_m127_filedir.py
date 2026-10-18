@@ -172,25 +172,59 @@ check("D3 未命中时退化为选中首项（列表有焦点）",
       _miss is False and sb.file_list.currentRow() == 0, "miss=%s row=%s"
       % (_miss, sb.file_list.currentRow()))
 
-# ---------- E 初始化优先级：上次目录 > 默认路径 ----------
+# ---------- E 初始化优先级（v3.38 FLP-2）：lastOpenDir > 上次目录 > 默认路径 > 系统回退 ----------
+def set_open(v):
+    # v3.38（FLP-2）：最近一次成功打开文件目录（files/lastOpenDir）；空 = 无历史
+    win._settings.setValue("files/lastOpenDir", v)
+    win._settings.sync()
+
+
+sb._initial_restored = False
 set_cfg(dir_b)
 set_last(dir_a)
+set_open("")
 r = sb.restore_initial_dir()
 wait(200)
-check("E1 有上次访问目录 → 优先恢复上次（A）而非默认（B）",
+check("E1 无 lastOpenDir → 上次访问目录优先（A）而非默认（B）",
       r is True and sb.current_dir() == os.path.abspath(dir_a), str(sb.current_dir()))
+sb._initial_restored = False
+set_cfg("")
+set_last(dir_a)
+set_open(dir_b)
+r = sb.restore_initial_dir()
+wait(200)
+check("E1b lastOpenDir 有效 → 最高优先（压过上次访问目录）",
+      r is True and sb.current_dir() == os.path.abspath(dir_b), str(sb.current_dir()))
+sb._initial_restored = False
 set_cfg(dir_b)
 set_last(os.path.join(_root, "已删除的旧目录"))
+set_open(os.path.join(_root, "已消失的打开目录"))
 r = sb.restore_initial_dir()
 wait(200)
-check("E2 上次目录已失效 → 退回默认路径（B）",
+check("E2 打开目录与上次目录均已失效 → 退回默认路径（B）",
       sb.current_dir() == os.path.abspath(dir_b), str(sb.current_dir()))
+sb._initial_restored = False
 set_cfg("")
 set_last("")
+set_open("")
 r = sb.restore_initial_dir()
 wait(150)
-check("E3 两者都没有 → 根层", r is False and sb.current_dir() is None,
-      "r=%s dir=%s" % (r, sb.current_dir()))
+try:
+    from PySide6.QtCore import QStandardPaths as _QSP
+    _docs = _QSP.writableLocation(_QSP.DocumentsLocation)
+except Exception:                                # noqa: BLE001
+    _docs = ""
+
+
+def _nd(p):
+    return os.path.normcase(os.path.abspath(p)) if p else None
+
+
+_got = _nd(sb.current_dir())
+_ok_e3 = (_got is not None and _got in (_nd(_docs), _nd(os.getcwd()))) or \
+         (r is False and sb.current_dir() is None)
+check("E3 全无历史 → 系统文档目录 / cwd（全部不可用才回退根层）", _ok_e3,
+      "r=%s dir=%s docs=%s" % (r, sb.current_dir(), _docs))
 
 # ---------- F 配置项读写与设置页联动 ----------
 win.set_file_list_default_dir(dir_a)

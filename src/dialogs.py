@@ -10,16 +10,18 @@ from datetime import datetime
 from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
-    QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QGroupBox,
+    QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QGroupBox,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu, QMessageBox,
     QPlainTextEdit, QPushButton, QKeySequenceEdit, QRadioButton, QSlider, QSplitter, QSpinBox,
     QStackedWidget, QTabWidget, QTextBrowser, QToolButton, QTreeWidget, QTreeWidgetItem,
     QVBoxLayout, QWidget,
 )
 
-from config import BUILTIN_TEMPLATES, MMD_LEGACY, MMD_THEMES, TPL_NAME_MAX, js
+from config import BUILTIN_TEMPLATES, CODE_STYLES, FMTLOG_DIR, MMD_LEGACY, MMD_THEMES, TPL_NAME_MAX, js
 from sidebar import GlobalSearchPanel
-from styles import THEMES, dialog_qss, palette
+from styles import THEMES, palette
+import uistyles
+
 
 # 斜杠（/）菜单可配置项（与 editor.html 中 SLASH_DEFS 对应）
 # v3.30.3：移除「上标 / 下标」（supsub）一级项
@@ -43,7 +45,8 @@ class _ThemedDialog(QDialog):
     """随主窗口主题换肤的对话框基类。"""
 
     def _apply_theme_qss(self, theme_id):
-        self.setStyleSheet(dialog_qss(theme_id))
+        # v3.39.15（UISTYLE-1）：对话框 QSS 走风格感知管线（当前主题 + 界面风格覆盖）
+        self.setStyleSheet(uistyles.dialog_qss(theme_id))
 
 
 class FindDialog(_ThemedDialog):
@@ -482,7 +485,20 @@ class ShortcutDialog(_ThemedDialog):
 
 
 class SettingsDialog(_ThemedDialog):
-    """系统设置：Typedown 式左侧导航（外观 / 编辑器 / 通用），设置即时生效。"""
+    """系统设置：Typedown 式左侧导航（通用 / 编辑器 / 写作与输入 / 模板），设置即时生效。
+
+    v3.43.0（LOOK-1）：原「外观」页整体迁出到顶栏「外观(&A)」一级菜单 ——
+    主题 / 界面风格 / 图表风格 / 代码风格四项在菜单里即时切换，设置中心不再
+    重复提供同一功能（避免「同一配置两处入口、状态互相打架」）。
+    编辑区字号缩放不属于外观四项的范畴，下放到「编辑器 → 编辑区显示」保留；
+    v3.43.1（SET-4）：「界面风格管理…」菜单项移除（管理对话框无就地新增能力），
+    命令面板（Ctrl+Shift+P）保留该命令兜底。
+
+    v3.43.1（SET-3P）：三页拆四页压高度 —— 「通用」提到「编辑器」上方；
+    从两页各抽一组组框组成新页「写作与输入」（编辑器←段落与标题 / 斜杠(/)菜单，
+    通用←写作模式 / 输入辅助）。组框是移动不是复制（同一配置只留一处入口），
+    控件仍挂 SettingsDialog 属性，showEvent 同步与回调逻辑不受影响。
+    """
 
     def __init__(self, win):
         super().__init__(win)
@@ -498,16 +514,18 @@ class SettingsDialog(_ThemedDialog):
         self.nav.setObjectName("navList")
         self.nav.setFixedWidth(150)
         # v3.29：「写作与历史」已并入「通用」页；「编辑器」页含图片 / 代码块 / 斜杠菜单
-        # v3.36（TPL-E）：模板管理提升为一级页「模板」（与外观 / 编辑器 / 通用同级）
-        for name in ("外观", "编辑器", "通用", "模板"):
+        # v3.36（TPL-E）：模板管理提升为一级页「模板」
+        # v3.43.0（LOOK-1）：「外观」页迁出至顶栏「外观(&A)」菜单，此处不再保留
+        # v3.43.1（SET-3P）：导航顺序 = 通用 / 编辑器 / 写作与输入 / 模板
+        for name in ("通用", "编辑器", "写作与输入", "模板"):
             QListWidgetItem(name, self.nav)
         self.nav.setCurrentRow(0)
 
         # ---- 右侧页面 ----
         self.pages = QStackedWidget(self)
-        self.pages.addWidget(self._page_appearance())
-        self.pages.addWidget(self._page_editor_fmt())
         self.pages.addWidget(self._page_general())
+        self.pages.addWidget(self._page_editor_fmt())
+        self.pages.addWidget(self._page_writing())
         self.pages.addWidget(TemplatePage(win, self))
         self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
 
@@ -540,68 +558,9 @@ class SettingsDialog(_ThemedDialog):
         return False
 
     # ================= 外观 =================
-    def _page_appearance(self):
-        page = QWidget(self)
-        lay = QVBoxLayout(page)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(12)
-
-        title = QLabel("外观")
-        title.setObjectName("pageTitle")
-        lay.addWidget(title)
-        hint = QLabel("选择主题（即时生效，自动记住）；拖动滑块调整编辑区显示字号；下方可另选图表主题。")
-        hint.setObjectName("pageHint")
-        hint.setWordWrap(True)
-        lay.addWidget(hint)
-
-        lay.addWidget(QLabel("主题"))
-        self.theme_list = QListWidget(page)
-        self.theme_list.setObjectName("themeList")
-        for t in THEMES:
-            QListWidgetItem(f"●  {t['label']}", self.theme_list)
-        cur = getattr(self._win, "_theme", "light")
-        ids = [t["id"] for t in THEMES]
-        self.theme_list.setCurrentRow(ids.index(cur) if cur in ids else 0)
-        self.theme_list.itemClicked.connect(self._on_theme_clicked)
-        lay.addWidget(self.theme_list, 1)
-
-        lay.addWidget(QLabel("编辑区字号缩放"))
-        zrow = QHBoxLayout()
-        self.zoom_slider = QSlider(Qt.Horizontal, page)
-        self.zoom_slider.setRange(80, 160)
-        self.zoom_slider.setValue(int(round(getattr(self._win, "_zoom", 1.0) * 100)))
-        self.zoom_lbl = QLabel(f"{self.zoom_slider.value()}%")
-        self.zoom_lbl.setMinimumWidth(44)
-        self.zoom_slider.valueChanged.connect(self._on_zoom)
-        zrow.addWidget(self.zoom_slider, 1)
-        zrow.addWidget(self.zoom_lbl)
-        lay.addLayout(zrow)
-
-        # v3.34（MMD-11）：图表（mermaid）主题 —— 原「视图 → 图表主题」菜单移入此处，
-        # 与界面主题同页集中配置；与图表块右键「图表主题」子菜单共用 QSettings.mmdTheme
-        lay.addWidget(QLabel("图表主题"))
-        self.mmd_box = QComboBox(page)
-        for label, val in MMD_THEMES:
-            self.mmd_box.addItem(label, val)
-        _cur_mmd = MMD_LEGACY.get(self._win._settings.value("mmdTheme", "") or "",
-                                  self._win._settings.value("mmdTheme", "") or "")
-        _ids = [v for _l, v in MMD_THEMES]
-        self.mmd_box.setCurrentIndex(_ids.index(_cur_mmd) if _cur_mmd in _ids else 0)
-        self.mmd_box.currentIndexChanged.connect(self._on_mmd_theme)
-        lay.addWidget(self.mmd_box)
-        mmd_hint = QLabel("图表主题对所有 mermaid 图表即时生效（含右键图表块直接切换）；"
-                          "「跟随界面主题」会随深 / 浅色界面自动切换。")
-        mmd_hint.setObjectName("pageHint")
-        mmd_hint.setWordWrap(True)
-        lay.addWidget(mmd_hint)
-        return page
-
-    def _on_mmd_theme(self, _idx=0):
-        self._win._set_mmd_theme(self.mmd_box.currentData() or "")
-
-    def _on_theme_clicked(self, item):
-        t = THEMES[self.theme_list.row(item)]
-        self._win.apply_theme(t["id"])
+    # v3.43.0（LOOK-1）：原「外观」页已整体迁出到顶栏「外观(&A)」一级菜单
+    # （界面风格 / 主题 / 图表风格 / 代码风格 四项），设置中心不再重复提供。
+    # 编辑区字号缩放不属外观四项，下放到「编辑器 → 编辑区显示」继续保留。
 
     def _on_zoom(self, v):
         self.zoom_lbl.setText(f"{v}%")
@@ -621,13 +580,15 @@ class SettingsDialog(_ThemedDialog):
         """v3.29b：设置页组框（分组容器）——同类设置项归拢到一个 QGroupBox。"""
         gb = QGroupBox(title, self)
         v = QVBoxLayout(gb)
-        v.setContentsMargins(14, 8, 14, 12)
-        v.setSpacing(8)
+        v.setContentsMargins(12, 6, 12, 8)
+        v.setSpacing(6)
         return gb, v
 
     def _page_editor_fmt(self):
-        """v3.29：「编辑器」页 —— 图片 / 代码块 / 斜杠菜单（原编辑器页后半部分）。
-        v3.29b：三组设置各归入一个组框（QGroupBox）。"""
+        """v3.29：「编辑器」页 —— 图片 / 代码块。
+        v3.29b：各组设置归入组框（QGroupBox）。
+        v3.43.1（SET-3P）：「段落与标题」「斜杠(/)菜单」移入「写作与输入」页，
+        本页只留呈现类配置（编辑区显示 / 图片存储 / 代码块外观 / 格式化日志）。"""
         page = QWidget(self)
         lay = QVBoxLayout(page)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -637,31 +598,28 @@ class SettingsDialog(_ThemedDialog):
         title.setObjectName("pageTitle")
         lay.addWidget(title)
 
-        # ---- v3.31.2（#8/#9）：段落与标题（组框） ----
-        gb_para, gpara = self._group("段落与标题")
-        prow = QHBoxLayout()
-        prow.addWidget(QLabel("段首缩进（每段首行空出的格数）"))
-        self.para_indent_box = QComboBox(page)
-        for _pn in range(0, 5):
-            self.para_indent_box.addItem(f"{_pn} 格" if _pn else "无（0 格）", _pn)
-        _pi = int(getattr(self._win, "_para_indent", 0) or 0)
-        _piidx = self.para_indent_box.findData(_pi)
-        self.para_indent_box.setCurrentIndex(_piidx if _piidx >= 0 else 0)
-        self.para_indent_box.currentIndexChanged.connect(self._on_para_indent)
-        prow.addWidget(self.para_indent_box, 1)
-        gpara.addLayout(prow)
+        # ---- v3.43.0（LOOK-1）：编辑区显示（原「外观」页的编辑区字号缩放迁入） ----
+        #      字号只影响编辑区内容呈现，不属于外观四项的皮肤范畴，故落在编辑器页。
+        gb_view, gview = self._group("编辑区显示")
+        zrow = QHBoxLayout()
+        zrow.addWidget(QLabel("编辑区字号缩放"))
+        self.zoom_slider = QSlider(Qt.Horizontal, page)
+        self.zoom_slider.setRange(80, 160)
+        self.zoom_slider.setValue(int(round(getattr(self._win, "_zoom", 1.0) * 100)))
+        self.zoom_lbl = QLabel(f"{self.zoom_slider.value()}%")
+        self.zoom_lbl.setMinimumWidth(44)
+        self.zoom_slider.valueChanged.connect(self._on_zoom)
+        zrow.addWidget(self.zoom_slider, 1)
+        zrow.addWidget(self.zoom_lbl)
+        gview.addLayout(zrow)
+        zoom_hint = QLabel("· 只缩放编辑区显示字号，不影响导出的 Markdown 与 HTML\n"
+                           "· Ctrl+= / Ctrl+- 可快速缩放，点击状态栏百分比格重置 100%")
+        zoom_hint.setObjectName("pageHint")
+        zoom_hint.setWordWrap(True)
+        gview.addWidget(zoom_hint)
+        lay.addWidget(gb_view)
 
-        self.h1_center_box = QCheckBox("标题 1 始终居中显示（导出跟随；单个标题可用格式栏按钮单独切换）", page)
-        self.h1_center_box.setChecked(bool(getattr(self._win, "_h1_center", False)))
-        self.h1_center_box.toggled.connect(self._win.set_h1_center)
-        gpara.addWidget(self.h1_center_box)
-
-        para_hint = QLabel("· 段首缩进仅作用于段落首行（列表 / 引用 / 表格不受影响），导出 HTML 同步生效\n"
-                           "· 标题 1 居中为全局默认；格式栏「⇔」按钮可对单个标题 1 覆盖（优先级更高）")
-        para_hint.setObjectName("pageHint")
-        para_hint.setWordWrap(True)
-        gpara.addWidget(para_hint)
-        lay.addWidget(gb_para)
+        # ---- v3.43.1（SET-3P）：「段落与标题」移入「写作与输入」页 ----
 
         # ---- 图片存储（组框；v3.29c：描述信息直接作为组框标题） ----
         gb_img, gimg = self._group("图片存储")
@@ -701,95 +659,39 @@ class SettingsDialog(_ThemedDialog):
         self.lang_box.currentTextChanged.connect(self._on_code_lang)
         gcode.addWidget(self.lang_box)
 
-        # ---- v3.25 代码块行号 / 代码风格 ----
+        # ---- v3.25 代码块行号 ----
+        # v3.43.0（LOOK-1）：「代码风格」下拉已迁至「外观(&A) → 代码风格」，
+        # 此处不再重复提供（同一配置只保留一处入口，避免两处状态打架）。
         crow = QHBoxLayout()
         self.code_lnum_box = QCheckBox("代码块显示行号", page)
         self.code_lnum_box.setChecked(bool(getattr(self._win, "_code_lnum", True)))
         self.code_lnum_box.toggled.connect(self._on_code_lnum)
         crow.addWidget(self.code_lnum_box)
-        crow.addWidget(QLabel("代码风格"))
-        self.code_style_box = QComboBox(page)
-        for _sid, _slabel in (("classic", "经典"), ("dark", "深色"),
-                              ("eye", "护眼"), ("mini", "极简")):
-            self.code_style_box.addItem(_slabel, _sid)
-        _cidx = self.code_style_box.findData(str(getattr(self._win, "_code_style", "classic")))
-        self.code_style_box.setCurrentIndex(_cidx if _cidx >= 0 else 0)
-        self.code_style_box.currentIndexChanged.connect(self._on_code_style)
-        crow.addWidget(self.code_style_box, 1)
+        crow.addStretch(1)
         gcode.addLayout(crow)
         code_hint = QLabel("· 新插入 / 重新渲染的代码块使用以上默认配置\n"
-                           "· 代码块顶部语言栏的「风格」按钮可对单个代码块临时切换")
+                           "· 代码块顶部语言栏的「风格」按钮可对单个代码块临时切换\n"
+                           "· 全局默认代码风格在「外观 → 代码风格」切换（经典 / 深色 / 护眼 / 极简）")
         code_hint.setObjectName("pageHint")
         code_hint.setWordWrap(True)
         gcode.addWidget(code_hint)
         lay.addWidget(gb_code)
 
-        # ---- 斜杠（/）菜单（组框） ----
-        gb_menu, gmenu = self._group("斜杠（/）菜单")
-        gmenu.addWidget(QLabel("用上移 / 下移调整一级菜单优先级顺序"))
-        mrow = QHBoxLayout()
-        self.menu_list = QListWidget(page)
-        self.menu_list.setObjectName("themeList")
-        self.menu_list.setFixedHeight(148)
-        self._fill_menu_list(getattr(self._win, "_slash_order", None))
-        mbtns = QVBoxLayout()
-        b_up = QPushButton("上移")
-        b_down = QPushButton("下移")
-        mbtns.addWidget(b_up)
-        mbtns.addWidget(b_down)
-        mbtns.addStretch(1)
-        mrow.addWidget(self.menu_list, 1)
-        mrow.addLayout(mbtns)
-        gmenu.addLayout(mrow)
+        # ---- v3.39.8（FMT-LOG）：格式化操作日志（组框） ----
+        gb_flog, gflog = self._group("格式化操作日志")
+        self.fmt_log_box = QCheckBox(
+            "记录格式化操作日志（时间 / 动作 / 源码片段，用于问题复现与排查）", page)
+        self.fmt_log_box.setChecked(bool(getattr(self._win, "_fmt_log", True)))
+        self.fmt_log_box.toggled.connect(self._win.set_fmt_log)
+        gflog.addWidget(self.fmt_log_box)
+        flog_hint = QLabel("· 日志写入 %APPDATA%\\mdEditor\\fmtlog\\，帮助菜单 →「格式化操作日志」可查看 / 导出\n"
+                           "· 关闭后立即停止记录（即时生效，已写入的文件保留）")
+        flog_hint.setObjectName("pageHint")
+        flog_hint.setWordWrap(True)
+        gflog.addWidget(flog_hint)
+        lay.addWidget(gb_flog)
 
-        frow = QHBoxLayout()
-        frow.addWidget(QLabel("一级菜单默认选项"))
-        self.menu_def_box = QComboBox(page)
-        self._fill_def_box()
-        frow.addWidget(self.menu_def_box, 1)
-        gmenu.addLayout(frow)
-
-        srow1 = QHBoxLayout()
-        srow1.addWidget(QLabel("标题默认"))
-        self.sub_heading_box = QComboBox(page)
-        self.sub_heading_box.addItems(SUB_HEADING)
-        srow1.addWidget(self.sub_heading_box, 1)
-        srow1.addWidget(QLabel("列表默认"))
-        self.sub_list_box = QComboBox(page)
-        self.sub_list_box.addItems(SUB_LIST)
-        srow1.addWidget(self.sub_list_box, 1)
-        gmenu.addLayout(srow1)
-
-        srow2 = QHBoxLayout()
-        srow2.addWidget(QLabel("图表默认"))
-        self.sub_chart_box = QComboBox(page)
-        self.sub_chart_box.addItems(SUB_CHART)
-        srow2.addWidget(self.sub_chart_box, 1)
-        srow2.addWidget(QLabel("公式默认"))
-        self.sub_math_box = QComboBox(page)
-        self.sub_math_box.addItems(SUB_MATH)
-        srow2.addWidget(self.sub_math_box, 1)
-        gmenu.addLayout(srow2)
-
-        subs = getattr(self._win, "_slash_sub", {}) or {}
-        for box, key in ((self.sub_heading_box, "heading"), (self.sub_list_box, "list"),
-                         (self.sub_chart_box, "chart"), (self.sub_math_box, "math")):
-            box.blockSignals(True)
-            box.setCurrentIndex(max(0, int(subs.get(key, 0))))
-            box.blockSignals(False)
-
-        b_up.clicked.connect(lambda: self._menu_move(-1))
-        b_down.clicked.connect(lambda: self._menu_move(1))
-        self.menu_def_box.currentIndexChanged.connect(lambda _: self._push_menu_cfg())
-        self.sub_heading_box.currentIndexChanged.connect(lambda _: self._push_menu_cfg())
-        self.sub_list_box.currentIndexChanged.connect(lambda _: self._push_menu_cfg())
-        self.sub_chart_box.currentIndexChanged.connect(lambda _: self._push_menu_cfg())
-        self.sub_math_box.currentIndexChanged.connect(lambda _: self._push_menu_cfg())
-
-        # v3.36（TPL-E）：原「自定义模板（⭐，插入文档即用）→ 管理…」入口已提升为
-        # 独立的「模板」一级页；斜杠菜单组内不再重复入口
-
-        lay.addWidget(gb_menu)
+        # ---- v3.43.1（SET-3P）：「斜杠（/）菜单」移入「写作与输入」页 ----
 
         lay.addStretch(1)
         return page
@@ -894,7 +796,7 @@ class SettingsDialog(_ThemedDialog):
             self._win.set_emoji_complete(on)
 
     def _on_history_keep(self, n):
-        if int(getattr(self._win, "_history_keep", 20) or 20) != int(n):
+        if int(getattr(self._win, "_history_keep", 5) or 5) != int(n):
             self._win.set_history_keep(int(n))
 
     # ---- 通用页：侧栏显示设置 ----
@@ -905,18 +807,40 @@ class SettingsDialog(_ThemedDialog):
 
     def _on_startup_action(self, _i):
         self._win.set_startup_action(self.startup_box.currentData())
+        self._sync_startup_dir_visible()
 
-    def _on_startup_folder(self):
-        self._win.set_startup_folder(self.startup_folder_edit.text().strip())
+    def _on_startup_dir(self):
+        # v3.44：folder 档与全局默认位置共用 files/defaultDir（去重 startupFolder）
+        self._win.set_file_list_default_dir(self.startup_dir_edit.text().strip())
+        self._sync_startup_dir_visible()
 
-    def _on_file_default_dir(self):
-        # v3.38（FLP-1）：文件列表默认打开路径（空 = 不启用，改完即时定位一次）
-        self._win.set_file_list_default_dir(self.file_default_dir_edit.text().strip())
+    def _browse_startup_dir(self):
+        cur = self.startup_dir_edit.text().strip()
+        d = QFileDialog.getExistingDirectory(
+            self, "选择启动时打开的文件夹", cur or os.path.expanduser("~"))
+        if d:
+            self.startup_dir_edit.setText(d)
+            self._on_startup_dir()
+
+    def _sync_startup_dir_visible(self):
+        # 仅「打开指定文件夹」档显示目录输入
+        show = self.startup_box.currentData() == "folder"
+        self.startup_dir_row.setVisible(show)
+
+    def _on_save_mode(self, _i):
+        self._win.set_autosave_interval(int(self.save_mode_box.currentData() or 0))
+
+    def _sync_save_mode_enabled(self):
+        # 关闭自动保存时禁用「保存时机」
+        self.save_mode_box.setEnabled(self.autosave_box.isChecked())
 
     def _on_file_mode(self, _idx):
         mode = self.file_mode_box.currentData()
         if mode and mode != getattr(self._win, "_file_list_mode", "current"):
             self._win.set_file_list_mode(mode)
+
+    def _on_recent_max(self, n):
+        self._win.set_recent_max(int(n))
 
     def _on_pandoc_path(self):
         self._win.set_pandoc_path(self.pandoc_edit.text())
@@ -926,25 +850,117 @@ class SettingsDialog(_ThemedDialog):
 
     # ================= 通用 =================
     def _page_general(self):
+        """v3.43.1（SET-3P）：「通用」页提到导航首位；「写作模式」「输入辅助」
+        移入「写作与输入」页。v3.44（FILE-UX）：原「文件与启动」大组框拆为
+        「保存 / 启动 / 文件列表」三个语义组框，本页现含 保存 / 启动 / 文件列表 /
+        大纲 / 导出 / 版本历史。v3.44.1：移除通用页冗余说明/提示文案（sd_hint /
+        fm_hint / 底部 note 全删，ol_hint 压一行，导出/版本历史标签去括号说明），
+        进一步压低总高度；控件与交互逻辑不变。"""
         page = QWidget(self)
         lay = QVBoxLayout(page)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(12)
+        lay.setSpacing(8)
 
         title = QLabel("通用")
         title.setObjectName("pageTitle")
         lay.addWidget(title)
 
-        # ---- 文件与启动（组框；组框标题即分类描述） ----
-        gb_file, gfile = self._group("文件与启动")
+        # ================= 保存（组框；v3.44 从「文件与启动」拆出） =================
+        gb_save, gsave = self._group("保存")
         self.autosave_box = QCheckBox("自动保存（编辑后自动写入文件）", page)
         self.autosave_box.setChecked(bool(getattr(self._win, "_autosave", True)))
         self.autosave_box.toggled.connect(self._win.set_autosave)
-        gfile.addWidget(self.autosave_box)
+        self.autosave_box.toggled.connect(self._sync_save_mode_enabled)
+        gsave.addWidget(self.autosave_box)
 
-        # ---- 大纲显示级别 ----
+        # ---- v3.44（AUTOSAVE-INT）：保存时机（实时 / 30 秒 / 5 分钟） ----
+        srow = QHBoxLayout()
+        srow.addWidget(QLabel("保存时机"))
+        self.save_mode_box = QComboBox(page)
+        self.save_mode_box.addItem("实时（每次改动即写盘）", 0)
+        self.save_mode_box.addItem("每 30 秒", 30)
+        self.save_mode_box.addItem("每 5 分钟", 300)
+        _si_int = int(getattr(self._win, "_autosave_interval", 0) or 0)
+        _si_idx = self.save_mode_box.findData(_si_int)
+        self.save_mode_box.setCurrentIndex(_si_idx if _si_idx >= 0 else 0)
+        self.save_mode_box.currentIndexChanged.connect(self._on_save_mode)
+        srow.addWidget(self.save_mode_box, 1)
+        gsave.addLayout(srow)
+        self._sync_save_mode_enabled()
+        lay.addWidget(gb_save)
+
+        # ================= 启动（组框；v3.44 从「文件与启动」拆出） =================
+        gb_start, gstart = self._group("启动")
+        arow = QHBoxLayout()
+        arow.addWidget(QLabel("启动时"))
+        self.startup_box = QComboBox(page)
+        self.startup_box.addItem("打开欢迎页", "blank")
+        self.startup_box.addItem("恢复上次打开的文件", "lastFile")
+        self.startup_box.addItem("恢复上次会话（多标签 + 位置，默认）", "session")
+        self.startup_box.addItem("打开指定文件夹", "folder")
+        _sa = str(getattr(self._win, "_startup_action", "session") or "session")
+        if _sa == "lastFileSide":
+            # v3.44：旧「恢复上次文件与侧栏位置」升级为完整会话恢复（兼容旧值）
+            _sa = "session"
+        _si = self.startup_box.findData(_sa)
+        self.startup_box.setCurrentIndex(_si if _si >= 0 else 0)
+        self.startup_box.currentIndexChanged.connect(self._on_startup_action)
+        arow.addWidget(self.startup_box, 1)
+        gstart.addLayout(arow)
+
+        # 「打开指定文件夹」档：定位到「默认打开位置」（与文件列表组共用 files/defaultDir，去重）
+        self.startup_dir_row = QWidget(page)
+        drow = QHBoxLayout(self.startup_dir_row)
+        drow.setContentsMargins(0, 0, 0, 0)
+        drow.addWidget(QLabel("启动时打开的文件夹"))
+        self.startup_dir_edit = QLineEdit(page)
+        self.startup_dir_edit.setPlaceholderText("留空 = 不定位")
+        self.startup_dir_edit.setText(str(getattr(self._win, "_file_list_default_dir", "") or ""))
+        self.startup_dir_edit.editingFinished.connect(self._on_startup_dir)
+        drow.addWidget(self.startup_dir_edit, 1)
+        b_dir = QPushButton("浏览…")
+        b_dir.clicked.connect(self._browse_startup_dir)
+        drow.addWidget(b_dir)
+        gstart.addWidget(self.startup_dir_row)
+
+        self._sync_startup_dir_visible()
+        lay.addWidget(gb_start)
+
+        # ================= 文件列表（组框；v3.44 从「文件与启动」拆出） =================
+        gb_fl, gfl = self._group("文件列表")
+        # ---- 未打开文件时的显示模式 ----
+        lrow = QHBoxLayout()
+        lrow.addWidget(QLabel("未打开文件时显示"))
+        self.file_mode_box = QComboBox(page)
+        self.file_mode_box.addItem("上次编辑的文档（预览）", "current")
+        self.file_mode_box.addItem("始终空白", "blank")
+        _fm = "blank" if getattr(self._win, "_file_list_mode", "current") == "blank" else "current"
+        idx = self.file_mode_box.findData(_fm)
+        self.file_mode_box.setCurrentIndex(idx if idx >= 0 else 0)
+        self.file_mode_box.currentIndexChanged.connect(self._on_file_mode)
+        lrow.addWidget(self.file_mode_box, 1)
+        gfl.addLayout(lrow)
+
+        # ---- v3.44（RECENT-MAX）：最近文件保留条数 ----
+        rrow = QHBoxLayout()
+        rrow.addWidget(QLabel("最近文件保留"))
+        self.recent_max_box = QSpinBox(page)
+        self.recent_max_box.setRange(0, 50)
+        self.recent_max_box.setSuffix(" 条")
+        self.recent_max_box.setValue(int(getattr(self._win, "_recent_max", 10) or 10))
+        self.recent_max_box.valueChanged.connect(self._on_recent_max)
+        rrow.addWidget(self.recent_max_box, 1)
+        gfl.addLayout(rrow)
+        rm_hint = QLabel("· 0 = 不保留最近文件（菜单项隐藏）")
+        rm_hint.setObjectName("pageHint")
+        rm_hint.setWordWrap(True)
+        gfl.addWidget(rm_hint)
+        lay.addWidget(gb_fl)
+
+        # ---- v3.43.0（LOOK-1）：大纲（原散落在「文件与启动」组里，按语义独立成组） ----
+        gb_ol, gol = self._group("大纲")
         orow = QHBoxLayout()
-        orow.addWidget(QLabel("大纲显示级别（超过该级别的标题默认折叠）"))
+        orow.addWidget(QLabel("显示级别（超过该级别的标题默认折叠）"))
         self.outline_level_box = QComboBox(page)
         for n in range(1, 7):
             self.outline_level_box.addItem(f"{n} 级", n)
@@ -952,72 +968,22 @@ class SettingsDialog(_ThemedDialog):
             max(0, int(getattr(self._win, "_outline_level", 3)) - 1))
         self.outline_level_box.currentIndexChanged.connect(self._on_outline_level)
         orow.addWidget(self.outline_level_box, 1)
-        gfile.addLayout(orow)
+        gol.addLayout(orow)
 
-        # ---- v3.31.2（#3）：大纲分节字数后缀开关 ----
-        self.outline_words_box = QCheckBox("大纲显示分节字数（标题后追加「· N 字」）", page)
+        self.outline_words_box = QCheckBox("显示分节字数（标题后追加「· N 字」）", page)
         self.outline_words_box.setChecked(bool(getattr(self._win, "_outline_words", False)))
         self.outline_words_box.toggled.connect(self._win.set_outline_words)
-        gfile.addWidget(self.outline_words_box)
+        gol.addWidget(self.outline_words_box)
 
-        # ---- 文件列表显示模式（v3.26 语义澄清：指未选择文件 / 文件夹时的初始状态）----
-        lrow = QHBoxLayout()
-        lrow.addWidget(QLabel("启动时文件列表"))
-        self.file_mode_box = QComboBox(page)
-        self.file_mode_box.addItem("跟随当前文档（未打开文档时显示空白）", "current")
-        self.file_mode_box.addItem("始终空白（不自动显示内容）", "blank")
-        _fm = "blank" if getattr(self._win, "_file_list_mode", "current") == "blank" else "current"
-        idx = self.file_mode_box.findData(_fm)
-        self.file_mode_box.setCurrentIndex(idx if idx >= 0 else 0)
-        self.file_mode_box.currentIndexChanged.connect(self._on_file_mode)
-        lrow.addWidget(self.file_mode_box, 1)
-        gfile.addLayout(lrow)
-        fm_hint = QLabel("· 指尚未选择文件 / 文件夹时的显示状态\n"
-                         "· 打开或选择了文件夹后，文件列表始终按该文件夹现有策略显示")
-        fm_hint.setObjectName("pageHint")
-        fm_hint.setWordWrap(True)
-        gfile.addWidget(fm_hint)
-
-        # ---- v3.38（OUT-5）：启动时恢复上次会话 ----
-        srow = QHBoxLayout()
-        srow.addWidget(QLabel("启动时"))
-        self.startup_box = QComboBox(page)
-        self.startup_box.addItem("打开欢迎页（默认）", "blank")
-        self.startup_box.addItem("恢复上次打开的文件", "lastFile")
-        self.startup_box.addItem("恢复上次文件与侧栏位置", "lastFileSide")
-        self.startup_box.addItem("打开指定文件夹（仅侧栏定位）", "folder")
-        _sa = str(getattr(self._win, "_startup_action", "blank") or "blank")
-        _si = self.startup_box.findData(_sa)
-        self.startup_box.setCurrentIndex(_si if _si >= 0 else 0)
-        self.startup_box.currentIndexChanged.connect(self._on_startup_action)
-        srow.addWidget(self.startup_box, 1)
-        gfile.addLayout(srow)
-        self.startup_folder_edit = QLineEdit(page)
-        self.startup_folder_edit.setPlaceholderText(
-            "「打开指定文件夹」使用的目录（留空 = 不定位）")
-        self.startup_folder_edit.setText(str(getattr(self._win, "_startup_folder", "") or ""))
-        self.startup_folder_edit.editingFinished.connect(self._on_startup_folder)
-        gfile.addWidget(self.startup_folder_edit)
-
-        # ---- v3.38（FLP-1）：文件列表默认打开路径（字段 files/defaultDir）----
-        gfile.addWidget(QLabel("文件列表默认打开路径（留空 = 不启用）"))
-        self.file_default_dir_edit = QLineEdit(page)
-        self.file_default_dir_edit.setPlaceholderText(
-            r"绝对路径如 E:\notes；相对路径按应用目录解析；~ 开头为主目录")
-        self.file_default_dir_edit.setText(
-            str(getattr(self._win, "_file_list_default_dir", "") or ""))
-        self.file_default_dir_edit.editingFinished.connect(self._on_file_default_dir)
-        gfile.addWidget(self.file_default_dir_edit)
-        fdd_hint = QLabel("· 启动时优先恢复「上次访问的目录」，其次才用本路径\n"
-                          "· 路径不存在 / 无访问权限时安全回退到「此电脑」，不报错")
-        fdd_hint.setObjectName("pageHint")
-        fdd_hint.setWordWrap(True)
-        gfile.addWidget(fdd_hint)
-        lay.addWidget(gb_file)
+        ol_hint = QLabel("支持拖拽整段调序；右键可跳转 / 复制标题 / 展开折叠 / 移到首尾")
+        ol_hint.setObjectName("pageHint")
+        ol_hint.setWordWrap(True)
+        gol.addWidget(ol_hint)
+        lay.addWidget(gb_ol)
 
         # ---- 导出（组框） ----
         gb_exp, gexp = self._group("导出")
-        gexp.addWidget(QLabel("Pandoc 路径（导出 Word / EPUB 时优先使用；留空 = 自动探测 PATH）"))
+        gexp.addWidget(QLabel("Pandoc 路径"))
         self.pandoc_edit = QLineEdit(page)
         self.pandoc_edit.setPlaceholderText("留空 = 自动探测；未安装 pandoc 时使用内置转换")
         self.pandoc_edit.setText(str(getattr(self._win, "_pandoc_path", "") or ""))
@@ -1025,7 +991,7 @@ class SettingsDialog(_ThemedDialog):
         gexp.addWidget(self.pandoc_edit)
 
         # ---- P1-7 外部编辑器路径（可选）----
-        gexp.addWidget(QLabel("外部编辑器（侧栏文件列表右键「用外部程序打开」使用；留空 = 系统默认程序）"))
+        gexp.addWidget(QLabel("外部编辑器"))
         self.extedit_edit = QLineEdit(page)
         self.extedit_edit.setPlaceholderText("留空 = 系统默认关联程序（可填 Notepad++ / VS Code 等可执行文件）")
         self.extedit_edit.setText(str(getattr(self._win, "_external_editor", "") or ""))
@@ -1033,7 +999,68 @@ class SettingsDialog(_ThemedDialog):
         gexp.addWidget(self.extedit_edit)
         lay.addWidget(gb_exp)
 
-        # ---- v3.29：写作模式（原「写作与历史」页并入；组框化） ----
+        # ---- v3.43.1（SET-3P）：「写作模式」「输入辅助」移入「写作与输入」页 ----
+
+        # ---- v3.29：版本历史（P1-6 历史版本保留份数；组框化）----
+        gb_hist, ghist = self._group("版本历史")
+        histrow = QHBoxLayout()
+        histrow.addWidget(QLabel("历史版本保留份数"))
+        self.history_keep_box = QSpinBox(page)
+        # v3.43.1：默认 5 份、上限 100 份（原 20 / 200）
+        self.history_keep_box.setRange(1, 100)
+        self.history_keep_box.setSuffix(" 份")
+        self.history_keep_box.setValue(int(getattr(self._win, "_history_keep", 5) or 5))
+        self.history_keep_box.valueChanged.connect(self._on_history_keep)
+        histrow.addWidget(self.history_keep_box, 1)
+        ghist.addLayout(histrow)
+        lay.addWidget(gb_hist)
+
+        lay.addStretch(1)
+        return page
+
+    # ================= 写作与输入 =================
+    def _page_writing(self):
+        """v3.43.1（SET-3P）：新页「写作与输入」—— 从「编辑器」页移入
+        段落与标题 / 斜杠(/)菜单，从「通用」页移入 写作模式 / 输入辅助，
+        把打字体验相关配置集中到一页（组框是移动不是复制，回调与同步逻辑不变）。
+        注意：本页须在 _page_general / _page_editor_fmt 之后构建（__init__ 已保证顺序），
+        控件属性挂 SettingsDialog（self），showEvent 同步逻辑跨页依然可用。"""
+        page = QWidget(self)
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(12)
+
+        title = QLabel("写作与输入")
+        title.setObjectName("pageTitle")
+        lay.addWidget(title)
+
+        # ---- 段落与标题（v3.43.1 自「编辑器」页移入；v3.31.2 组框化） ----
+        gb_para, gpara = self._group("段落与标题")
+        prow = QHBoxLayout()
+        prow.addWidget(QLabel("段首缩进（每段首行空出的格数）"))
+        self.para_indent_box = QComboBox(page)
+        for _pn in range(0, 5):
+            self.para_indent_box.addItem(f"{_pn} 格" if _pn else "无（0 格）", _pn)
+        _pi = int(getattr(self._win, "_para_indent", 0) or 0)
+        _piidx = self.para_indent_box.findData(_pi)
+        self.para_indent_box.setCurrentIndex(_piidx if _piidx >= 0 else 0)
+        self.para_indent_box.currentIndexChanged.connect(self._on_para_indent)
+        prow.addWidget(self.para_indent_box, 1)
+        gpara.addLayout(prow)
+
+        self.h1_center_box = QCheckBox("标题 1 始终居中显示（导出跟随；单个标题可用格式栏按钮单独切换）", page)
+        self.h1_center_box.setChecked(bool(getattr(self._win, "_h1_center", False)))
+        self.h1_center_box.toggled.connect(self._win.set_h1_center)
+        gpara.addWidget(self.h1_center_box)
+
+        para_hint = QLabel("· 段首缩进仅作用于段落首行（列表 / 引用 / 表格不受影响），导出 HTML 同步生效\n"
+                           "· 标题 1 居中为全局默认；格式栏「⇔」按钮可对单个标题 1 覆盖（优先级更高）")
+        para_hint.setObjectName("pageHint")
+        para_hint.setWordWrap(True)
+        gpara.addWidget(para_hint)
+        lay.addWidget(gb_para)
+
+        # ---- 写作模式（v3.43.1 自「通用」页移入；v3.29 并入，组框化） ----
         gb_write, gwrite = self._group("写作模式")
         self.typewriter_box = QCheckBox("打字机模式（光标所在行始终居中）", page)
         self.typewriter_box.setChecked(bool(getattr(self._win, "_typewriter", False)))
@@ -1046,7 +1073,7 @@ class SettingsDialog(_ThemedDialog):
         gwrite.addWidget(self.focus_box)
         lay.addWidget(gb_write)
 
-        # ---- v3.29：输入辅助（P1-1 / P1-8 输入增强；组框化）----
+        # ---- 输入辅助（v3.43.1 自「通用」页移入；P1-1 / P1-8 输入增强，组框化） ----
         gb_input, ginput = self._group("输入辅助")
         self.autopair_box = QCheckBox("自动配对括号 / 引号（选中文字可直接用符号包裹）", page)
         self.autopair_box.setChecked(bool(getattr(self._win, "_auto_pair", True)))
@@ -1059,26 +1086,73 @@ class SettingsDialog(_ThemedDialog):
         ginput.addWidget(self.emoji_box)
         lay.addWidget(gb_input)
 
-        # ---- v3.29：版本历史（P1-6 历史版本保留份数；组框化）----
-        gb_hist, ghist = self._group("版本历史")
-        histrow = QHBoxLayout()
-        histrow.addWidget(QLabel("历史版本保留份数（保存前留档，超出自动清理）"))
-        self.history_keep_box = QSpinBox(page)
-        self.history_keep_box.setRange(1, 200)
-        self.history_keep_box.setSuffix(" 份")
-        self.history_keep_box.setValue(int(getattr(self._win, "_history_keep", 20) or 20))
-        self.history_keep_box.valueChanged.connect(self._on_history_keep)
-        histrow.addWidget(self.history_keep_box, 1)
-        ghist.addLayout(histrow)
-        lay.addWidget(gb_hist)
+        # ---- 斜杠（/）菜单（v3.43.1 自「编辑器」页移入；组框） ----
+        gb_menu, gmenu = self._group("斜杠（/）菜单")
+        gmenu.addWidget(QLabel("用上移 / 下移调整一级菜单优先级顺序"))
+        mrow = QHBoxLayout()
+        self.menu_list = QListWidget(page)
+        self.menu_list.setObjectName("themeList")
+        self.menu_list.setFixedHeight(148)
+        self._fill_menu_list(getattr(self._win, "_slash_order", None))
+        mbtns = QVBoxLayout()
+        b_up = QPushButton("上移")
+        b_down = QPushButton("下移")
+        mbtns.addWidget(b_up)
+        mbtns.addWidget(b_down)
+        mbtns.addStretch(1)
+        mrow.addWidget(self.menu_list, 1)
+        mrow.addLayout(mbtns)
+        gmenu.addLayout(mrow)
 
-        note = QLabel(
-            "· 主题、字号与快捷键设置已自动保存，重启后保持\n"
-            "· 文档通过左侧「文件」列表浏览，拖拽 .md 文件到窗口即可打开\n"
-            "· 未安装 pandoc 也能导出 Word / EPUB（内置转换，公式与图表降级为源码）")
-        note.setObjectName("pageHint")
-        note.setWordWrap(True)
-        lay.addWidget(note)
+        frow = QHBoxLayout()
+        frow.addWidget(QLabel("一级菜单默认选项"))
+        self.menu_def_box = QComboBox(page)
+        self._fill_def_box()
+        frow.addWidget(self.menu_def_box, 1)
+        gmenu.addLayout(frow)
+
+        srow1 = QHBoxLayout()
+        srow1.addWidget(QLabel("标题默认"))
+        self.sub_heading_box = QComboBox(page)
+        self.sub_heading_box.addItems(SUB_HEADING)
+        srow1.addWidget(self.sub_heading_box, 1)
+        srow1.addWidget(QLabel("列表默认"))
+        self.sub_list_box = QComboBox(page)
+        self.sub_list_box.addItems(SUB_LIST)
+        srow1.addWidget(self.sub_list_box, 1)
+        gmenu.addLayout(srow1)
+
+        srow2 = QHBoxLayout()
+        srow2.addWidget(QLabel("图表默认"))
+        self.sub_chart_box = QComboBox(page)
+        self.sub_chart_box.addItems(SUB_CHART)
+        srow2.addWidget(self.sub_chart_box, 1)
+        srow2.addWidget(QLabel("公式默认"))
+        self.sub_math_box = QComboBox(page)
+        self.sub_math_box.addItems(SUB_MATH)
+        srow2.addWidget(self.sub_math_box, 1)
+        gmenu.addLayout(srow2)
+
+        subs = getattr(self._win, "_slash_sub", {}) or {}
+        for box, key in ((self.sub_heading_box, "heading"), (self.sub_list_box, "list"),
+                         (self.sub_chart_box, "chart"), (self.sub_math_box, "math")):
+            box.blockSignals(True)
+            box.setCurrentIndex(max(0, int(subs.get(key, 0))))
+            box.blockSignals(False)
+
+        b_up.clicked.connect(lambda: self._menu_move(-1))
+        b_down.clicked.connect(lambda: self._menu_move(1))
+        self.menu_def_box.currentIndexChanged.connect(lambda _: self._push_menu_cfg())
+        self.sub_heading_box.currentIndexChanged.connect(lambda _: self._push_menu_cfg())
+        self.sub_list_box.currentIndexChanged.connect(lambda _: self._push_menu_cfg())
+        self.sub_chart_box.currentIndexChanged.connect(lambda _: self._push_menu_cfg())
+        self.sub_math_box.currentIndexChanged.connect(lambda _: self._push_menu_cfg())
+
+        # v3.36（TPL-E）：原「自定义模板（⭐，插入文档即用）→ 管理…」入口已提升为
+        # 独立的「模板」一级页；斜杠菜单组内不再重复入口
+
+        lay.addWidget(gb_menu)
+
         lay.addStretch(1)
         return page
 
@@ -1086,11 +1160,8 @@ class SettingsDialog(_ThemedDialog):
         super().showEvent(ev)
         # 打开时同步主窗口当前状态
         self._apply_theme_qss(getattr(self._win, "_theme", "light"))
-        ids = [t["id"] for t in THEMES]
-        cur = getattr(self._win, "_theme", "light")
-        self.theme_list.blockSignals(True)
-        self.theme_list.setCurrentRow(ids.index(cur) if cur in ids else 0)
-        self.theme_list.blockSignals(False)
+        # v3.43.0：主题 / 界面风格 / 图表风格 / 代码风格已迁至「外观(&A)」菜单，
+        # 设置中心不再同步这些项（唯一数据源 = QSettings，菜单展开时回写勾选）。
         self.zoom_slider.blockSignals(True)
         self.zoom_slider.setValue(int(round(getattr(self._win, "_zoom", 1.0) * 100)))
         self.zoom_slider.blockSignals(False)
@@ -1098,6 +1169,29 @@ class SettingsDialog(_ThemedDialog):
         self.autosave_box.blockSignals(True)
         self.autosave_box.setChecked(bool(getattr(self._win, "_autosave", True)))
         self.autosave_box.blockSignals(False)
+        # v3.44（AUTOSAVE-INT）：保存时机同步 + 启用态跟随自动保存开关
+        self.save_mode_box.blockSignals(True)
+        _si_int = int(getattr(self._win, "_autosave_interval", 0) or 0)
+        _si_idx = self.save_mode_box.findData(_si_int)
+        self.save_mode_box.setCurrentIndex(_si_idx if _si_idx >= 0 else 0)
+        self.save_mode_box.blockSignals(False)
+        self._sync_save_mode_enabled()
+        # 启动行为 + 指定文件夹（含旧 lastFileSide → session 兼容）
+        _sa = str(getattr(self._win, "_startup_action", "session") or "session")
+        if _sa == "lastFileSide":
+            _sa = "session"
+        self.startup_box.blockSignals(True)
+        _sidx = self.startup_box.findData(_sa)
+        self.startup_box.setCurrentIndex(_sidx if _sidx >= 0 else 0)
+        self.startup_box.blockSignals(False)
+        self.startup_dir_edit.blockSignals(True)
+        self.startup_dir_edit.setText(str(getattr(self._win, "_file_list_default_dir", "") or ""))
+        self.startup_dir_edit.blockSignals(False)
+        self._sync_startup_dir_visible()
+        # 最近文件保留条数
+        self.recent_max_box.blockSignals(True)
+        self.recent_max_box.setValue(int(getattr(self._win, "_recent_max", 10) or 10))
+        self.recent_max_box.blockSignals(False)
         # P1-1 / P1-8 输入增强开关
         self.autopair_box.blockSignals(True)
         self.autopair_box.setChecked(bool(getattr(self._win, "_auto_pair", True)))
@@ -1130,7 +1224,7 @@ class SettingsDialog(_ThemedDialog):
         self.pandoc_edit.blockSignals(False)
         # P1-6 / P1-7：历史保留份数、外部编辑器路径同步
         self.history_keep_box.blockSignals(True)
-        self.history_keep_box.setValue(int(getattr(self._win, "_history_keep", 20) or 20))
+        self.history_keep_box.setValue(int(getattr(self._win, "_history_keep", 5) or 5))
         self.history_keep_box.blockSignals(False)
         self.extedit_edit.blockSignals(True)
         self.extedit_edit.setText(str(getattr(self._win, "_external_editor", "") or ""))
@@ -1193,6 +1287,148 @@ def pinyin_initials(text):
         if ini:
             out.append(ini)
     return "".join(out)
+
+
+class StyleManagerDialog(_ThemedDialog):
+    """v3.43.0（LOOK-1）：界面风格管理（承接原设置中心「外观」页的风格组）。
+
+    「外观(&A) → 界面风格」子菜单只列设计稿定义的 6 套（名称纯净），
+    而风格注册表是可增删的（内置 10 套 + 用户自建）。本对话框保留完整的
+    查看 / 应用 / 刷新 / 打开风格文件夹 / 删除能力，避免迁移丢功能。
+    """
+
+    def __init__(self, win):
+        super().__init__(win)
+        self._win = win
+        self.setObjectName("styleMgrDlg")
+        self.setWindowTitle("界面风格管理")
+        self.setModal(False)
+        self.resize(560, 380)
+        self._apply_theme_qss(getattr(win, "_theme", "light"))
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(18, 16, 18, 14)
+        lay.setSpacing(10)
+
+        title = QLabel("界面风格")
+        title.setObjectName("pageTitle")
+        lay.addWidget(title)
+        hint = QLabel("「外观 → 界面风格」菜单列出设计稿定义的 6 套；这里显示全部已安装风格"
+                      "（含用户自建）。把风格 JSON 拖进风格文件夹后点「刷新」即可新增。")
+        hint.setObjectName("pageHint")
+        hint.setWordWrap(True)
+        lay.addWidget(hint)
+
+        row = QHBoxLayout()
+        self.list_w = QListWidget(self)
+        self.list_w.setObjectName("themeList")
+        row.addWidget(self.list_w, 1)
+        btns = QVBoxLayout()
+        self.b_apply = QPushButton("应用", self)
+        self.b_refresh = QPushButton("刷新", self)
+        self.b_dir = QPushButton("风格文件夹…", self)
+        self.b_del = QPushButton("删除所选", self)
+        for b in (self.b_apply, self.b_refresh, self.b_dir, self.b_del):
+            btns.addWidget(b)
+        btns.addStretch(1)
+        row.addLayout(btns)
+        lay.addLayout(row, 1)
+
+        self.info = QLabel("")
+        self.info.setObjectName("pageHint")
+        self.info.setWordWrap(True)
+        self.info.setMinimumHeight(56)
+        lay.addWidget(self.info)
+
+        bb = QHBoxLayout()
+        bb.addStretch(1)
+        b_close = QPushButton("关闭", self)
+        b_close.setDefault(True)
+        bb.addWidget(b_close)
+        lay.addLayout(bb)
+
+        self.b_apply.clicked.connect(self._apply)
+        self.b_refresh.clicked.connect(self.reload)
+        self.b_dir.clicked.connect(self._open_dir)
+        self.b_del.clicked.connect(self._del)
+        b_close.clicked.connect(self.accept)
+        self.list_w.itemSelectionChanged.connect(self._show_info)
+        self.list_w.itemDoubleClicked.connect(lambda _i: self._apply())
+        self.reload()
+
+    # ---- 列表 ----
+    def reload(self):
+        """重扫风格目录；保持当前激活风格选中。"""
+        cur = uistyles.active()
+        self.list_w.clear()
+        hit = None
+        for s in uistyles.list_styles():
+            in_menu = any(sid == s["id"] for sid, _n in uistyles.MENU_STYLES)
+            mark = "（默认）" if s["id"] == uistyles.DEFAULT_ID else ""
+            tag = "· 菜单" if in_menu else "· 仅管理"
+            it = QListWidgetItem(f"{s['name']}{mark}　{tag}", self.list_w)
+            it.setData(Qt.UserRole, s["id"])
+            it.setToolTip(s["desc"])
+            if s["id"] == cur:
+                hit = it
+        if hit is not None:
+            self.list_w.setCurrentItem(hit)
+        self.b_del.setEnabled(False)
+        self._show_info()
+
+    def _cur_id(self):
+        it = self.list_w.currentItem()
+        return it.data(Qt.UserRole) if it is not None else ""
+
+    def _show_info(self):
+        sid = self._cur_id()
+        s = uistyles.get_style(sid) if sid else None
+        if s is None:
+            self.info.setText("")
+            self.b_apply.setEnabled(False)
+            self.b_del.setEnabled(False)
+            return
+        self.b_apply.setEnabled(True)
+        self.b_del.setEnabled(sid != uistyles.DEFAULT_ID)
+        in_menu = any(x == sid for x, _n in uistyles.MENU_STYLES)
+        self.info.setText(
+            f"ID：{s['id']}　{'内置' if not s.get('_user') else '用户'}　"
+            f"{'在「外观 → 界面风格」菜单中' if in_menu else '不在菜单中（仅此处可应用）'}\n"
+            f"{s['desc']}")
+
+    def _apply(self):
+        sid = self._cur_id()
+        if sid:
+            self._win.set_uistyle(sid)
+            self.reload()
+
+    def _open_dir(self):
+        import subprocess
+        d = uistyles.user_style_dir()
+        try:
+            subprocess.Popen(["explorer", d])
+        except Exception:
+            self._win.show_status(f"风格目录：{d}")
+
+    def _del(self):
+        sid = self._cur_id()
+        if not sid or sid == uistyles.DEFAULT_ID:
+            return
+        s = uistyles.get_style(sid)
+        r = QMessageBox.question(
+            self, "删除风格",
+            f"确定删除风格「{s['name'] if s else sid}」吗？\n\n"
+            "将删除其风格文件；若为当前激活风格，会自动回退到默认风格。",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if r != QMessageBox.Yes:
+            return
+        ok, msg = uistyles.remove_style(sid)
+        if not ok:
+            QMessageBox.warning(self, "删除风格", msg)
+        elif sid == uistyles.active():
+            self._win.set_uistyle(uistyles.DEFAULT_ID)
+        self.reload()
+        self._win.show_status(msg)
 
 
 class InsertImageDialog(_ThemedDialog):
@@ -1440,7 +1676,9 @@ class CommandPaletteDialog(_ThemedDialog):
             # v3.25：未输入时不显示候选列表（VSCode 风格，输入才下拉）
             self.listw.clear()
             self.listw.hide()
-            self.hint.setText("输入关键词（汉字 / 拼音首字母 / 快捷键）筛选命令 · Esc 关闭")
+            # v3.44.29：空态提示只讲操作（↑↓/Enter/Esc），不再重复输入框占位文字，
+            # 消除「输入命令…」与「输入以检索命令…」两行相似文案造成的重影。
+            self.hint.setText("⌨ ↑ ↓ 选择 · Enter 执行 · Esc 关闭")
             return
         self.listw.show()
         if q:
@@ -1787,6 +2025,146 @@ class DiffDialog(_ThemedDialog):
         self._apply_theme_qss(getattr(self._win, "_theme", "light"))
 
 
+class FmtLogDialog(_ThemedDialog):
+    """v3.39.8（FMT-LOG）：格式化操作日志查看器。
+    日志由编辑器内核记录（每次行内格式突变一条：序号/时间/动作/源码片段）、
+    主窗口 collect 轮询差量落盘 %APPDATA%/mdEditor/fmtlog/fmt-YYYYMMDD.log
+    （JSON Lines）。此处读全部日志文件，支持 刷新 / 复制 / 导出 / 清空。"""
+
+    def __init__(self, win):
+        super().__init__(win)
+        self._win = win
+        self.setObjectName("fmtlogDlg")
+        self.setWindowTitle("格式化操作日志")
+        self.setModal(False)
+        self.resize(860, 560)
+        self._apply_theme_qss(getattr(win, "_theme", "light"))
+
+        lay = QVBoxLayout(self)
+        hint = QLabel("每次行内格式操作（包裹 / 取消 / 清除 / 码壳 toggle / 单元格格式）的"
+                      "时间、动作与应用前后源码片段；按「对象 → 结果」序列可逐步复现问题。"
+                      "随测试报告一并发送本日志可大幅加快定位。")
+        hint.setObjectName("pageHint")
+        hint.setWordWrap(True)
+        lay.addWidget(hint)
+
+        self.text = QPlainTextEdit(self)
+        self.text.setReadOnly(True)
+        self.text.setObjectName("logView")
+        self.text.setLineWrapMode(QPlainTextEdit.NoWrap)
+        f = self.text.font()
+        f.setFamilies(["Consolas", "Courier New", "monospace"])
+        self.text.setFont(f)
+        lay.addWidget(self.text, 1)
+
+        row = QHBoxLayout()
+        b_refresh = QPushButton("刷新")
+        b_copy = QPushButton("复制全部")
+        b_export = QPushButton("导出为文本…")
+        b_clear = QPushButton("清空日志文件…")
+        b_close = QPushButton("关闭")
+        b_close.setDefault(True)
+        for b in (b_refresh, b_copy, b_export, b_clear):
+            row.addWidget(b)
+        row.addStretch(1)
+        row.addWidget(b_close)
+        lay.addLayout(row)
+
+        b_refresh.clicked.connect(self.load_log)
+        b_copy.clicked.connect(self._copy_all)
+        b_export.clicked.connect(self._export)
+        b_clear.clicked.connect(self._clear_files)
+        b_close.clicked.connect(self.accept)
+        self.load_log()
+
+    # ---- 数据 ----
+    def _log_files(self):
+        if not os.path.isdir(FMTLOG_DIR):
+            return []
+        out = []
+        for name in sorted(os.listdir(FMTLOG_DIR)):
+            if name.startswith("fmt-") and name.endswith(".log"):
+                fp = os.path.join(FMTLOG_DIR, name)
+                out.append(fp)
+        return out
+
+    def load_log(self):
+        """读全部日志文件并格式化为可读文本（时间 序号 [动作](备注) 文档 / 对象 / 结果）。"""
+        lines = []
+        for fp in self._log_files():
+            try:
+                with open(fp, "r", encoding="utf-8", errors="replace") as f:
+                    raw_lines = f.read().splitlines()
+            except OSError:
+                continue
+            for ln in raw_lines:
+                ln = ln.strip()
+                if not ln:
+                    continue
+                try:
+                    e = json.loads(ln)
+                except ValueError:
+                    lines.append(ln)   # 非 JSON 行原样保留（容错）
+                    continue
+                head = f"#{e.get('n', '?')} {e.get('t', '')} [{e.get('act', '')}]"
+                if e.get("note"):
+                    head += f"({e['note']})"
+                if e.get("doc"):
+                    head += f" 文档:{e['doc']}"
+                lines.append(head)
+                if e.get("obj"):
+                    lines.append(f"    对象: {e['obj']}")
+                if e.get("res"):
+                    lines.append(f"    结果: {e['res']}")
+        self.text.setPlainText("\n".join(lines))
+
+    def _plain_text(self):
+        return self.text.toPlainText()
+
+    # ---- 动作 ----
+    def _copy_all(self):
+        QApplication.clipboard().setText(self._plain_text())
+        self._win.show_status("日志已复制到剪贴板")
+
+    def _export(self):
+        if not self._plain_text():
+            self._win.show_status("日志为空，无可导出内容")
+            return
+        default = os.path.join(os.path.expanduser("~"), "Desktop",
+                               "mdeditor-fmtlog-" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".txt")
+        path, _ = QFileDialog.getSaveFileName(self, "导出格式化操作日志", default,
+                                              "文本文件 (*.txt);;全部文件 (*)")
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(self._plain_text() + "\n")
+            self._win.show_status(f"日志已导出：{path}")
+        except OSError as e:
+            QMessageBox.warning(self, "导出失败", f"写入文件失败：{e}")
+
+    def _clear_files(self):
+        files = self._log_files()
+        if not files:
+            self._win.show_status("暂无日志文件")
+            return
+        btn = QMessageBox.question(
+            self, "清空日志文件",
+            f"删除 {len(files)} 个日志文件（fmt-*.log）？此操作不可恢复。",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if btn != QMessageBox.Yes:
+            return
+        n = 0
+        for fp in files:
+            try:
+                os.remove(fp)
+                n += 1
+            except OSError:
+                continue
+        self.load_log()
+        self._win.show_status(f"已删除 {n} 个日志文件")
+
+
 class HistoryDialog(_ThemedDialog):
     """版本历史：列出保存时留下的快照，可预览、对比并恢复。"""
 
@@ -1800,6 +2178,9 @@ class HistoryDialog(_ThemedDialog):
         self._apply_theme_qss(getattr(win, "_theme", "light"))
         self._cur_file = None
         self._items = []      # [(path, mtime)]
+        # v3.39.7（HIST-3）：勾选点击顺序队列（行号，旧→新）——
+        # 勾选超过两项时保留最近两次点击的两项
+        self._hist_clicks = []
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(14, 14, 14, 12)
@@ -1821,7 +2202,8 @@ class HistoryDialog(_ThemedDialog):
         self.listw.currentRowChanged.connect(self._on_pick)
         # v3.38（DIFF-2）：扩展选择 —— 单击仍是单选预览；Ctrl/Shift 可选两项互比
         self.listw.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.listw.itemSelectionChanged.connect(self._on_two_sel)
+        self.listw.itemSelectionChanged.connect(self._on_sel_changed)
+        self.listw.itemClicked.connect(self._on_item_clicked)   # v3.39.7（HIST-3）
         row.addWidget(self.listw, 0)
         self.preview = QPlainTextEdit(self)
         self.preview.setReadOnly(True)
@@ -1864,6 +2246,7 @@ class HistoryDialog(_ThemedDialog):
         self.listw.blockSignals(True)
         self.listw.clear()
         self.preview.setPlainText("")
+        self._hist_clicks = []   # v3.39.7（HIST-3）：重建列表时点击顺序一并清空
         if not self._items:
             # v3.32（P0-3）：空态说明触发规则 —— 让用户知道"为什么没有快照"
             hint = "（未保存文档没有版本历史，保存后可用）" if not path else \
@@ -1876,11 +2259,6 @@ class HistoryDialog(_ThemedDialog):
             self.b_diff_prev.setEnabled(False)
             self.b_diff_two.setEnabled(False)
         else:
-            self.b_restore.setEnabled(True)
-            self.b_folder.setEnabled(True)
-            self.b_diff_cur.setEnabled(True)
-            self.b_diff_prev.setEnabled(len(self._items) >= 2)
-            self.b_diff_two.setEnabled(len(self.listw.selectedItems()) == 2)
             for fp, mt in self._items:
                 try:
                     size = os.path.getsize(fp)
@@ -1889,8 +2267,13 @@ class HistoryDialog(_ThemedDialog):
                 self.listw.addItem(QListWidgetItem(
                     f"{datetime.fromtimestamp(mt).strftime('%Y-%m-%d %H:%M:%S')}    {size} 字节"))
             self.listw.setCurrentRow(0)
+            # v3.38（HIST-1）：ExtendedSelection 下 setCurrentRow 不产生勾选，
+            # 显式勾选首项，保持「打开即可预览 / 恢复」的旧可用性
+            if self.listw.count() > 0:
+                self.listw.item(0).setSelected(True)
         self.listw.blockSignals(False)
         self._on_pick(self.listw.currentRow())
+        self._on_sel_changed()   # v3.38（HIST-1）：按钮状态统一由选择变化驱动
         self.show()
         self.raise_()
         self.activateWindow()
@@ -1949,10 +2332,60 @@ class HistoryDialog(_ThemedDialog):
             f"版本对比 · {name}", old, self._current_text(),
             f"快照 {self._fmt_when(self._items[row][1])}", "当前文档")
 
-    def _on_two_sel(self):
-        """v3.38（DIFF-2）：恰选两项时启用「对比所选两项」。"""
-        if hasattr(self, "b_diff_two"):
-            self.b_diff_two.setEnabled(len(self.listw.selectedItems()) == 2)
+    def _on_item_clicked(self, item):
+        """v3.39.7（HIST-3）：点击已有勾选但选择未变化的情形（如重复单击同一
+        已勾选项）也把该行刷新为「最近点击」——只影响顺序队列，不动选择集。"""
+        if item is None:
+            return
+        row = self.listw.row(item)
+        if row < 0 or row >= len(self._items):
+            return
+        if row in self._hist_clicks:
+            self._hist_clicks.remove(row)
+        self._hist_clicks.append(row)
+
+    def _on_sel_changed(self):
+        """v3.38（HIST-1）：按勾选数量统一驱动四个按钮的启用 / 禁用。
+        v3.39.7（HIST-3）：勾选数量约束改为「最近两次点击」——
+        - 超过两项同时勾选时，自动取消较早点击的项，只保留**最近两次点击**
+          的两项（点击顺序队列 _hist_clicks，旧→新）；
+        - 取消部分勾选再重新勾选 / 重新点击同一版本：重新勾选视为最新一次
+          点击，顺序随之刷新（取消即出队、勾选即入队）；
+        - 少于两项：维持原行为（不干预选择）。
+        按钮启用规则：
+        - 恰选 1 项：启用「与上一版本对比」「与当前文档对比」「恢复此版本」，
+          禁用「对比所选两项」；
+        - 恰选 2 项：只启用「对比所选两项」，其余三个禁用（单选语义按钮
+          对两项选择无意义）；
+        - 0 项 / 超界：全部禁用。"""
+        if not hasattr(self, "b_diff_two") or not self._items:
+            return
+        sel = self.listw.selectedItems()
+        sel_rows = [self.listw.row(it) for it in sel]
+        sel_set = set(sel_rows)
+        # 刷新点击顺序队列：已取消的行出队；新勾选的行（按行号序）入队尾
+        old_order = [r for r in self._hist_clicks if r in sel_set]
+        added = [r for r in sorted(sel_set - set(old_order))]
+        self._hist_clicks = old_order + added
+        # 约束：最多同时勾选两项 —— 保留最近两次点击的两项
+        if len(sel_rows) > 2:
+            keep = set(self._hist_clicks[-2:])
+            self.listw.blockSignals(True)
+            for it in list(sel):
+                if self.listw.row(it) not in keep:
+                    it.setSelected(False)
+            self.listw.blockSignals(False)
+            self._hist_clicks = [r for r in self._hist_clicks if r in keep]
+            sel = self.listw.selectedItems()
+        n = len(sel)
+        self.b_diff_two.setEnabled(n == 2)
+        single = (n == 1)
+        row = self.listw.currentRow()
+        self.b_diff_cur.setEnabled(single)
+        self.b_restore.setEnabled(single)
+        # v3.44.9（HIST-SEL）：选中首项（最旧版本，row==0）无更早版本可对比，
+        # 禁用「与上一版本对比」；否则（single 且 row>0）启用
+        self.b_diff_prev.setEnabled(single and row > 0)
 
     def _diff_two(self):
         """v3.38（DIFF-2）：任选两个快照互比 —— 按 mtime 旧→新作为 old/new

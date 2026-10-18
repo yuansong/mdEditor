@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>mdEditor 界面风格总览 · 6 套风格 × 6 主题 · PS01</title>
+<style>
+:root{
+  --shell:#2b2f36; --shell2:#23272e; --shell-line:#3a3f47;
+  --pop:#ffffff; --pop-line:#d0d4da; --pop-tx:#1f2328; --pop-tx2:#5f6672; --pop-hover:#e8f0fe;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#e3e5e9;font-family:"Segoe UI","Microsoft YaHei",sans-serif;color:var(--pop-tx);padding:20px;display:flex;flex-direction:column;align-items:center;gap:12px}
+.head{max-width:1280px;width:100%;display:flex;align-items:baseline;gap:12px}
+.head h1{font-size:15px;font-weight:600}
+.head p{font-size:12px;color:var(--pop-tx2)}
+.shell{width:1280px;max-width:100%;background:var(--shell);border-radius:8px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.24);border:1px solid var(--shell-line)}
+.titlebar{height:30px;background:var(--shell2);display:flex;align-items:center;padding:0 12px;font-size:12px;color:#a8b0ba}
+.titlebar .winctl{margin-left:auto;display:flex;gap:14px;font-size:10px;color:#8a919c}
+.menubar{height:28px;background:var(--shell2);display:flex;align-items:center;padding:0 6px;font-size:12px;position:relative;z-index:60}
+.mtop{padding:3px 10px;color:#e8eaed;border-radius:3px;cursor:default;position:relative}
+.mtop:hover,.mtop.open{background:rgba(255,255,255,.12)}
+.mtop .k{color:#8a919c;margin-left:2px}
+.dropdown{position:absolute;top:28px;left:0;min-width:232px;background:var(--pop);border:1px solid var(--pop-line);box-shadow:0 10px 26px rgba(0,0,0,.22);padding:3px;display:none;z-index:200;border-radius:4px;color:var(--pop-tx)}
+.dropdown.open{display:block}
+.mi{display:flex;align-items:center;gap:8px;padding:5px 16px 5px 22px;font-size:12.5px;white-space:nowrap;border-radius:3px;position:relative}
+.mi:hover{background:var(--pop-hover)}
+.mi.dis{color:#a8adb5}
+.msep{height:1px;background:#e6e8eb;margin:3px 6px}
+.sc{margin-left:auto;color:#98a0aa;font-size:11px;padding-left:20px}
+.has-sub{position:relative}
+.subarrow{margin-left:auto;color:#98a0aa;font-size:11px}
+.submenu{position:absolute;top:-3px;left:100%;min-width:214px;background:var(--pop);border:1px solid var(--pop-line);box-shadow:0 10px 26px rgba(0,0,0,.22);padding:3px;display:none;z-index:300;border-radius:4px}
+.has-sub:hover>.submenu{display:block}
+.mi[data-theme],.mi[data-mmd],.mi[data-style]{cursor:pointer}
+.stage-wrap{background:#f0f1f3;padding:0}
+iframe{display:block;width:100%;height:760px;border:0;background:#ffffff}
+.foot{max-width:1280px;width:100%;font-size:12px;color:var(--pop-tx2);line-height:1.9;background:#fff;border:1px solid #d9dce1;border-radius:6px;padding:12px 16px}
+.foot b{color:var(--pop-tx)}
+.foot ol{margin:6px 0 0 18px}
+.badge{display:inline-block;font-size:11px;background:#e8f0fe;color:#0052d9;border-radius:3px;padding:1px 6px;margin-left:6px}
+</style>
+</head>
+<body>
+<div class="head">
+  <h1>界面风格总览<span class="badge">6 套风格 × 6 主题</span></h1>
+  <p>顶栏「外观(A)」→ 界面风格，原地切换整窗结构；→ 主题，令牌随主题改写。</p>
+</div>
+
+<div class="shell">
+  <div class="titlebar">mdEditor — 外观菜单 / 风格总览<div class="winctl"><span>─</span><span>□</span><span>✕</span></div></div>
+  <div class="menubar">
+    <div class="mtop">文件<span class="k">(F)</span></div>
+    <div class="mtop">编辑<span class="k">(E)</span></div>
+    <div class="mtop">视图<span class="k">(V)</span></div>
+    <div class="mtop" id="mLook">外观<span class="k">(A)</span>
+      <div class="dropdown" id="dm-look">
+        <div class="mi has-sub">主题<span class="subarrow">▸</span>
+          <div class="submenu">
+            <div class="mi" data-theme="light" data-label="浅色（默认）">✓ 浅色（默认）</div>
+            <div class="mi" data-theme="azure" data-label="青空">青空</div>
+            <div class="mi" data-theme="sepia" data-label="护眼米黄">护眼米黄</div>
+            <div class="mi" data-theme="dark" data-label="深色">深色</div>
+            <div class="mi" data-theme="night" data-label="墨夜（Typora Night）">墨夜（Typora Night）</div>
+            <div class="mi" data-theme="panda" data-label="熊猫（Panda）">熊猫（Panda）</div>
+          </div>
+        </div>
+        <div class="mi has-sub">界面风格<span class="subarrow">▸</span>
+          <div class="submenu">
+            <div class="mi" data-style="01_主界面效果图-PS01-WIN.html" data-label="Win11 Fluent 云母（01）">✓ Win11 Fluent 云母（01）</div>
+            <div class="mi" data-style="02_主界面效果图-PS01-MAC.html" data-label="macOS Aqua（02）">macOS Aqua（02）</div>
+            <div class="mi" data-style="03_主界面效果图-PS01-CODE.html" data-label="VS Code 工作台（03）">VS Code 工作台（03）</div>
+            <div class="mi" data-style="04_主界面效果图-PS01-RIBBON.html" data-label="Office 功能区蓝（04）">Office 功能区蓝（04）</div>
+            <div class="mi" data-style="05_主界面效果图-PS01-NOTION.html" data-label="Notion 轻拟物（05）">Notion 轻拟物（05）</div>
+            <div class="mi" data-style="06_主界面效果图-PS01-ZEN.html" data-label="极简无界（06）">极简无界（06）</div>
+          </div>
+        </div>
+        <div class="mi has-sub">代码风格<span class="subarrow">▸</span>
+          <div class="submenu">
+            <div class="mi" data-codestyle="classic" data-label="经典">✓ 经典</div>
+            <div class="mi" data-codestyle="dark" data-label="深色">深色</div>
+            <div class="mi" data-codestyle="eye" data-label="护眼">护眼</div>
+            <div class="mi" data-codestyle="mini" data-label="极简">极简</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="mtop">工具<span class="k">(T)</span></div>
+    <div class="mtop">帮助<span class="k">(H)</span></div>
+  </div>
+  <div class="stage-wrap">
+    <iframe id="stage" src="01_主界面效果图-PS01-WIN.html#t-light"></iframe>
+  </div>
+</div>
+
+<div class="foot">
+  <b>用法</b>
+  <ol>
+    <li><b>界面风格</b>：外观(A) → 界面风格 → 选 01~06，下方舞台原地换成该风格的完整界面（结构 + 配色 + 组件形态全部替换，不是仅换色）。</li>
+    <li><b>代码风格</b>：外观(A) → 代码风格 → 经典 / 深色 / 护眼 / 极简（4 项，仅同步选中态）。</li>
+    <li><b>主题</b>：外观(A) → 主题 → 选其一，当前界面的令牌（编辑区底色 / 侧栏 / 菜单栏 / 强调色 / 文字层级）随主题改写；之后再切换「界面风格」时主题保持不变。</li>
+    <li>外观(A) 菜单现仅保留三项子菜单：<b>主题 / 界面风格 / 代码风格</b>（原「图表风格」与「外观设置…」已删除）。</li>
+    <li>每份风格文档末尾均附加同一组<b>静态场景</b>：入口链路 · 系统设置（新导航 编辑器/通用/模板）· 界面风格选择器 · 代码风格 · 代码块全态 · 右键菜单 · 悬浮工具栏/格式化菜单 · 大纲。</li>
+    <li>风格文档：<code>docs/ui-redesign/0N_主界面效果图-PS01-XXX.html</code>，6 套取值均以其 :root 令牌为准，未臆造。</li>
+  </ol>
+</div>
+
+<script>
+var THEMES=['light','azure','sepia','dark','night','panda'];
+var stage=document.getElementById('stage'),curT='light',curStyle='01_主界面效果图-PS01-WIN.html';
+function mark(sel,attr,val){
+  document.querySelectorAll(sel).forEach(function(el){
+    var on=el.getAttribute(attr)===String(val);
+    if(el.firstChild)el.firstChild.nodeValue=(on?'✓ ':'')+el.getAttribute('data-label');
+  });
+}
+function load(){ stage.src=curStyle+'#t-'+curT; }
+document.querySelectorAll('[data-theme]').forEach(function(el){
+  el.addEventListener('click',function(e){
+    e.stopPropagation();
+    curT=el.getAttribute('data-theme');
+    mark('[data-theme]','data-theme',curT);
+    load();
+  });
+});
+document.querySelectorAll('[data-style]').forEach(function(el){
+  el.addEventListener('click',function(e){
+    e.stopPropagation();
+    curStyle=el.getAttribute('data-style');
+    mark('[data-style]','data-style',curStyle);
+    load();
+  });
+});
+document.querySelectorAll('[data-mmd]').forEach(function(el){
+  el.addEventListener('click',function(e){e.stopPropagation();mark('[data-mmd]','data-mmd',el.getAttribute('data-mmd'));});
+});
+var ml=document.getElementById('mLook'),dd=document.getElementById('dm-look');
+ml.addEventListener('click',function(e){e.stopPropagation();dd.classList.toggle('open');ml.classList.toggle('open');});
+document.addEventListener('click',function(){dd.classList.remove('open');ml.classList.remove('open');});
+mark('[data-theme]','data-theme','light');
+mark('[data-style]','data-style','01_主界面效果图-PS01-WIN.html');
+</script>
+</body>
+</html>

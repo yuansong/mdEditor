@@ -202,8 +202,8 @@ def parse_inline(text):
             lb = re.match(r"\[([^\]]+)\]\(([^)]*)\)", tok)
             out.append({"text": lb.group(1) if lb else tok,
                         "link": (lb.group(2) if lb else "")})
-        elif m.group(8):                    # 行内公式 $...$ → 去 $ 纯文本（MATH-2）
-            out.append({"text": tok[1:-1]})
+        elif m.group(8):                    # 行内公式 $...$ → 标记 math（导出优先位图化，回落纯文本）
+            out.append({"math": tok[1:-1]})
         pos = m.end()
     if pos < len(text or ""):
         out.append({"text": text[pos:]})
@@ -218,6 +218,8 @@ def plain_inline(text):
             parts.append(t.get("alt") or "图片")
         elif t.get("fnref"):
             parts.append("[" + t["fnref"] + "]")
+        elif t.get("math") is not None:
+            parts.append(t["math"])
         else:
             parts.append(t.get("text") or "")
     return "".join(parts)
@@ -266,10 +268,28 @@ def _shade(paragraph, fill):
     pr.append(shd)
 
 
-def _add_runs(paragraph, text, base_dir, doc, allow_image=True):
-    """把一行 Markdown 行内内容写进段落（图片单独成段）。"""
-    from docx.shared import Inches
+def _add_runs(paragraph, text, base_dir, doc, allow_image=True, math_png=None):
+    """把一行 Markdown 行内内容写进段落（图片单独成段）。
+
+    v3.44.31（MATH-EXP）：math_png 为 {公式源码: PNG 路径} 映射（由 GUI 侧把已渲染
+    公式位图化后传入）；行内公式命中时直接嵌 PNG（与编辑器显示一致），未命中回落纯文本。
+    """
+    from docx.shared import Inches, Pt
     for t in parse_inline(text):
+        if t.get("math") is not None:
+            # 行内公式：优先位图嵌入（I: 前缀区分行内），失败回落斜体纯文本
+            tex = t["math"]
+            png = (math_png or {}).get("I:" + tex.strip())
+            if png and os.path.isfile(png):
+                try:
+                    run = paragraph.add_run()
+                    run.add_picture(png, height=Pt(13))
+                    continue
+                except Exception as e2:
+                    _log.debug("docx 行内公式嵌入失败，回落纯文本: %s", e2)
+            r = paragraph.add_run(tex)
+            r.italic = True
+            continue
         if t.get("image"):
             if not allow_image:
                 continue
@@ -311,7 +331,7 @@ def _add_picture(doc, rel, base_dir, width):
         return None
 
 
-def write_docx(md, out_path, base_dir="", title=None, mmd_png=None):
+def write_docx(md, out_path, base_dir="", title=None, mmd_png=None, math_png=None):
     """Markdown → .docx。返回 (是否成功, 提示信息)。
 
     v3.30.19（MMD-2）：mmd_png 为 {图表源码: PNG 路径} 映射（由 GUI 侧把已渲染
@@ -341,10 +361,10 @@ def write_docx(md, out_path, base_dir="", title=None, mmd_png=None):
                 _set_style_font(doc.styles[f"Heading {lvl}"], _CJK_FONT)
             except Exception as e:   # v3.29d（B9）：记录而非静默吞掉
                 _log.debug("docx 标题样式 Heading %s 字体设置失败: %s", lvl, e)
-            _add_runs(h, blk["text"], base_dir, doc, allow_image=False)
+            _add_runs(h, blk["text"], base_dir, doc, allow_image=False, math_png=math_png)
         elif k == "para":
             p = doc.add_paragraph()
-            _add_runs(p, blk["text"], base_dir, doc)
+            _add_runs(p, blk["text"], base_dir, doc, math_png=math_png)
         elif k == "list":
             style = "List Number" if blk["ordered"] else "List Bullet"
             for it in blk["items"]:
@@ -354,11 +374,11 @@ def write_docx(md, out_path, base_dir="", title=None, mmd_png=None):
                     p = doc.add_paragraph()
                 if it["indent"]:
                     p.paragraph_format.left_indent = Pt(18 * (it["indent"] + 1))
-                _add_runs(p, it["text"], base_dir, doc)
+                _add_runs(p, it["text"], base_dir, doc, math_png=math_png)
         elif k == "quote":
             p = doc.add_paragraph()
             p.paragraph_format.left_indent = Pt(18)
-            _add_runs(p, blk["text"], base_dir, doc)
+            _add_runs(p, blk["text"], base_dir, doc, math_png=math_png)
             for r in p.runs:
                 r.italic = True
                 r.font.color.rgb = RGBColor(0x60, 0x60, 0x60)
@@ -374,15 +394,25 @@ def write_docx(md, out_path, base_dir="", title=None, mmd_png=None):
                     continue
                 except Exception as e2:
                     _log.debug("docx 图表 PNG 嵌入失败，回落源码降级: %s", e2)
-            if lang == "mermaid":
+            if lang == "math":
+                # v3.44.31（MATH-EXP）：已位图化的公式（B: 前缀区分块级）直接嵌 PNG
+                png = (math_png or {}).get("B:" + (code or "").strip())
+                if png and os.path.isfile(png):
+                    try:
+                        p = doc.add_paragraph()
+                        p.alignment = 1  # 居中
+                        p.add_run().add_picture(png, width=Inches(5.6))
+                        continue
+                    except Exception as e2:
+                        _log.debug("docx 公式 PNG 嵌入失败，回落源码降级: %s", e2)
                 tip = doc.add_paragraph()
-                _add_runs(tip, "［图表 · Mermaid 源码，请在 mdEditor 中查看渲染效果］", base_dir, doc)
+                _add_runs(tip, "［公式 · LaTeX 源码，渲染失败回落］", base_dir, doc, math_png=math_png)
                 for r in tip.runs:
                     r.italic = True
                     r.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
-            elif lang == "math":
+            elif lang == "mermaid":
                 tip = doc.add_paragraph()
-                _add_runs(tip, "［公式 · LaTeX 源码］", base_dir, doc)
+                _add_runs(tip, "［图表 · Mermaid 源码，请在 mdEditor 中查看渲染效果］", base_dir, doc, math_png=math_png)
                 for r in tip.runs:
                     r.italic = True
                     r.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
@@ -404,7 +434,7 @@ def write_docx(md, out_path, base_dir="", title=None, mmd_png=None):
             for c, txt in enumerate(header):
                 cell = table.rows[0].cells[c]
                 cell.text = ""
-                _add_runs(cell.paragraphs[0], txt, base_dir, doc, allow_image=False)
+                _add_runs(cell.paragraphs[0], txt, base_dir, doc, allow_image=False, math_png=math_png)
                 for r in cell.paragraphs[0].runs:
                     r.bold = True
             for row in blk["rows"]:
@@ -412,7 +442,7 @@ def write_docx(md, out_path, base_dir="", title=None, mmd_png=None):
                 for c in range(cols):
                     cells[c].text = ""
                     _add_runs(cells[c].paragraphs[0],
-                              row[c] if c < len(row) else "", base_dir, doc, allow_image=False)
+                              row[c] if c < len(row) else "", base_dir, doc, allow_image=False, math_png=math_png)
         elif k == "fndef":
             # v3.30.18（FN-2）：脚注定义 → 文末标签段
             p = doc.add_paragraph()
@@ -429,7 +459,7 @@ def write_docx(md, out_path, base_dir="", title=None, mmd_png=None):
             for d in blk.get("defs") or []:
                 pd = doc.add_paragraph()
                 pd.paragraph_format.left_indent = Pt(18)
-                _add_runs(pd, d, base_dir, doc)
+                _add_runs(pd, d, base_dir, doc, math_png=math_png)
         elif k == "hr":
             p = doc.add_paragraph()
             _shade(p, "DDDDDD")
@@ -458,6 +488,8 @@ th{background:#f5f6f8}
 img{max-width:100%;height:auto}
 hr{border:none;border-top:1px solid __HR_BORDER__;margin:1.6em 0}
 .tip{color:#8a8a8a;font-style:italic}
+.imath{vertical-align:middle}
+.mblock{display:block;margin:0 auto}
 sup.fnref a{text-decoration:none;font-size:.75em}
 p.fndef{font-size:.88em;color:#444;margin:.3em 0}
 dl dt{font-weight:700;margin-top:.6em}
@@ -471,7 +503,7 @@ def _xesc(s):
     return "".join(_ESC.get(c, c) for c in str(s or ""))
 
 
-def _xinline(text):
+def _xinline(text, math_png=None, images=None):
     out = []
     for t in parse_inline(text):
         if t.get("image"):
@@ -482,6 +514,20 @@ def _xinline(text):
             # v3.30.18（FN-2）：脚注引用 → 上标锚链接（跳到文末定义）
             fid = _xesc(t["fnref"])
             out.append(f'<sup class="fnref"><a href="#fn-{fid}">[{fid}]</a></sup>')
+            continue
+        if t.get("math") is not None:
+            # v3.44.31（MATH-EXP）：行内公式优先位图嵌入（I: 前缀区分行内），
+            # 未命中回落纯文本
+            tex = t["math"]
+            png = (math_png or {}).get("I:" + tex.strip())
+            if png:
+                img_name = f"math_{uuid.uuid4().hex[:8]}.png"
+                if images is not None:
+                    images[img_name] = png
+                out.append(f'<img class="imath" src="images/{img_name}" '
+                           f'alt="{_xesc(tex)}"/>')
+            else:
+                out.append(_xesc(tex))
             continue
         s = _xesc(t.get("text") or "")
         if not s:
@@ -504,51 +550,53 @@ def _img_name(rel):
     return os.path.basename(str(rel).replace("\\", "/"))
 
 
-def _blocks_to_xhtml(blocks, base_dir, images, mmd_png=None):
+def _blocks_to_xhtml(blocks, base_dir, images, mmd_png=None, math_png=None):
     """块列表 → XHTML 片段；顺带收集需要打包进 EPUB 的图片。
 
     v3.30.19（MMD-2）：mmd_png 命中的图表直接以 PNG 内嵌（随 EPUB 打包）。
+    v3.44.31（MATH-EXP）：math_png 命中的公式（块级 B: 前缀）同样以 PNG 内嵌；
+    行内公式经 _xinline 内嵌。未命中回落源码降级。
     """
     out = []
     for blk in blocks:
         k = blk["kind"]
         if k == "heading":
             lvl = max(1, min(6, blk["level"]))
-            out.append(f"<h{lvl}>{_xinline(blk['text'])}</h{lvl}>")
+            out.append(f"<h{lvl}>{_xinline(blk['text'], math_png=math_png, images=images)}</h{lvl}>")
         elif k == "para":
-            out.append(f"<p>{_xinline(blk['text'])}</p>")
+            out.append(f"<p>{_xinline(blk['text'], math_png=math_png, images=images)}</p>")
         elif k == "list":
             tag = "ol" if blk["ordered"] else "ul"
             out.append(f"<{tag}>")
             for it in blk["items"]:
-                out.append(f"<li>{_xinline(it['text'])}</li>")
+                out.append(f"<li>{_xinline(it['text'], math_png=math_png, images=images)}</li>")
             out.append(f"</{tag}>")
         elif k == "quote":
-            out.append(f"<blockquote>{_xinline(blk['text'])}</blockquote>")
+            out.append(f"<blockquote>{_xinline(blk['text'], math_png=math_png, images=images)}</blockquote>")
         elif k == "hr":
             out.append("<hr/>")
         elif k == "table":
             out.append("<table><thead><tr>")
             for c in blk["header"]:
-                out.append(f"<th>{_xinline(c)}</th>")
+                out.append(f"<th>{_xinline(c, math_png=math_png, images=images)}</th>")
             out.append("</tr></thead><tbody>")
             for row in blk["rows"]:
                 out.append("<tr>")
                 for c in range(len(blk["header"])):
-                    out.append(f"<td>{_xinline(row[c] if c < len(row) else '')}</td>")
+                    out.append(f"<td>{_xinline(row[c] if c < len(row) else '', math_png=math_png, images=images)}</td>")
                 out.append("</tr>")
             out.append("</tbody></table>")
         elif k == "fndef":
             # v3.30.18（FN-2）：脚注定义 → 带锚点的定义段
             fid = _xesc(blk["id"])
             out.append(f'<p class="fndef" id="fn-{fid}">'
-                       f'<strong>[{fid}]</strong> {_xinline(blk.get("text") or "")}</p>')
+                       f'<strong>[{fid}]</strong> {_xinline(blk.get("text") or "", math_png=math_png, images=images)}</p>')
         elif k == "deflist":
             # v3.30.18（DL-5）：定义列表 → 原生 <dl>（阅读器保留语义）
             out.append("<dl>")
-            out.append(f"<dt>{_xinline(blk.get('term') or '')}</dt>")
+            out.append(f"<dt>{_xinline(blk.get('term') or '', math_png=math_png, images=images)}</dt>")
             for d in blk.get("defs") or []:
-                out.append(f"<dd>{_xinline(d)}</dd>")
+                out.append(f"<dd>{_xinline(d, math_png=math_png, images=images)}</dd>")
             out.append("</dl>")
         elif k == "fence":
             lang, code = blk["lang"], blk["text"] or ""
@@ -559,6 +607,14 @@ def _blocks_to_xhtml(blocks, base_dir, images, mmd_png=None):
                 images[img_name] = mmd_png[code]
                 out.append(f'<p><img src="images/{img_name}" alt="图表"/></p>')
                 continue
+            if lang == "math":
+                # v3.44.31（MATH-EXP）：已位图化的公式（B: 前缀区分块级）直接内嵌
+                png = (math_png or {}).get("B:" + code.strip())
+                if png and os.path.isfile(png):
+                    img_name = f"math_{uuid.uuid4().hex[:8]}.png"
+                    images[img_name] = png
+                    out.append(f'<p><img class="mblock" src="images/{img_name}" alt="公式"/></p>')
+                    continue
             if lang in ("mermaid", "math"):
                 label = "图表（Mermaid 源码）" if lang == "mermaid" else "公式（LaTeX 源码）"
                 out.append(f'<p class="tip">［{label}］</p>')
@@ -578,7 +634,7 @@ def _blocks_to_xhtml(blocks, base_dir, images, mmd_png=None):
 
 
 def write_epub(md, out_path, base_dir="", title=None, author="mdEditor", mmd_png=None,
-               border_color="#ddd"):
+               border_color="#ddd", math_png=None):
     """Markdown → EPUB 3。返回 (是否成功, 提示信息)。（MMD-2：mmd_png 见 write_docx）"""
     blocks = parse_blocks(md)
     # 按一级标题分章（无 h1 则整篇一章）
@@ -604,7 +660,7 @@ def write_epub(md, out_path, base_dir="", title=None, author="mdEditor", mmd_png
         cname = f"chapter{i}.xhtml"
         ctitle = plain_inline(head) if head else f"第 {i} 章"
         toc.append((ctitle, cname))
-        body = _blocks_to_xhtml(ch, base_dir, images, mmd_png=mmd_png)
+        body = _blocks_to_xhtml(ch, base_dir, images, mmd_png=mmd_png, math_png=math_png)
         bodies.append((cname, ctitle, body))
 
     book_id = "urn:uuid:" + str(uuid.uuid4())

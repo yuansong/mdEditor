@@ -130,9 +130,17 @@ js("(function(){var blks=document.querySelectorAll('#editor .blk');"
    "blks[blks.length-1].dispatchEvent(new MouseEvent('mousedown',{bubbles:true,detail:1}));"
    "return 'x'})()")
 wait(300)
-js("(function(){var el=document.querySelector('.raw-edit');"
-   "if(!el) return 'NOEDIT';"
-   "el.dispatchEvent(new KeyboardEvent('keydown',{key:'Backspace',bubbles:true,cancelable:true}));"
+# v3.38（WYS-4）：空段保持渲染态 —— p[contenteditable] 派发 Backspace，
+# WYS-4b 分支 enterEdit+重派 → 源码态分支打开图表源码框（兼容源码态）
+js("(function(){var blks=document.querySelectorAll('#editor .blk');"
+   "var last=blks[blks.length-1];"
+   "var h=last.matches('.raw-edit')?last:"
+   "(last.querySelector('.raw-edit')||last.querySelector('p[contenteditable]'));"
+   "if(!h) return 'NOHOST';"
+   "h.focus();"
+   "var rg=document.createRange();rg.selectNodeContents(h);rg.collapse(true);"
+   "var s=getSelection();s.removeAllRanges();s.addRange(rg);"
+   "h.dispatchEvent(new KeyboardEvent('keydown',{key:'Backspace',bubbles:true,cancelable:true}));"
    "return 'x'})()")
 wait(300)
 r = js("(function(){var ta=document.querySelector('#editor .mmd-src');"
@@ -196,7 +204,14 @@ wait(600)
 js("(function(){var b=document.querySelectorAll('#editor .blk')[0];"
    "b.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,detail:1}));return 'x'})()")
 wait(300)
-key("ArrowDown", sel="document.querySelector('.raw-edit')")
+# v3.38（WYS-4c）：段落渲染态段尾 ArrowDown → enterEdit+重派 → 代码区聚焦
+js("(function(){var b=document.querySelectorAll('#editor .blk')[0];"
+   "var h=b.querySelector('.raw-edit')||b.querySelector('p[contenteditable]');"
+   "if(!h) return 'NOHOST';h.focus();"
+   "var rg=document.createRange();rg.selectNodeContents(h);rg.collapse(false);"
+   "var s=getSelection();s.removeAllRanges();s.addRange(rg);"
+   "h.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true}));"
+   "return 'x'})()")
 wait(400)
 r = js("(function(){return JSON.stringify({"
        "src:!!document.querySelector('#editor .raw-edit.t-fence'),"

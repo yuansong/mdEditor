@@ -1,4 +1,4 @@
-﻿# mdEditor 一键打包脚本（v3.38 批次之十：Notepad++ 风格批量关闭 TAB-B + 帮助菜单修复 + 使用手册 HELP-1 → dist66）
+﻿# mdEditor 一键打包脚本（v3.44.29 批次：THEME-COORD 主题切换配色统一 + 提示重影 + zen 选中灰 → dist126）
 $ErrorActionPreference = "Stop"
 $pyi = "C:\Users\Administrator\.workbuddy\binaries\python\envs\default\Scripts\pyinstaller.exe"
 $root = $PSScriptRoot
@@ -9,13 +9,14 @@ Set-Location $root
 # （首行 INFO 即中断）→ 调用 PyInstaller 期间必须临时 EAP=Continue
 $ErrorActionPreference = "Continue"
 & $pyi --noconfirm --windowed --name mdEditor `
-    --distpath dist66 --workpath build66 --specpath spec66 `
+    --distpath dist126 --workpath build126 --specpath spec126 `
     --icon "$root\src\mdeditor.ico" `
     --add-data "$root\src\editor.html;." `
     --add-data "$root\src\使用手册.md;." `
     --add-data "$root\src\mdeditor.ico;." `
     --add-data "$root\src\katex;katex" `
     --add-data "$root\src\mermaid;mermaid" `
+    --add-data "$root\src\uistyles;uistyles" `
     --add-data "C:\Users\Administrator\.workbuddy\binaries\python\envs\default\Lib\site-packages\PySide6\translations\qt_zh_CN.qm;translations" `
     --add-data "C:\Users\Administrator\.workbuddy\binaries\python\envs\default\Lib\site-packages\PySide6\translations\qtbase_zh_CN.qm;translations" `
     src\main.py *>&1 | Out-String | Out-File "$root\_build_log.txt" -Encoding utf8

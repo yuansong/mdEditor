@@ -7,7 +7,47 @@ import sys
 APP_NAME = "mdEditor"
 
 # v3.32（P0-6①）：版本号统一由此维护（关于页 / 检查更新 / 诊断信息共用）
-APP_VERSION = "3.38.0"
+# v3.43.1（SET-3P）：设置中心三页拆四页（通用上移 + 新页「写作与输入」）
+# v3.44.1：通用页冗余说明/提示文案精简（控件与交互逻辑不变）
+# v3.44.3（DESIGN01）：chrome 区域边框/底色对齐设计01 + 大纲三角箭头 + 侧栏页签/路径行调整
+# v3.44.5（DESIGN01 全量对齐）：side 令牌六主题对齐 bg_soft；左侧栏宽 46/按钮 38×34/字号 14；
+# 状态栏高 28/字号 11；侧栏宽 232 + 页签下划线 + 面包屑↑按钮；标签选中指示条 inset 10px 短线；
+# 编辑区 content 10px 留白 + 居中 980 编辑卡片；菜单栏右端视图状态区胶囊/分段钮样式对齐
+# v3.44.6：① 面包屑「↑上级」按钮顶层（此电脑层）隐藏，改图形上箭头图标（消除多余空白框）；
+# ② 菜单栏右端「视图状态区」重构——专注/打字机改扁平、写作|源码|分屏改立体分段控件（圆角容器+分隔线+选中凸起）；
+# ③ 浅色主题编辑区卡片由纯白改略带灰度浅灰，并加粗顶部分隔线（增强与上方区域分界对比）
+# v3.44.7（PS01 视觉重建·从零审视）：图底关系校正——画布(canvas)转柔和浅灰、编辑纸(card)转纯白，
+# 形成「灰底白纸」三层色调（铬带白→侧栏灰→画布浅灰+纯白纸），统一六主题图底逻辑；
+# 浅色侧栏 side 转清晰面板灰 #e9edf2、chrome_line 略加深 #dde1e7（强化分区与分隔线对比）；
+# 内容区左右留白 10→14、标签条内距改对称（间距节奏归一）；编辑纸加柔和投影替代生硬顶线
+# v3.44.8：① Windows 原生标题栏沉浸式暗色同步（DWM，深色系主题 dark/night/panda 切暗色标题栏，
+# 浅色系 light/azure/sepia 切亮色）——消除原生标题栏与内部主题割裂；② 大纲移除顶部
+# 「全部/H1/H2/H3」级别过滤 chip 行，只显示标题树（层级靠缩进区分）+ 底部「N 个标题」计数
+# v3.44.9：① 大纲面板移除底部「N 个标题」计数条；② 分屏双栏行号/内容贴边（?dual）；
+# ③ 左缘工具条展开钮由文字「»」改为线性双右箭头矢量图标；④ 历史版本「与上一版本对比」
+# 选中首项（最旧）时正确置灰禁用；⑤ 编辑区上下内边距压缩贴顶/贴状态栏；
+# ⑥ 极简（zen）风格鼠标移到窗口顶部显示隐藏的菜单栏；⑦ 修复大纲「重建/折叠·展开」工具钮
+# 因父级 QSS padding 被裁切而空白不显示的问题
+# v3.44.26（RIBBON-12）：Office 功能区界面统一——剪贴板组改大钮竖排；
+# 全部命令图标统一为单色字形（去彩色 emoji）；界面风格「Aqua」改名「macOS」；
+# 命令菜单项间距/字体统一为 WorkBuddy 标准观感
+# v3.44.27（RIBBON-13）：① 功能区命令钮/内容高度锁定，修复重启后偶发异常拉高；
+# ② 页签行新增图钉式「固定/收拢」双态切换（状态明确可感知，收拢=点页签临时展开、
+# 点文档自动收起）；③ 修复极简（zen）风格切换后顶栏（菜单栏）消失且无法召回的问题
+# v3.44.28（RIBBON-14 + OFFICE-THEME）：① 修复 Office 风格切换主题后整条功能区配色不
+# 协调——Office 自定义控件统一改由 merge_palette 主题调色板驱动并随主题重绘；② 删除 Office
+# 页签行多余折叠（▴）按钮，保留图钉双态与 Ctrl+F1；③ macOS 分段控件去浮雕渐变并锁高 24px、
+# 工具钮图标统一 16px/高 30px；④ 修复命令面板空态提示与占位符重影；⑤ 加固 zen 顶栏恢复
+# v3.44.29（THEME-COORD）：① 主题切换配色统一——office/code/mac/notion/zen 风格不再强制
+# accent/chrome_bar 蓝，改由主题调色板驱动（切 panda/azure/sepia/dark 等主题后强调色与标题栏
+# 随主题协调）；主题调色板新增 chrome_bar/chrome_bar_text/status_sep 三令牌；② 消除命令面板
+# 空态提示与输入框占位符重影（空态只讲操作）；③ 极简无界(zen)命令栏选中钮改中性灰（去强调蓝）
+# v3.44.30（THEME-SYNC / EXPORT-BG / SLASH-PH-2）：① 修复 Notion 深色主题文档标签白底白字
+# （补回 tab_sel_text）；② Office「文件」蓝钮背景随主题 accent 重绘；③ 斜杠/命令提示菜单高亮
+# 改 var(--pop-hover)/var(--accent) 随主题；④ 修复导出 PDF/HTML 背景色不全（背景随当前主题
+# 整页填充并透传 data-theme，PDF 强制打印背景图形）；⑤ 修复输入"/"唤起菜单时空段落占位重影
+# （菜单打开期间不再重新挂 .slashph）
+APP_VERSION = "3.44.32"
 
 # v3.32（P0-6①）：检查更新源。留空 = 功能存在但提示"未配置更新源"；
 # 可在 QSettings 里写 updateUrl 覆盖（JSON：{"version":"x.y.z","url":"下载页"}）
@@ -24,6 +64,8 @@ USER_DATA_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"
                              "mdEditor")
 DRAFT_DIR = os.path.join(USER_DATA_DIR, "drafts")
 LOG_DIR = os.path.join(USER_DATA_DIR, "logs")
+# v3.39.8（FMT-LOG）：格式化操作日志目录（JSON Lines，fmt-YYYYMMDD.log）。
+FMTLOG_DIR = os.path.join(USER_DATA_DIR, "fmtlog")
 # v3.32.2（TPL-C）：模板持久化文件。
 # v3.36（TPL-E）：内置模板并入统一列表后，文件形态为
 #   {"v": 2, "templates": [{"name": str, "content": str, "ic"?: str}, ...]}
@@ -109,6 +151,10 @@ MMD_THEMES = [("跟随界面主题", ""), ("晴空", "azure"), ("薄荷", "mint"
               ("石墨", "graphite"), ("暗夜", "night"), ("琥珀", "ember"),
               ("黑白", "mono")]   # v3.38（MMD-12）：新增黑白（浅色界面默认）
 MMD_THEME_LABELS = dict((v, k) for k, v in MMD_THEMES)
+
+# v3.43.0（LOOK-1）：代码风格（与 editor.html 的 CODE_STYLES 同源）。
+# 唯一数据源 —— 「外观 → 代码风格」子菜单与编辑器默认配置共用，避免两处清单漂移。
+CODE_STYLES = (("classic", "经典"), ("dark", "深色"), ("eye", "护眼"), ("mini", "极简"))
 # 旧版（MMD-7）原生 mermaid 主题值 → 新主题（升级用户 QSettings 无缝过渡）
 MMD_LEGACY = {"default": "azure", "dark": "night", "forest": "mint", "neutral": "graphite"}
 

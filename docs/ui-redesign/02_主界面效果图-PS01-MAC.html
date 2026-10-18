@@ -1,0 +1,1302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>PS01-MAC · mdEditor macOS 风格效果图</title>
+<style>
+:root{
+  --win:#ECECEC; --side:#E9E9EB; --edt:#FFFFFF;
+  --tx:#1D1D1F; --tx2:#6E6E73; --tx3:#9A9AA0;
+  --line:rgba(0,0,0,.09); --line2:rgba(0,0,0,.16);
+  --accent:#0A84FF; --accent-bg:rgba(10,132,255,.12);
+  --ok:#34C759; --warn:#FF9F0A;
+  --sel:#DCDCDE;
+  --pop:#F6F6F8;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:linear-gradient(160deg,#B993D6 0%,#8CA6DB 60%,#5C7CB8 100%);font-family:-apple-system,"SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif;color:var(--tx);padding:28px;display:flex;flex-direction:column;align-items:center;gap:14px}
+.note{font-size:12px;color:rgba(255,255,255,.92);max-width:1220px;width:100%;display:flex;justify-content:space-between;align-items:center;text-shadow:0 1px 3px rgba(0,0,0,.25)}
+.note b{font-weight:600}
+.btn{border:none;background:rgba(255,255,255,.85);border-radius:7px;padding:6px 14px;font-size:12px;cursor:pointer;color:var(--tx);box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.btn.on{background:var(--accent);color:#fff}
+.win{width:1220px;height:730px;background:var(--win);border-radius:11px;overflow:hidden;box-shadow:0 22px 60px rgba(0,0,0,.35),0 0 0 .5px rgba(0,0,0,.25);display:flex;flex-direction:column;position:relative}
+
+/* ── 统一工具栏（布局调整：合并标题栏 + 菜单条 + 工具栏）── */
+.tb{height:52px;background:linear-gradient(#F5F5F7,#EBEBED);border-bottom:1px solid var(--line2);display:flex;align-items:center;padding:0 14px;gap:8px;position:relative}
+.lights{display:flex;gap:8px;margin-right:10px}
+.lt{width:12px;height:12px;border-radius:50%}
+.lt.r{background:#FF5F57;border:.5px solid rgba(0,0,0,.12)}
+.lt.y{background:#FEBC2E;border:.5px solid rgba(0,0,0,.12)}
+.lt.g{background:#28C840;border:.5px solid rgba(0,0,0,.12)}
+.menustrip{display:none;gap:2px;margin-left:6px;padding:3px 6px;background:var(--pop);border:1px solid var(--line2);border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.12)}
+.win.menus .menustrip{display:flex}
+.mtop{position:relative;padding:4px 9px;font-size:13px;color:var(--tx);border-radius:5px;cursor:default}
+.mtop:hover,.mtop.open{background:var(--accent);color:#fff}
+.dropdown{display:none;position:absolute;top:30px;left:0;min-width:230px;background:rgba(246,246,248,.97);backdrop-filter:blur(18px);border:1px solid var(--line2);border-radius:9px;padding:5px;box-shadow:0 10px 34px rgba(0,0,0,.22);z-index:120}
+.mtop.open .dropdown{display:block}
+/* 「外观(A)」二级子菜单 */
+.mi.has-sub{position:relative}
+.submenu{display:none;position:absolute;top:-4px;left:100%;min-width:216px;background:rgba(246,246,248,.97);backdrop-filter:blur(18px);border:1px solid var(--line2);border-radius:9px;padding:5px;box-shadow:0 10px 34px rgba(0,0,0,.22);z-index:200}
+.mi.has-sub:hover>.submenu{display:block}
+.mi[data-theme],.mi[data-mmd],.mi[data-style]{cursor:pointer}
+/* 6 主题令牌（编辑区底色对齐 src/styles.py THEMES.editor_bg） */
+.win.t-azure{--win:#eaf1f8;--side:#e2ecf6;--edt:#f3f8fd;--tx:#1a1a1c;--tx2:#5f6a75;--tx3:#8d99a5;--sel:#d3e3f2;--pop:#eef4fa}
+.win.t-sepia{--win:#f0e9d8;--side:#ece4d2;--edt:#f8f2e4;--tx:#3a3226;--tx2:#6b5f4c;--tx3:#9a8c74;--sel:#e4d9c2;--pop:#f5f0e4}
+.win.t-dark{--win:#2E2E32;--side:#2A2A2E;--edt:#1E1E20;--tx:#E8E8EA;--tx2:#A0A0A6;--tx3:#78787E;--line:rgba(255,255,255,.10);--line2:rgba(255,255,255,.18);--accent-bg:rgba(10,132,255,.22);--sel:#3A3A40;--pop:#33333A}
+.win.t-night{--win:#1b1c1f;--side:#191a1d;--edt:#131417;--tx:#DFE1E5;--tx2:#9AA0A8;--tx3:#6B7078;--line:rgba(255,255,255,.09);--line2:rgba(255,255,255,.16);--accent:#6EA8FF;--accent-bg:rgba(110,168,255,.18);--sel:#282a30;--pop:#232529}
+.win.t-panda{--win:#2c2e30;--side:#282a2c;--edt:#232527;--tx:#E6E6E6;--tx2:#A5A8AB;--tx3:#76797C;--line:rgba(255,255,255,.10);--line2:rgba(255,255,255,.18);--accent:#7AA2F7;--accent-bg:rgba(122,162,247,.20);--sel:#3a3d41;--pop:#31343a}
+.mi{display:flex;justify-content:space-between;align-items:center;padding:4px 10px;font-size:13px;border-radius:5px;color:var(--tx)}
+.mi:hover{background:var(--accent);color:#fff}
+.mi:hover .sc{color:rgba(255,255,255,.75)}
+.mi.dis{color:var(--tx3)}
+.mi.dis:hover{background:none;color:var(--tx3)}
+.mi .sc{font-size:12px;color:var(--tx3)}
+.msep{height:1px;background:var(--line);margin:4px 8px}
+.mcap{font-size:11px;color:var(--tx3);padding:3px 10px}
+.tb-btns{display:flex;align-items:center;gap:2px;margin-left:2px}
+.tb-btns span{width:32px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:6px;font-size:15px;color:var(--tx2);cursor:default}
+.tb-btns span:hover{background:rgba(0,0,0,.07)}
+.tb-btns span.on{background:var(--accent-bg);color:var(--accent)}
+.tsep{width:1px;height:18px;background:var(--line2);margin:0 6px}
+.tb-title{position:absolute;left:50%;transform:translateX(-50%);font-size:13px;font-weight:600;color:var(--tx);opacity:.9}
+.tb-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.qk{padding:4px 9px;font-size:12.5px;color:var(--tx2);border-radius:6px;cursor:default;display:flex;align-items:center;gap:4px}
+.qk:hover{background:rgba(0,0,0,.06);color:var(--tx)}
+.qk.act{background:var(--accent-bg);color:var(--accent)}
+.mode-seg{display:flex;background:rgba(0,0,0,.055);border-radius:7px;padding:2px}
+.mode-seg span{padding:3px 13px;font-size:12px;color:var(--tx2);border-radius:5px;cursor:default}
+.mode-seg .on{background:#fff;color:var(--tx);box-shadow:0 1px 3px rgba(0,0,0,.14),0 0 0 .5px rgba(0,0,0,.06)}
+
+/* ── 主体 ── */
+.main{flex:1;display:flex;min-height:0}
+.sidebar{width:232px;background:var(--side);border-right:1px solid var(--line2);display:flex;flex-direction:column;flex-shrink:0}
+.side-seg{margin:10px 10px 6px;display:flex;background:rgba(0,0,0,.055);border-radius:7px;padding:2px}
+.side-seg span{flex:1;text-align:center;padding:4px 0;font-size:12px;color:var(--tx2);border-radius:5px}
+.side-seg .on{background:#fff;color:var(--tx);box-shadow:0 1px 3px rgba(0,0,0,.14),0 0 0 .5px rgba(0,0,0,.06)}
+.crumb{display:flex;align-items:center;gap:4px;padding:6px 12px;font-size:11.5px;color:var(--tx3)}
+.crumb b{color:var(--tx2);font-weight:500}
+.crumb .up{width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:5px;background:rgba(0,0,0,.05)}
+.flist{flex:1;overflow:hidden;padding:0 8px}
+.frow{display:flex;align-items:center;gap:7px;height:28px;padding:0 9px;border-radius:6px;font-size:13px;color:var(--tx);cursor:default}
+.frow .ic{font-size:13px;opacity:.75}
+.frow.dim{color:var(--tx3)}
+.frow.on{background:var(--accent);color:#fff}
+.frow.on .ic{opacity:1}
+.frow:hover:not(.on){background:var(--sel)}
+.fgroup{font-size:11px;color:var(--tx3);padding:8px 9px 3px;font-weight:600;letter-spacing:.02em}
+.work{flex:1;display:flex;flex-direction:column;min-width:0}
+.tabs{height:36px;background:#F1F1F3;border-bottom:1px solid var(--line2);display:flex;align-items:flex-end;padding:0 6px;gap:2px}
+.tab{display:flex;align-items:center;gap:7px;height:31px;padding:0 14px;font-size:12.5px;color:var(--tx2);border-radius:8px 8px 0 0;cursor:default}
+.tab.on{background:var(--edt);color:var(--tx);box-shadow:0 -1px 0 var(--line2) inset;border:1px solid var(--line2);border-bottom:none}
+.tab .x{width:15px;height:15px;border-radius:50%;background:rgba(0,0,0,.1);display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--tx2)}
+.tab.on .x{background:rgba(0,0,0,.12)}
+.tabplus{width:26px;height:24px;margin-bottom:3px;display:flex;align-items:center;justify-content:center;border-radius:6px;color:var(--tx3);font-size:15px}
+.tabplus:hover{background:rgba(0,0,0,.06)}
+.edwrap{flex:1;background:var(--edt);position:relative;overflow:hidden}
+.editor{padding:26px 40px;font-size:14px;line-height:1.75;color:var(--tx)}
+.editor h1{font-size:22px;font-weight:700;margin:6px 0 12px}
+.editor h2{font-size:18px;font-weight:700;margin:10px 0 8px}
+.editor p{margin:7px 0}
+.editor blockquote{border-left:3px solid #D2D2D7;padding:2px 14px;color:var(--tx2);margin:8px 0}
+.editor code{font-family:"SF Mono",Consolas,monospace;font-size:12.5px;background:#F2F2F4;border-radius:5px;padding:1px 6px}
+.editor table{border-collapse:collapse;margin:10px 0;font-size:13px}
+.editor th,.editor td{border:1px solid #D8D8DC;padding:6px 14px}
+.editor th{background:#F5F5F7;font-weight:600}
+.editor .hint{font-size:12.5px;color:var(--tx3);background:#F7F7F9;border:1px dashed var(--line2);border-radius:9px;padding:8px 14px;margin-top:14px}
+.editor .hint b{color:var(--accent);font-family:"SF Mono",Consolas,monospace;background:#fff;border:1px solid var(--line2);border-radius:5px;padding:0 5px}
+.caret{display:inline-block;width:2px;height:17px;background:var(--accent);vertical-align:-3px;animation:bl 1.1s step-end infinite}
+@keyframes bl{50%{opacity:0}}
+
+/* 悬浮格式栏（mac 弹层语言） */
+.floatbar{position:absolute;top:132px;left:210px;display:flex;align-items:center;gap:1px;background:rgba(248,248,250,.96);backdrop-filter:blur(18px);border:1px solid var(--line2);border-radius:9px;padding:4px 6px;box-shadow:0 8px 28px rgba(0,0,0,.2);font-size:13px}
+.floatbar span{width:27px;height:25px;display:flex;align-items:center;justify-content:center;border-radius:6px;color:var(--tx2);cursor:default}
+.floatbar span:hover{background:rgba(0,0,0,.08)}
+.floatbar .ctx{width:auto;padding:0 8px;font-size:11.5px;color:var(--tx3);border-left:1px solid var(--line);margin-left:4px}
+
+/* ── 状态栏 ── */
+.status{height:26px;background:#F4F4F6;border-top:1px solid var(--line2);display:flex;align-items:center;font-size:11.5px;color:var(--tx2);padding:0 12px;gap:0}
+.status .grow{flex:1}
+.status .cell{padding:0 12px;border-left:1px solid var(--line)}
+.status .cell:first-of-type{border-left:none}
+.status .ok{color:var(--ok)}
+.status .mode-cell{cursor:default}
+
+/* 区域标注 */
+.win .tag{display:none;position:absolute;z-index:300;background:var(--accent);color:#fff;font-size:10.5px;padding:2px 7px;border-radius:20px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+.win.anno-on .tag{display:block}
+.legend{font-size:12px;color:rgba(255,255,255,.9);max-width:1220px;text-shadow:0 1px 3px rgba(0,0,0,.25);line-height:1.8}
+.legend b{color:#fff}
+.legend code{font-family:"SF Mono",Consolas,monospace;background:rgba(255,255,255,.18);border-radius:4px;padding:0 5px}
+</style>
+</head>
+<body>
+  <div class="note">
+    <div><b>PS01-MAC · macOS 风（Aqua 界面语言）</b> · 功能底稿与 R6/R7 等价 · 布局调整：红绿灯 + 统一工具栏，菜单收纳进「☰」菜单条</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn" id="menuBtn">显示菜单条 ☰</button>
+      <button class="btn" id="annoBtn">显示区域标注</button>
+    </div>
+  </div>
+
+  <div class="win" id="win">
+    <!-- ① 统一工具栏 -->
+    <div class="tb" style="position:relative">
+      <span class="tag" style="top:-9px;left:14px">① 统一工具栏（红绿灯 + 菜单条 + 工具 + 右端视图状态区）</span>
+      <div class="lights"><span class="lt r"></span><span class="lt y"></span><span class="lt g"></span></div>
+      <div class="tb-btns">
+        <span class="menutoggle" title="菜单（文件/编辑/视图/工具/帮助）">☰</span>
+      </div>
+      <div class="menustrip">
+        <div class="mtop"><u>文件</u>
+          <div class="dropdown">
+            <div class="mi">新建标签页<span class="sc">⌘T</span></div>
+            <div class="mi">新建文件<span class="sc">Ctrl+N</span></div>
+            <div class="mi">打开…<span class="sc">Ctrl+O</span></div>
+            <div class="mi">打开文件夹…</div>
+            <div class="mi dis">最近文件 ▸</div>
+            <div class="msep"></div>
+            <div class="mi">保存<span class="sc">Ctrl+S</span></div>
+            <div class="mi">另存为…<span class="sc">Ctrl+Shift+S</span></div>
+            <div class="msep"></div>
+            <div class="mcap">导出</div>
+            <div class="mi">HTML…</div>
+            <div class="mi">Word / WPS…</div>
+            <div class="mi">PDF…</div>
+            <div class="mi">复制为 HTML</div>
+            <div class="msep"></div>
+            <div class="mi">关闭标签页<span class="sc">Ctrl+W</span></div>
+            <div class="mi">退出</div>
+          </div>
+        </div>
+        <div class="mtop"><u>编辑</u>
+          <div class="dropdown">
+            <div class="mi">撤销<span class="sc">Ctrl+Z</span></div>
+            <div class="mi">重做<span class="sc">Ctrl+Y</span></div>
+            <div class="msep"></div>
+            <div class="mi">剪切 / 复制 / 粘贴</div>
+            <div class="mi">粘贴为 Markdown</div>
+            <div class="mi">复制为 HTML</div>
+            <div class="msep"></div>
+            <div class="mi">查找 / 替换<span class="sc">Ctrl+F</span></div>
+            <div class="mi">全局搜索<span class="sc">Ctrl+Shift+F</span></div>
+            <div class="mi">转到行<span class="sc">Ctrl+G</span></div>
+            <div class="msep"></div>
+            <div class="mi">块菜单<span class="sc">Ctrl+/</span></div>
+            <div class="mi">命令面板</div>
+          </div>
+        </div>
+        <div class="mtop"><u>视图</u>
+          <div class="dropdown">
+            <div class="mi">✓ 写作模式</div>
+            <div class="mi">　源码模式</div>
+            <div class="mi">　分屏模式</div>
+            <div class="msep"></div>
+            <div class="mi">侧边栏<span class="sc">Ctrl+Shift+L</span></div>
+            <div class="mi">大纲面板</div>
+            <div class="mi">状态栏</div>
+            <div class="msep"></div>
+            <div class="mi dis">放大 / 缩小 / 实际大小</div>
+            <div class="mi">上一标签 / 下一标签</div>
+            <div class="mi">专注模式 · 打字机模式</div>
+            <div class="mi">全屏</div>
+          </div>
+        </div>
+        <div class="mtop"><u>外观</u>
+          <div class="dropdown">
+            <div class="mi has-sub">主题<span class="subarrow">▸</span>
+              <div class="submenu">
+                <div class="mi" data-theme="light" data-label="浅色（默认）">✓ 浅色（默认）</div>
+                <div class="mi" data-theme="azure" data-label="青空">青空</div>
+                <div class="mi" data-theme="sepia" data-label="护眼米黄">护眼米黄</div>
+                <div class="mi" data-theme="dark" data-label="深色">深色</div>
+                <div class="mi" data-theme="night" data-label="墨夜（Typora Night）">墨夜（Typora Night）</div>
+                <div class="mi" data-theme="panda" data-label="熊猫（Panda）">熊猫（Panda）</div>
+              </div>
+            </div>
+            <div class="mi has-sub">界面风格<span class="subarrow">▸</span>
+              <div class="submenu">
+                <div class="mi" data-style="01_主界面效果图-PS01-WIN.html" data-label="现代经典（PS01 · 01）">现代经典（PS01 · 01）</div>
+                <div class="mi" data-style="02_主界面效果图-PS01-MAC.html" data-label="macOS Aqua（02）">✓ macOS Aqua（02）</div>
+                <div class="mi" data-style="03_主界面效果图-PS01-CODE.html" data-label="VS Code 工作台（03）">VS Code 工作台（03）</div>
+                <div class="mi" data-style="04_主界面效果图-PS01-RIBBON.html" data-label="Office 功能区蓝（04）">Office 功能区蓝（04）</div>
+                <div class="mi" data-style="05_主界面效果图-PS01-NOTION.html" data-label="Notion 轻拟物（05）">Notion 轻拟物（05）</div>
+                <div class="mi" data-style="06_主界面效果图-PS01-ZEN.html" data-label="极简无界（06）">极简无界（06）</div>
+              </div>
+            </div>
+            <div class="mi has-sub">代码风格<span class="subarrow">▸</span>
+              <div class="submenu">
+                <div class="mi" data-codestyle="classic" data-label="经典">✓ 经典</div>
+                <div class="mi" data-codestyle="dark" data-label="深色">深色</div>
+                <div class="mi" data-codestyle="eye" data-label="护眼">护眼</div>
+                <div class="mi" data-codestyle="mini" data-label="极简">极简</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="mtop"><u>工具</u>
+          <div class="dropdown">
+            <div class="mi">历史版本…<span class="sc">Ctrl+Shift+H</span></div>
+            <div class="mi">立即留档</div>
+            <div class="msep"></div>
+            <div class="mi">迁移图片</div>
+            <div class="mi">归档工作区</div>
+            <div class="msep"></div>
+            <div class="mi">系统设置…</div>
+            <div class="mi">快捷键设置…</div>
+          </div>
+        </div>
+        <div class="mtop"><u>帮助</u>
+          <div class="dropdown">
+            <div class="mi">使用手册<span class="sc">F1</span></div>
+            <div class="mi">快捷键一览</div>
+            <div class="msep"></div>
+            <div class="mi">检查更新…</div>
+            <div class="mi">诊断信息…</div>
+            <div class="mi">关于 mdEditor</div>
+          </div>
+        </div>
+      </div>
+      <div class="tsep"></div>
+      <div class="tb-btns">
+        <span title="侧边栏 (Ctrl+Shift+L)">◫</span>
+        <span title="新建 (Ctrl+N)">＋</span>
+        <span title="打开 (Ctrl+O)">📂</span>
+        <span title="保存 (Ctrl+S)">💾</span>
+        <div class="tsep"></div>
+        <span title="撤销 (Ctrl+Z)">↶</span>
+        <span title="重做 (Ctrl+Y)">↷</span>
+        <div class="tsep"></div>
+        <span title="查找 / 替换 (Ctrl+F)">🔍</span>
+        <span title="历史版本 (Ctrl+Shift+H) · 打开版本面板，不直接创建快照">🕒</span>
+        <span title="系统设置">⚙</span>
+      </div>
+      <div class="tb-title">产品需求文档.md</div>
+      <div class="tb-right">
+        <span class="qk" title="专注模式（隐藏侧栏，居中书写；点击演示）">◉ 专注</span>
+        <span class="qk" title="打字机模式（当前行恒居屏幕中部）">≡ 打字机</span>
+        <div class="mode-seg">
+          <span class="on">写作</span><span>源码</span><span>分屏</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ② 主体三列 -->
+    <div class="main">
+      <div class="sidebar" style="position:relative">
+        <span class="tag" style="top:-9px;left:60px">② 侧边栏（macOS 源列表）</span>
+        <div class="side-seg"><span class="on">文件</span><span>大纲</span></div>
+        <div class="crumb"><span class="up">↑</span> 此电脑 › <b>D 盘</b> › 笔记</div>
+        <div class="flist">
+          <div class="fgroup">固定</div>
+          <div class="frow"><span class="ic">📁</span>工作文档</div>
+          <div class="fgroup">文件夹</div>
+          <div class="frow on"><span class="ic">📁</span>2026 规划</div>
+          <div class="frow"><span class="ic">📁</span>归档</div>
+          <div class="fgroup">文件</div>
+          <div class="frow"><span class="ic">📄</span>季度复盘.md</div>
+          <div class="frow"><span class="ic">📄</span>竞品调研.md</div>
+          <div class="frow dim"><span class="ic">🖼</span>示意图.png（外部打开）</div>
+        </div>
+      </div>
+
+      <div class="work">
+        <div class="tabs" style="position:relative">
+          <span class="tag" style="top:-9px;left:300px">③ 标签栏</span>
+          <div class="tab on"><span class="x">×</span>产品需求文档.md</div>
+          <div class="tab"><span class="x">×</span>周报-W42.md</div>
+          <div class="tabplus">＋</div>
+        </div>
+        <div class="edwrap" style="position:relative">
+          <span class="tag" style="top:-9px;right:14px">④ 编辑区 + 悬浮格式栏</span>
+          <div class="editor">
+            <h1>产品需求文档</h1>
+            <p>本文档定义 mdEditor 下一版本的核心目标与范围<span class="caret"></span>，覆盖写作、导出与协作三大主题。</p>
+            <blockquote>设计原则：界面退后，内容优先。</blockquote>
+            <h2>二、范围</h2>
+            <p>行内代码示例：<code>mdEditor</code>；粗体与斜体在 macOS 风格下同样渲染。</p>
+            <table>
+              <tr><th>事项</th><th>负责人</th><th>截止</th></tr>
+              <tr><td>macOS 风格比选</td><td>UI 设计</td><td>10-11</td></tr>
+              <tr><td>风格定稿</td><td>产品</td><td>10-12</td></tr>
+            </table>
+            <div class="hint">空块提示：输入 <b>/</b> 插入表格、图片、图表、代码块…（斜杠菜单，支持拼音过滤）</div>
+          </div>
+          <div class="floatbar">
+            <span><b>B</b></span><span><i>I</i></span><span><u>U</u></span><span><s>S</s></span>
+            <span style="background:#FDEFA8;border-radius:4px">A</span>
+            <span>&lt;/&gt;</span><span>🔗</span><span>⌫</span>
+            <span class="ctx">标题 2 · 已选 6 字</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑤ 状态栏 -->
+    <div class="status" style="position:relative">
+      <span class="tag" style="top:-9px;left:500px">⑤ 状态栏</span>
+      <span>就绪</span>
+      <span class="grow"></span>
+      <span class="cell mode-cell">写作</span>
+      <span class="cell">1,284 字</span>
+      <span class="cell">行 12，列 8</span>
+      <span class="cell">100%</span>
+      <span class="cell ok">✓ 已保存</span>
+    </div>
+  </div>
+
+  <div class="legend">
+    <b>macOS 风语言要点</b>：红绿灯窗口控制（纯色无符号）· <code>backdrop-filter</code> 半透明弹层与格式栏 · 8~9px 大圆角 · 系统蓝 <code>#0A84FF</code> 单强调色 · 侧栏源列表（蓝色圆角选中条 + 分组小标题）· 分段控件为白色凸起胶囊 · 布局调整：取消独立菜单栏行，菜单收纳进「☰」（点击体验五菜单下拉）。
+  </div>
+
+<script>
+document.addEventListener('click',function(e){
+  var inMenu=e.target.closest('.mtop');
+  document.querySelectorAll('.mtop.open').forEach(function(m){if(m!==inMenu)m.classList.remove('open')});
+  if(inMenu)inMenu.classList.toggle('open');
+  if(e.target.closest('.dropdown'))return;
+});
+document.querySelector('.menutoggle').addEventListener('click',function(e){
+  e.stopPropagation();
+  document.getElementById('win').classList.toggle('menus');
+  var b=document.getElementById('menuBtn');
+  b.classList.toggle('on');
+  b.textContent=document.getElementById('win').classList.contains('menus')?'隐藏菜单条 ☰':'显示菜单条 ☰';
+});
+document.getElementById('menuBtn').addEventListener('click',function(){document.querySelector('.menutoggle').click()});
+document.getElementById('annoBtn').addEventListener('click',function(){
+  var w=document.getElementById('win');
+  w.classList.toggle('anno-on');
+  this.classList.toggle('on');
+  this.textContent=w.classList.contains('anno-on')?'隐藏区域标注':'显示区域标注';
+});
+/* ==== 「外观(A)」菜单：主题 / 图表风格 实时切换 + 选中态同步 ==== */
+var THEMES=['light','azure','sepia','dark','night','panda'];
+function curTheme(){var m=/^#t-(\w+)$/.exec(location.hash||'');return (m&&THEMES.indexOf(m[1])>=0)?m[1]:'light';}
+function applyTheme(t){
+  t=THEMES.indexOf(t)>=0?t:'light';
+  var w=document.getElementById('win');
+  THEMES.forEach(function(x){w.classList.remove('t-'+x)});
+  if(t!=='light')w.classList.add('t-'+t);
+  document.querySelectorAll('[data-theme]').forEach(function(el){
+    el.firstChild.nodeValue=(el.getAttribute('data-theme')===t?'✓ ':'')+el.getAttribute('data-label');
+  });
+  try{location.hash='t-'+t;}catch(e){}
+}
+document.querySelectorAll('[data-theme]').forEach(function(el){
+  el.addEventListener('click',function(e){e.stopPropagation();applyTheme(el.getAttribute('data-theme'));});
+});
+document.querySelectorAll('[data-mmd]').forEach(function(el){
+  el.addEventListener('click',function(e){
+    e.stopPropagation();
+    var v=el.getAttribute('data-mmd');
+    document.querySelectorAll('[data-mmd]').forEach(function(x){
+      x.firstChild.nodeValue=(x.getAttribute('data-mmd')===v?'✓ ':'')+x.getAttribute('data-label');
+    });
+  });
+});
+var STAGE=document.getElementById('stage');
+function applyStyle(f){ if(STAGE){STAGE.src=f+'#t-'+curTheme();} else {location.href=f+'#t-'+curTheme();} }
+document.querySelectorAll('[data-style]').forEach(function(el){
+  el.addEventListener('click',function(e){e.stopPropagation();applyStyle(el.getAttribute('data-style'));});
+});
+(function(){
+  var self=decodeURIComponent(location.pathname.split('/').pop()||'');
+  document.querySelectorAll('[data-style]').forEach(function(el){
+    var on=STAGE?false:el.getAttribute('data-style')===self;
+    el.firstChild.nodeValue=(on?'✓ ':'')+el.getAttribute('data-label');
+  });
+})();
+applyTheme(curTheme());
+</script>
+
+<!-- ===== 附加场景（静态高保真 · 统一并入主界面效果图） ===== -->
+<style>
+.scn{width:1200px;max-width:100%;margin:26px auto 0;font-family:"Segoe UI","Microsoft YaHei",sans-serif;color:#1f2328}
+.scn *{box-sizing:border-box}
+.scn-hd{background:#fff;border:1px solid #c9cdd4;border-radius:6px;padding:16px 22px;box-shadow:0 2px 10px rgba(0,0,0,.06)}
+.scn-hd h2{font-size:16px;font-weight:600;margin:0}
+.scn-hd .sub{font-size:11.5px;color:#5f6672;line-height:1.8;margin-top:7px}
+.scn-meta{display:flex;gap:9px;flex-wrap:wrap;margin-top:11px}
+.scn-chip{font-size:10.5px;color:#5f6672;background:#f5f6f8;border:1px solid #d9dce1;border-radius:10px;padding:2px 9px}
+.scn-chip.k{background:#e8f0fe;border-color:#b6cdf7;color:#0052d9;font-weight:600}
+.scn-chip.t{background:#fff5e6;border-color:#f0d6a8;color:#8a5a00;font-weight:600}
+.scn-sec{background:#fff;border:1px solid #c9cdd4;border-radius:6px;margin-top:16px;box-shadow:0 2px 10px rgba(0,0,0,.06);overflow:hidden}
+.scn-ph{padding:12px 20px;border-bottom:1px solid #d9dce1;display:flex;align-items:center;gap:10px;background:#fafbfc}
+.scn-ph .n{background:#0052d9;color:#fff;font-size:11px;font-weight:600;border-radius:3px;padding:2px 8px}
+.scn-ph h3{font-size:13.5px;font-weight:600;margin:0}
+.scn-ph .d{font-size:11px;color:#8a919c;margin-left:auto}
+.scn-pb{padding:18px 20px;display:flex;flex-direction:column;gap:14px}
+.scn-note{font-size:11.5px;color:#5f6672;line-height:1.8}
+.scn-note b{color:#1f2328}
+.scn-todo{display:inline-block;font-size:9.5px;background:#fff5e6;color:#8a5a00;border:1px solid #f0d6a8;border-radius:8px;padding:0 5px;margin-left:5px;font-weight:600}
+.scn-lb{font-size:11px;color:#8a919c}
+
+/* 入口链路 */
+.scn-flow{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch}
+.scn-step{flex:1;min-width:250px;border:1px solid #d9dce1;border-radius:5px;padding:11px 13px;background:#fafbfc}
+.scn-step .t{font-size:12px;font-weight:600;margin-bottom:6px}
+.scn-step .c{font-size:11px;color:#5f6672;line-height:1.75}
+.scn-arrow{display:flex;align-items:center;color:#8a919c;font-size:15px}
+
+/* 对话框 */
+.scn-dlg{width:760px;max-width:100%;border:1px solid #c9cdd4;border-radius:6px;overflow:hidden;box-shadow:0 8px 26px rgba(0,0,0,.12);background:#fff}
+.scn-dt{height:30px;background:#f5f6f8;border-bottom:1px solid #d9dce1;display:flex;align-items:center;padding:0 6px 0 11px;font-size:11.5px;color:#5f6672}
+.scn-dt b{color:#1f2328;font-size:11.5px}
+.scn-dt .w{margin-left:auto;display:flex}
+.scn-dt .w span{width:38px;height:29px;display:flex;align-items:center;justify-content:center;font-size:10px}
+.scn-db{display:flex;min-height:300px}
+.scn-nav{width:132px;flex:0 0 132px;background:#f7f8fa;border-right:1px solid #d9dce1;padding:7px 0}
+.scn-nv{height:30px;margin:0 5px 2px;padding:0 11px;border-radius:4px;font-size:12px;display:flex;align-items:center;gap:7px;color:#1f2328}
+.scn-nv.on{background:#e8f0fe;color:#0052d9;font-weight:600}
+.scn-nv .g{width:13px;text-align:center;color:#8a919c;font-size:11px}
+.scn-nv.on .g{color:#0052d9}
+.scn-cn{flex:1;padding:18px 20px;display:flex;flex-direction:column;gap:11px;min-width:0}
+.scn-pt{font-size:14px;font-weight:600}
+.scn-hi{font-size:11px;color:#5f6672;line-height:1.7;white-space:pre-line}
+.scn-gp{border:1px solid #d9dce1;border-radius:4px;padding:11px 12px;position:relative;margin-top:7px}
+.scn-gt{position:absolute;top:-7px;left:9px;background:#fff;padding:0 5px;font-size:11px;font-weight:600}
+.scn-gi{display:flex;flex-direction:column;gap:8px}
+.scn-row{display:flex;align-items:center;gap:9px;font-size:11.5px;flex-wrap:wrap}
+.scn-row .grow{flex:1;min-width:120px}
+.scn-sel{height:26px;border:1px solid #c9cdd4;border-radius:3px;background:#fff;display:flex;align-items:center;padding:0 8px;gap:8px;font-size:11.5px}
+.scn-sel .cv{margin-left:auto;color:#8a919c;font-size:9.5px}
+.scn-ipt{height:26px;border:1px solid #c9cdd4;border-radius:3px;display:flex;align-items:center;padding:0 8px;font-size:11px;color:#8a919c}
+.scn-cb{display:flex;align-items:flex-start;gap:7px;font-size:11.5px;line-height:1.5}
+.scn-cb .bx{width:13px;height:13px;flex:0 0 13px;margin-top:1px;border:1px solid #c9cdd4;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff}
+.scn-cb.on .bx{background:#0052d9;border-color:#0052d9}
+.scn-sld{display:flex;align-items:center;gap:10px;flex:1;min-width:150px}
+.scn-sld .tr{flex:1;height:4px;background:#d9dce1;border-radius:2px;position:relative}
+.scn-sld .tr i{position:absolute;left:0;top:0;height:4px;background:#0052d9;border-radius:2px}
+.scn-sld .tr b{position:absolute;top:-5px;width:13px;height:13px;border-radius:50%;background:#fff;border:1px solid #c9cdd4}
+.scn-lst{border:1px solid #d9dce1;border-radius:3px;overflow:hidden;background:#fff;flex:1}
+.scn-li{height:26px;display:flex;align-items:center;gap:8px;padding:0 9px;font-size:11.5px;border-bottom:1px solid #f2f3f5}
+.scn-li:last-child{border-bottom:none}
+.scn-li.on{background:#e8f0fe;color:#0052d9;font-weight:600}
+.scn-btn{height:26px;border:1px solid #c9cdd4;border-radius:3px;background:#eef0f3;padding:0 11px;font-size:11.5px;display:inline-flex;align-items:center;justify-content:center}
+.scn-btn.pri{background:#0052d9;border-color:#0052d9;color:#fff}
+.scn-btn.dis{color:#8a919c;background:#fafbfc;border-color:#d9dce1}
+.scn-colb{display:flex;flex-direction:column;gap:6px;width:88px;flex:0 0 88px}
+.scn-df{display:flex;justify-content:flex-end;padding:10px 20px;border-top:1px solid #d9dce1;background:#fafbfc}
+
+/* 菜单 */
+.scn-menus{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start}
+.scn-mcol{display:flex;flex-direction:column;gap:6px}
+.scn-m{width:206px;background:#fff;border:1px solid #c9cdd4;border-radius:5px;padding:4px;box-shadow:0 8px 22px rgba(0,0,0,.14);font-size:11.5px}
+.scn-m.wd{width:252px}
+.scn-m.nw{width:168px}
+.scn-cap{font-size:10px;color:#8a919c;padding:4px 9px 3px}
+.scn-mi{display:flex;align-items:center;gap:8px;height:26px;padding:0 9px;border-radius:3px;white-space:nowrap}
+.scn-mi:hover{background:#e8f0fe;color:#0052d9}
+.scn-mi.dis{color:#8a919c;opacity:.6}
+.scn-mi.dg{color:#d93026}
+.scn-mi .i{width:16px;flex:0 0 16px;text-align:center;font-size:11px}
+.scn-mi .r{margin-left:auto;font-size:9.5px;color:#8a919c}
+.scn-msep{height:1px;background:#d9dce1;margin:4px 8px}
+.scn-mrow{display:flex}
+.scn-mrow .scn-mi{flex:1;min-width:0}
+.scn-mrow .scn-mi .i{width:14px;flex:0 0 14px}
+.scn-mrow .scn-mi+.scn-mi{border-left:1px solid #f2f3f5}
+.scn-sub{margin-left:9px;border-left:2px solid #b6cdf7;padding-left:9px;display:flex;flex-direction:column;gap:1px}
+.scn-sl{font-size:9.5px;color:#0052d9;font-weight:600;padding:2px 0}
+.scn-mini{background:#fafbfc;border:1px solid #d9dce1;border-radius:4px;padding:3px}
+.scn-mini .scn-mi{height:24px;font-size:11px}
+.scn-mini .scn-mi.on{background:#e8f0fe;color:#0052d9;font-weight:600}
+.scn-mini .scn-mi .k{margin-left:auto;width:11px;color:#0052d9;font-weight:700}
+
+/* 悬浮栏 */
+.scn-fb{display:flex;align-items:center;gap:2px;background:#fff;border:1px solid #c9cdd4;border-radius:5px;padding:4px;box-shadow:0 6px 18px rgba(0,0,0,.16)}
+.scn-fb button{min-width:26px;height:26px;border:none;background:transparent;border-radius:3px;font-size:12px;color:#1f2328;display:flex;align-items:center;justify-content:center;padding:0 5px;font-family:Georgia,serif}
+.scn-fb button.c{font-family:Consolas,monospace;font-style:normal;font-size:11px}
+.scn-fb .mk{background:#ffe28a;color:#6b5200;border-radius:3px;padding:0 4px;font-weight:700}
+.scn-vs{width:1px;height:16px;background:#c9cdd4;margin:0 4px}
+.scn-ct{font-size:11px;color:#8a919c;padding:0 7px 0 3px;white-space:nowrap}
+
+/* 代码块 & 缩略图 & 表格 */
+.scn-doc{background:#fff;border:1px solid #d9dce1;border-radius:5px;padding:16px 18px;display:flex;flex-direction:column;gap:10px}
+.scn-doc.dk{background:#16191d;--dcb:#21262d;--dbd:#2e343b;--dtx:#dce2e8}
+.scn-cb{border-radius:12px;overflow:hidden;font-family:Consolas,"Cascadia Code",monospace;font-size:12px;line-height:1.7}
+.scn-cb .br{height:30px;display:flex;align-items:center;gap:6px;padding:0 9px;font-size:11px}
+.scn-cb .br .lg{border-radius:5px;padding:1px 8px}
+.scn-cb .br .rt{margin-left:auto;display:flex;gap:5px}
+.scn-cb .br .mb{font-size:10px;padding:1px 6px;border-radius:999px}
+.scn-cb pre{padding:10px 13px;white-space:pre;overflow:auto;display:flex;margin:0}
+.scn-cb .gt{flex:0 0 auto;text-align:right;padding-right:11px;margin-right:11px;white-space:pre;opacity:.75}
+.scn-cb code{flex:1 1 auto;white-space:pre}
+.scn-cb.sel{box-shadow:0 0 0 2px #b6cdf7}
+.scn-cb.edt{box-shadow:0 0 0 2px #0052d9}
+.scn-cb.cl{border:1px solid #e1e4e8;background:#f6f8fa}
+.scn-cb.cl .br{background:#eef1f5;border-bottom:1px solid #e1e4e8;color:#5f6672}
+.scn-cb.cl .br .lg{background:#fff;border:1px solid #d7dbe0}
+.scn-cb.cl pre{background:#f6f8fa;color:#1f2328}
+.scn-cb.cl .gt{color:#98a2ae;border-right:1px solid #e1e4e8}
+.scn-cb.da{border:1px solid #14161f;background:#1e2230}
+.scn-cb.da .br{background:#272c3c;border-bottom:1px solid #14161f;color:#aab2c5}
+.scn-cb.da .br .mb{background:rgba(255,255,255,.08);border:1px solid #3a4152}
+.scn-cb.da pre{background:#1e2230;color:#d6deeb}
+.scn-cb.da .gt{color:#5b6478;border-right:1px solid #343b4e}
+.scn-cb.ey{border:1px solid #c9d8c0;background:#e8f0e2}
+.scn-cb.ey .br{background:#dde8d5;border-bottom:1px solid #c9d8c0;color:#5d6b52}
+.scn-cb.ey pre{background:#e8f0e2;color:#2f3b2d}
+.scn-cb.ey .gt{color:#7b8a72;border-right:1px solid #c9d8c0}
+.scn-cb.mn{border:1px solid transparent;background:transparent}
+.scn-cb.mn .br{background:transparent;border-bottom:1px dashed #e1e4e8;color:#5f6672}
+.scn-cb.mn pre{background:transparent;color:#1f2328}
+.scn-cb.mn .gt{color:#98a2ae;border-right:1px solid transparent}
+.scn-cb .kw{font-weight:600}.scn-cb .cm{font-style:italic}
+.scn-cb.cl .kw{color:#7c4dbe}.scn-cb.cl .st{color:#1a7f37}.scn-cb.cl .cm{color:#8b949e}.scn-cb.cl .nu{color:#b3541e}
+.scn-cb.da .kw{color:#c792ea}.scn-cb.da .st{color:#a5e075}.scn-cb.da .cm{color:#6b7694}.scn-cb.da .nu{color:#f78c6c}
+.scn-cb.ey .kw{color:#8a5a00}.scn-cb.ey .st{color:#256a2b}.scn-cb.ey .cm{color:#6d7d64}.scn-cb.ey .nu{color:#9a3412}
+.scn-cb.mn .kw{color:#7c4dbe}.scn-cb.mn .st{color:#1a7f37}.scn-cb.mn .cm{color:#8b949e}.scn-cb.mn .nu{color:#b3541e}
+
+.scn-grid{display:grid;gap:12px}
+.scn-g4{grid-template-columns:repeat(4,1fr)}
+.scn-g3{grid-template-columns:repeat(3,1fr)}
+.scn-g2{grid-template-columns:1fr 1fr}
+.scn-cell{border:1px solid #d9dce1;border-radius:5px;padding:10px;background:#fafbfc}
+.scn-cell .ct{font-size:11px;font-weight:600;margin-bottom:7px;display:flex;align-items:center;gap:6px}
+.scn-cell .ct .x{font-size:9.5px;color:#8a919c;font-weight:400}
+.scn-ci{border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-family:Consolas,monospace;font-weight:700;line-height:1;flex:0 0 auto}
+.scn-ci.cl{background:#f6f8fa;border:1px solid #e1e4e8;color:#7c4dbe}
+.scn-ci.da{background:#1e2230;border:1px solid #14161f;color:#c792ea}
+.scn-ci.ey{background:#e8f0e2;border:1px solid #c9d8c0;color:#8a5a00}
+.scn-ci.mn{background:transparent;border:1px dashed #c9cdd4;color:#8a919c}
+.scn-card{border:1px solid #d9dce1;border-radius:4px;padding:10px;display:flex;flex-direction:column;gap:6px;background:#fff}
+.scn-card.on{border-color:#0052d9;box-shadow:0 0 0 2px #e8f0fe}
+.scn-card .nm2{font-size:11.5px;font-weight:600}
+.scn-card .ds2{font-size:10px;color:#8a919c;line-height:1.6}
+.scn-card .mk2{font-size:10px;color:#0052d9;font-weight:600;visibility:hidden}
+.scn-card.on .mk2{visibility:visible}
+
+/* 风格缩略图 */
+.scn-th{border:1px solid #c9cdd4;border-radius:5px;overflow:hidden;display:flex;flex-direction:column;font-size:1px;background:#fff;box-shadow:0 2px 7px rgba(0,0,0,.09)}
+.scn-th .tb2{height:13px;flex:0 0 13px;display:flex;align-items:center;padding:0 3px;gap:2px}
+.scn-th .mb2{height:11px;flex:0 0 11px;display:flex;align-items:center;gap:4px;padding:0 5px;font-size:5px}
+.scn-th .bd2{flex:1;display:flex;min-height:0}
+.scn-th .vt2{width:15px;flex:0 0 15px;display:flex;flex-direction:column;align-items:center;gap:2px;padding:2px 0}
+.scn-th .vt2 i{width:10px;height:8px;border-radius:1px;display:block}
+.scn-th .sd2{width:40px;flex:0 0 40px;padding:4px 3px;display:flex;flex-direction:column;gap:2px}
+.scn-th .sd2 i{height:4px;border-radius:1px;display:block;opacity:.75}
+.scn-th .ed2{flex:1;padding:7px 9px;display:flex;flex-direction:column;gap:3px}
+.scn-th .ed2 .h2{height:6px;width:44%;border-radius:2px}
+.scn-th .ed2 .l2{height:3px;border-radius:1px;opacity:.5}
+.scn-th .sb2{height:10px;flex:0 0 10px;display:flex;align-items:center;padding:0 5px;font-size:5px}
+.scn-th.ps01{--tbg:#f5f6f8;--tl:#d9dce1;--ebg:#fff;--sbg:#f7f8fa;--acc:#0052d9;--fg:#1f2328;--sb:#eef0f3}
+.scn-th.mac{--tbg:#e8e8ea;--tl:#d2d2d6;--ebg:#fff;--sbg:#f0f0f2;--acc:#0a62d6;--fg:#1d1d1f;--sb:#e6e6e9}
+.scn-th.code{--tbg:#3c3c3c;--tl:#2d2d2d;--ebg:#fff;--sbg:#f3f3f3;--acc:#007acc;--fg:#1f2328;--sb:#007acc}
+.scn-th.ribbon{--tbg:#2b579a;--tl:#24487f;--ebg:#fff;--sbg:#f7f8fa;--acc:#2b579a;--fg:#1f2328;--sb:#2b579a}
+.scn-th.notion{--tbg:#fff;--tl:#e9e9e7;--ebg:#fff;--sbg:#fbfbfa;--acc:#37352f;--fg:#37352f;--sb:#f7f7f5}
+.scn-th.paper{--tbg:#efe8db;--tl:#d9cfba;--ebg:#fffdf7;--sbg:#f2ecdf;--acc:#9a5b2d;--fg:#3a3226;--sb:#efe8db}
+.scn-th.term{--tbg:#e8e8e5;--tl:#c4c4c0;--ebg:#fbfbfa;--sbg:#f0f0ee;--acc:#0f7a3d;--fg:#1e1e1c;--sb:#e8e8e5}
+.scn-th.zen{--tbg:#faf9f6;--tl:#ecebe6;--ebg:#fff;--sbg:#faf9f6;--acc:#3a6ea5;--fg:#2c2c2c;--sb:#faf9f6}
+.scn-th.fluent{--tbg:#eef1f5;--tl:#dde2e8;--ebg:#fff;--sbg:#f2f4f7;--acc:#0f6cbd;--fg:#1b1b1f;--sb:#eef1f5}
+.scn-th.w32{--tbg:#d4d0c8;--tl:#9a968e;--ebg:#fff;--sbg:#d4d0c8;--acc:#0a246a;--fg:#1f2328;--sb:#d4d0c8}
+.scn-th .tb2{background:var(--tbg);border-bottom:1px solid var(--tl)}
+.scn-th .mb2{background:var(--tbg);border-bottom:1px solid var(--tl);color:var(--fg)}
+.scn-th .vt2{background:var(--tbg);border-right:1px solid var(--tl)}
+.scn-th .vt2 i{background:var(--fg);opacity:.28}
+.scn-th .sd2{background:var(--sbg);border-right:1px solid var(--tl)}
+.scn-th .sd2 i{background:var(--fg)}
+.scn-th .ed2{background:var(--ebg)}
+.scn-th .ed2 .h2{background:var(--acc)}
+.scn-th .ed2 .l2{background:var(--fg)}
+.scn-th .sb2{background:var(--sb);border-top:1px solid var(--tl);color:#fff}
+.scn-th.ps01 .sb2,.scn-th.mac .sb2,.scn-th.notion .sb2,.scn-th.paper .sb2,.scn-th.fluent .sb2{color:#5f6672}
+.scn-th.mac .mb2 span{border-radius:999px;background:rgba(0,0,0,.06);padding:0 3px}
+.scn-th.zen .sd2,.scn-th.zen .vt2{display:none}
+.scn-th.ribbon .tb2 .tm{color:#fff}
+
+/* 大纲 */
+.scn-ol{width:250px;border:1px solid #d9dce1;border-radius:5px;background:#f7f8fa;overflow:hidden}
+.scn-olh{display:flex;height:28px;border-bottom:1px solid #d9dce1}
+.scn-olh div{flex:1;display:flex;align-items:center;justify-content:center;font-size:11.5px;color:#5f6672}
+.scn-olh div.on{background:#fff;color:#0052d9;font-weight:600;border-bottom:2px solid #0052d9;height:28px}
+.scn-olt{padding:7px 9px;font-family:"Segoe UI","Microsoft YaHei",sans-serif;background:#fff}
+.scn-oi{display:flex;align-items:center;gap:6px;height:25px;font-size:11.5px;border-radius:3px;padding:0 6px}
+.scn-oi:hover{background:#e8f0fe}
+.scn-oi.on{background:#e8f0fe;color:#0052d9;font-weight:600}
+.scn-oi .tr{width:11px;font-size:8px;color:#8a919c}
+.scn-oi .wc{margin-left:auto;font-size:9.5px;color:#8a919c}
+.scn-oi .lv{font-size:9.5px;color:#fff;background:#0052d9;border-radius:2px;padding:0 3px}
+.scn-ind{padding-left:14px}
+</style>
+
+<div class="scn">
+  <div class="scn-hd">
+    <h2>附加场景 · 设置中心 / 界面风格 / 代码风格 / 代码块 / 菜单展开态 / 大纲</h2>
+    <div class="sub">
+      本段统一并入各份主界面效果图，为<b>静态高保真</b>，不含业务逻辑。入口链路：<b>主界面 → 工具 → 系统设置…</b>；
+      <b>编辑区图片右键</b>；<b>顶栏 外观(A) ▸ 主题 / 界面风格 / 代码风格</b>。
+      原「外观设置」独立菜单已删除，原设置中心的「外观 / 代码风格」两个一级页也已删除，相关配置统一上移到菜单。
+    </div>
+    <div class="scn-meta">
+      <span class="scn-chip k">静态原型 · 无交互</span>
+      <span class="scn-chip">设置导航：编辑器 / 通用 / 模板</span>
+      <span class="scn-chip">外观(A)：主题 / 界面风格 / 代码风格</span>
+      <span class="scn-chip">代码风格：经典 / 深色 / 护眼 / 极简</span>
+      <span class="scn-chip">代码块圆角 12px 实心填充</span>
+      <span class="scn-chip t">待定项以橙色角标标注</span>
+    </div>
+  </div>
+
+  <!-- S1 入口链路 -->
+  <div class="scn-sec">
+    <div class="scn-ph"><span class="n">S1</span><h3>入口链路</h3><span class="d">从主界面出发的三条路径</span></div>
+    <div class="scn-pb">
+      <div class="scn-flow">
+        <div class="scn-step"><div class="t">① 工具 → 系统设置…</div>
+          <div class="c">主界面顶栏「工具(T)」下拉底部；左侧工具栏 ⚙ 按钮同入口。<br>打开后进入 S2 的设置中心。</div></div>
+        <div class="scn-arrow">›</div>
+        <div class="scn-step"><div class="t">② 顶栏 外观(A)</div>
+          <div class="c">三个二级子菜单全部为互斥单选、即时生效：<br><b>主题 ▸</b>（6 项）· <b>界面风格 ▸</b>（打开 S3 选择器）· <b>代码风格 ▸</b>（4 项）。</div></div>
+        <div class="scn-arrow">›</div>
+        <div class="scn-step"><div class="t">③ 编辑区右键</div>
+          <div class="c">图片 / 表格 / 代码块 / 公式 / 图表 / 链接各自一套菜单；<br>选中文字另出悬浮工具栏。见 S6 / S7。</div></div>
+      </div>
+      <div class="scn-note">说明：ZEN 风格会隐藏菜单栏与左工具栏，此时这些入口需通过<b>命令面板 Ctrl+Shift+P</b> 或<b>状态栏「外观」格</b>兜底；本段为 interior 结构示意，不展开兜底通道。</div>
+    </div>
+  </div>
+
+  <!-- S2 设置中心 -->
+  <div class="scn-sec">
+    <div class="scn-ph"><span class="n">S2</span><h3>系统设置 · 新导航结构</h3><span class="d">一级页仅余 编辑器 / 通用 / 模板</span></div>
+    <div class="scn-pb">
+      <div class="scn-note"><b>变更</b>：删除「外观」页与「代码风格」页；原「外观」页的<b>编辑区字号缩放</b>下放至「编辑器 → 编辑区显示」，避免功能丢失。</div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start">
+        <!-- 编辑器页 -->
+        <div>
+          <div class="scn-lb" style="margin-bottom:6px">S2-1 · 编辑器</div>
+          <div class="scn-dlg" style="width:700px">
+            <div class="scn-dt"><b>系统设置</b><div class="w"><span>─</span><span>□</span><span>✕</span></div></div>
+            <div class="scn-db">
+              <div class="scn-nav">
+                <div class="scn-nv on"><span class="g">✎</span>编辑器</div>
+                <div class="scn-nv"><span class="g">⚙</span>通用</div>
+                <div class="scn-nv"><span class="g">▤</span>模板</div>
+              </div>
+              <div class="scn-cn">
+                <div class="scn-pt">编辑器</div>
+                <div class="scn-gp"><span class="scn-gt">编辑区显示</span><div class="scn-gi">
+                  <div class="scn-row"><span>字号缩放</span>
+                    <div class="scn-sld"><div class="tr"><i style="width:33%"></i><b style="left:33%"></b></div><span style="font-size:11.5px">100%</span></div></div>
+                  <div class="scn-hi">原「外观」页迁移项；即时生效，范围 80%~160%。</div>
+                </div></div>
+                <div class="scn-gp"><span class="scn-gt">段落与标题</span><div class="scn-gi">
+                  <div class="scn-row"><span>段首缩进（每段首行空出的格数）</span>
+                    <div class="scn-sel grow"><span>无（0 格）</span><span class="cv">▾</span></div></div>
+                  <div class="scn-cb"><span class="bx"></span><span>标题 1 始终居中显示（导出跟随；格式栏「⇔」可单块覆盖）</span></div>
+                </div></div>
+                <div class="scn-gp"><span class="scn-gt">图片存储</span><div class="scn-gi">
+                  <div class="scn-row"><span>图片存放方式</span>
+                    <div class="scn-sel grow"><span>相对路径：保存到「文档名.assets」文件夹（推荐）</span><span class="cv">▾</span></div></div>
+                </div></div>
+              </div>
+            </div>
+            <div class="scn-df"><div class="scn-btn pri">关闭</div></div>
+          </div>
+        </div>
+        <!-- 通用页 -->
+        <div>
+          <div class="scn-lb" style="margin-bottom:6px">S2-2 · 通用</div>
+          <div class="scn-dlg" style="width:400px">
+            <div class="scn-dt"><b>系统设置</b><div class="w"><span>─</span><span>□</span><span>✕</span></div></div>
+            <div class="scn-db">
+              <div class="scn-nav">
+                <div class="scn-nv"><span class="g">✎</span>编辑器</div>
+                <div class="scn-nv on"><span class="g">⚙</span>通用</div>
+                <div class="scn-nv"><span class="g">▤</span>模板</div>
+              </div>
+              <div class="scn-cn">
+                <div class="scn-pt">通用</div>
+                <div class="scn-gp"><span class="scn-gt">文件与启动</span><div class="scn-gi">
+                  <div class="scn-cb on"><span class="bx">✓</span><span>自动保存（编辑后自动写入文件）</span></div>
+                  <div class="scn-row"><span>大纲显示级别</span><div class="scn-sel" style="width:72px"><span>3 级</span><span class="cv">▾</span></div></div>
+                  <div class="scn-cb"><span class="bx"></span><span>大纲显示分节字数（追加「· N 字」）</span></div>
+                  <div class="scn-row"><span>启动时</span><div class="scn-sel grow"><span>打开欢迎页（默认）</span><span class="cv">▾</span></div></div>
+                </div></div>
+                <div class="scn-gp"><span class="scn-gt">写作模式</span><div class="scn-gi">
+                  <div class="scn-cb"><span class="bx"></span><span>打字机模式（光标所在行始终居中）</span></div>
+                  <div class="scn-cb"><span class="bx"></span><span>专注模式（淡化非当前段落）</span></div>
+                </div></div>
+              </div>
+            </div>
+            <div class="scn-df"><div class="scn-btn pri">关闭</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- S3 界面风格选择器 -->
+  <div class="scn-sec">
+    <div class="scn-ph"><span class="n">S3</span><h3>界面风格 · 独立选择器</h3><span class="d">左侧每套风格的小图预览 · 右侧名称与说明</span></div>
+    <div class="scn-pb">
+      <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+        <div style="flex:1;min-width:520px">
+          <div class="scn-lb" style="margin-bottom:8px">左侧 · 10 套界面风格缩略预览</div>
+          <div class="scn-grid scn-g4">
+            <div><div class="scn-th ps01">
+              <div class="tb2"><span class="tm"></span></div><div class="mb2"><span>文件</span><span>外观</span></div>
+              <div class="bd2"><div class="vt2"><i></i><i></i><i></i></div>
+                <div class="sd2"><i style="width:80%"></i><i style="width:62%"></i><i style="width:70%"></i></div>
+                <div class="ed2"><div class="h2"></div><div class="l2"></div><div class="l2" style="width:80%"></div><div class="l2" style="width:60%"></div></div></div>
+              <div class="sb2"><span>就绪</span></div></div>
+              <div class="scn-lb" style="margin-top:5px">现代经典（PS01）</div></div>
+            <div><div class="scn-th mac">
+              <div class="tb2"></div><div class="mb2"><span>文件</span><span>外观</span></div>
+              <div class="bd2"><div class="sd2"><i style="width:78%"></i><i style="width:60%"></i></div>
+                <div class="ed2"><div class="h2"></div><div class="l2"></div><div class="l2" style="width:80%"></div><div class="l2" style="width:60%"></div></div></div>
+              <div class="sb2"><span>就绪</span></div></div>
+              <div class="scn-lb" style="margin-top:5px">macOS Aqua</div></div>
+            <div><div class="scn-th code">
+              <div class="tb2"></div>
+              <div class="bd2"><div class="vt2"><i></i><i></i><i></i></div>
+                <div class="sd2"><i style="width:76%"></i><i style="width:60%"></i></div>
+                <div class="ed2"><div class="h2"></div><div class="l2"></div><div class="l2" style="width:80%"></div><div class="l2" style="width:60%"></div></div></div>
+              <div class="sb2"><span>就绪</span></div></div>
+              <div class="scn-lb" style="margin-top:5px">VS Code 工作台</div></div>
+            <div><div class="scn-th ribbon">
+              <div class="tb2"><span class="tm"></span></div><div class="mb2"><span>开始</span><span>外观</span></div>
+              <div class="bd2"><div class="sd2"><i style="width:74%"></i><i style="width:58%"></i></div>
+                <div class="ed2"><div class="h2"></div><div class="l2"></div><div class="l2" style="width:80%"></div><div class="l2" style="width:60%"></div></div></div>
+              <div class="sb2"><span>就绪</span></div></div>
+              <div class="scn-lb" style="margin-top:5px">Office 功能区蓝</div></div>
+            <div><div class="scn-th notion">
+              <div class="tb2"></div><div class="mb2"><span>文件</span><span>外观</span></div>
+              <div class="bd2"><div class="sd2"><i style="width:74%"></i><i style="width:58%"></i></div>
+                <div class="ed2"><div class="h2"></div><div class="l2"></div><div class="l2" style="width:80%"></div><div class="l2" style="width:60%"></div></div></div>
+              <div class="sb2"><span>就绪</span></div></div>
+              <div class="scn-lb" style="margin-top:5px">Notion 轻拟物</div></div>
+            <div><div class="scn-th paper">
+              <div class="tb2"></div><div class="mb2"><span>文件</span><span>外观</span></div>
+              <div class="bd2"><div class="sd2"><i style="width:70%"></i><i style="width:56%"></i></div>
+                <div class="ed2"><div class="h2"></div><div class="l2"></div><div class="l2" style="width:80%"></div><div class="l2" style="width:60%"></div></div></div>
+              <div class="sb2"><span>就绪</span></div></div>
+              <div class="scn-lb" style="margin-top:5px">纸质拟物排版<span class="scn-todo">草案</span></div></div>
+            <div><div class="scn-th term">
+              <div class="tb2"></div><div class="mb2"><span>&gt; 文件</span><span>外观</span></div>
+              <div class="bd2"><div class="sd2"><i style="width:72%"></i><i style="width:56%"></i></div>
+                <div class="ed2"><div class="h2"></div><div class="l2"></div><div class="l2" style="width:80%"></div><div class="l2" style="width:60%"></div></div></div>
+              <div class="sb2"><span>$ ready</span></div></div>
+              <div class="scn-lb" style="margin-top:5px">终端极客<span class="scn-todo">草案</span></div></div>
+            <div><div class="scn-th zen">
+              <div class="tb2"></div>
+              <div class="bd2"><div class="ed2" style="padding:8px 18px"><div class="h2" style="width:38%"></div>
+                <div class="l2"></div><div class="l2" style="width:80%"></div><div class="l2" style="width:60%"></div></div></div>
+              <div class="sb2"></div></div>
+              <div class="scn-lb" style="margin-top:5px">极简无界</div></div>
+            <div><div class="scn-th fluent">
+              <div class="tb2"></div><div class="mb2"><span>文件</span><span>外观</span></div>
+              <div class="bd2"><div class="sd2"><i style="width:72%"></i><i style="width:58%"></i></div>
+                <div class="ed2"><div class="h2" style="border-radius:3px"></div><div class="l2"></div><div class="l2" style="width:80%"></div><div class="l2" style="width:60%"></div></div></div>
+              <div class="sb2"><span>就绪</span></div></div>
+              <div class="scn-lb" style="margin-top:5px">Win11 Fluent 云母<span class="scn-todo">草案</span></div></div>
+            <div><div class="scn-th w32">
+              <div class="tb2"></div><div class="mb2"><span>文件</span><span>外观</span></div>
+              <div class="bd2"><div class="sd2"><i style="width:72%"></i><i style="width:58%"></i></div>
+                <div class="ed2"><div class="h2"></div><div class="l2"></div><div class="l2" style="width:80%"></div><div class="l2" style="width:60%"></div></div></div>
+              <div class="sb2"><span>就绪</span></div></div>
+              <div class="scn-lb" style="margin-top:5px">复古 Win32 立体<span class="scn-todo">草案</span></div></div>
+          </div>
+        </div>
+        <div style="width:330px;flex:0 0 330px;border:1px solid #c9cdd4;border-radius:6px;padding:14px;background:#fafbfc">
+          <div class="scn-lb">当前选中</div>
+          <div style="font-size:15px;font-weight:600;margin-top:3px">现代经典（默认 · PS01）</div>
+          <div class="scn-lb" style="margin-top:2px">ps01 · 内置默认 · 不可删除</div>
+          <div style="font-size:11.5px;color:#5f6672;line-height:1.85;margin-top:10px">
+            主界面效果图 PS01 现代经典桌面风：扁平浅灰、蓝色强调。默认风格，锁定不可删除；不覆盖任何配色（与既有外观完全一致）。
+          </div>
+          <div style="margin-top:12px;border-top:1px dashed #c9cdd4;padding-top:10px">
+            <div style="font-size:11px;color:#5f6672;line-height:1.9">
+              建议搭配编辑器主题：<b style="color:#1d9e75">浅色（默认）</b><br>
+              左侧竖工具栏：显示<br>顶栏菜单栏：显示<br>编辑区栏宽：居中 860px
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <div class="scn-btn pri" style="flex:1">应用</div>
+            <div class="scn-btn" style="flex:1">风格文件夹…</div>
+          </div>
+        </div>
+      </div>
+      <div class="scn-note">缩略图一律画真实的窗口骨架并按各风格自身 token 上色，因此一张图能同时传达<b>布局差异</b>（zen 画掉菜单栏与侧栏、notion 无竖工具栏、code 有活动栏、ribbon 上下蓝条）与<b>配色差异</b>。</div>
+    </div>
+  </div>
+
+  <!-- S4 代码风格 -->
+  <div class="scn-sec">
+    <div class="scn-ph"><span class="n">S4</span><h3>代码风格 · 图标 / 预览 / 对比</h3><span class="d">classic 经典 · dark 深色 · eye 护眼 · mini 极简</span></div>
+    <div class="scn-pb">
+      <div class="scn-note">风格图标在菜单、弹层、设置卡片共用同一枚（圆角实心块 + ‹ › 字形），底色即该风格的代码体填充色。</div>
+      <div class="scn-grid scn-g4">
+        <div class="scn-card on"><span class="scn-ci cl" style="width:30px;height:30px;font-size:13px">‹ ›</span>
+          <span class="nm2">经典</span><span class="ds2">白灰底 + 细边框，跟随编辑区主题</span><span class="mk2">✓ 当前</span></div>
+        <div class="scn-card"><span class="scn-ci da" style="width:30px;height:30px;font-size:13px">‹ ›</span>
+          <span class="nm2">深色</span><span class="ds2">#1E2230 实心填充，浅色文档中也醒目</span><span class="mk2">✓ 当前</span></div>
+        <div class="scn-card"><span class="scn-ci ey" style="width:30px;height:30px;font-size:13px">‹ ›</span>
+          <span class="nm2">护眼</span><span class="ds2">#E8F0E2 淡绿底，长时间阅读友好</span><span class="mk2">✓ 当前</span></div>
+        <div class="scn-card"><span class="scn-ci mn" style="width:30px;height:30px;font-size:13px">‹ ›</span>
+          <span class="nm2">极简</span><span class="ds2">无填充无边框，标题栏仅虚线分隔</span><span class="mk2">✓ 当前</span></div>
+      </div>
+
+      <div class="scn-doc">
+        <div class="scn-lb">完整预览 · 经典（#F6F8FA 实心填充 / #E1E4E8 边框）</div>
+        <div class="scn-cb cl sel">
+          <div class="br"><span class="lg">Python ▾</span>
+            <span class="rt"><span class="mb">行号</span><span class="mb">换行</span><span class="mb">复制</span><span class="mb">风格▾</span></span></div>
+<pre><span class="gt">1
+2
+3
+4</span><code><span class="kw">def</span> greet(name):
+    <span class="cm"># 一句问候</span>
+    n = <span class="nu">3</span>
+    <span class="kw">return</span> <span class="st">f"你好，{name}"</span></code></pre>
+        </div>
+      </div>
+
+      <div class="scn-grid scn-g4">
+        <div class="scn-cell"><div class="ct"><span class="scn-ci cl" style="width:14px;height:14px;font-size:7px">‹ ›</span>经典<span class="x">默认</span></div>
+          <div class="scn-cb cl"><div class="br"><span class="lg">JS ▾</span></div>
+<pre><span class="gt">1
+2
+3</span><code><span class="kw">const</span> hi = <span class="st">'你好'</span>;
+<span class="cm">// 问候</span>
+console.log(hi);</code></pre></div></div>
+        <div class="scn-cell"><div class="ct"><span class="scn-ci da" style="width:14px;height:14px;font-size:7px">‹ ›</span>深色<span class="x">固定</span></div>
+          <div class="scn-cb da"><div class="br"><span class="lg">JS ▾</span></div>
+<pre><span class="gt">1
+2
+3</span><code><span class="kw">const</span> hi = <span class="st">'你好'</span>;
+<span class="cm">// 问候</span>
+console.log(hi);</code></pre></div></div>
+        <div class="scn-cell"><div class="ct"><span class="scn-ci ey" style="width:14px;height:14px;font-size:7px">‹ ›</span>护眼<span class="x">固定</span></div>
+          <div class="scn-cb ey"><div class="br"><span class="lg">JS ▾</span></div>
+<pre><span class="gt">1
+2
+3</span><code><span class="kw">const</span> hi = <span class="st">'你好'</span>;
+<span class="cm">// 问候</span>
+console.log(hi);</code></pre></div></div>
+        <div class="scn-cell"><div class="ct"><span class="scn-ci mn" style="width:14px;height:14px;font-size:7px">‹ ›</span>极简<span class="x">跟随</span></div>
+          <div class="scn-cb mn"><div class="br"><span class="lg">JS ▾</span></div>
+<pre><span class="gt">1
+2
+3</span><code><span class="kw">const</span> hi = <span class="st">'你好'</span>;
+<span class="cm">// 问候</span>
+console.log(hi);</code></pre></div></div>
+      </div>
+      <div class="scn-note"><b>对比结论</b>：经典适合默认与导出；深色在浅色文档里做高反差；护眼适合长读；极简在代码块密集时不抢视觉。
+        经典 / 极简跟随编辑区主题（深色主题下自动转夜间色），深色 / 护眼为固定值。</div>
+    </div>
+  </div>
+
+  <!-- S5 代码块全态 -->
+  <div class="scn-sec">
+    <div class="scn-ph"><span class="n">S5</span><h3>代码块全态</h3><span class="d">标题栏联动 / 圆角实心填充 / 深浅 / 语言窗 / 风格窗 / 源码编辑</span></div>
+    <div class="scn-pb">
+      <div class="scn-note">统一结构：<b>代码栏 30px</b>（折叠三角 · 语言胶囊 · 右侧工具组）+ <b>代码体实心填充</b>，容器 radius 12px。
+        标题栏底色比代码体深一档，两者同色连续 → 视觉上是一整块实心矩形的上下两段。</div>
+
+      <div class="scn-grid scn-g4">
+        <div class="scn-cell"><div class="ct">经典 · 代码栏</div><div class="scn-cb cl">
+          <div class="br"><span class="lg">Python ▾</span><span class="rt"><span class="mb">行号</span><span class="mb">风格▾</span></span></div>
+<pre><span class="gt">1</span><code><span class="kw">print</span>(<span class="st">'hi'</span>)</code></pre></div></div>
+        <div class="scn-cell"><div class="ct">深色 · 代码栏</div><div class="scn-cb da">
+          <div class="br"><span class="lg">Python ▾</span><span class="rt"><span class="mb">行号</span><span class="mb">风格▾</span></span></div>
+<pre><span class="gt">1</span><code><span class="kw">print</span>(<span class="st">'hi'</span>)</code></pre></div></div>
+        <div class="scn-cell"><div class="ct">护眼 · 代码栏</div><div class="scn-cb ey">
+          <div class="br"><span class="lg">Python ▾</span><span class="rt"><span class="mb">行号</span><span class="mb">风格▾</span></span></div>
+<pre><span class="gt">1</span><code><span class="kw">print</span>(<span class="st">'hi'</span>)</code></pre></div></div>
+        <div class="scn-cell"><div class="ct">极简 · 代码栏</div><div class="scn-cb mn">
+          <div class="br"><span class="lg">Python ▾</span><span class="rt"><span class="mb">行号</span><span class="mb">风格▾</span></span></div>
+<pre><span class="gt">1</span><code><span class="kw">print</span>(<span class="st">'hi'</span>)</code></pre></div></div>
+      </div>
+
+      <div class="scn-grid scn-g2">
+        <div class="scn-doc"><div class="scn-lb">双击源码编辑态 · 圆角实心填充保持，仅加 2px 强调环</div>
+          <div class="scn-cb da edt"><div class="br"><span class="lg">Python ▾</span>
+            <span class="rt"><span class="mb" style="background:#0052d9;color:#fff;border-color:#0052d9">源码编辑中</span></span></div>
+<pre><span class="gt">1
+2
+3</span><code><span class="kw">def</span> greet(name):
+    <span class="cm"># 光标落在代码体内</span>
+    <span class="kw">return</span> <span class="st">f"你好，{name}"</span><span style="background:#0052d9;color:#fff">|</span></code></pre></div></div>
+        <div class="scn-doc dk"><div class="scn-lb">编辑区主题 = 深色 · 经典自动跟随（#21262D + 夜间令牌）</div>
+          <div class="scn-cb cl"><div class="br"><span class="lg">Python ▾</span></div>
+<pre><span class="gt">1
+2
+3</span><code><span class="kw">def</span> greet(name):
+    <span class="cm"># 注释转 #6B7694</span>
+    <span class="kw">return</span> <span class="st">f"你好，{name}"</span></code></pre></div></div>
+      </div>
+
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+        <div><div class="scn-lb" style="margin-bottom:6px">语言选择弹窗（搜索 + 分组）</div>
+          <div class="scn-m nw" style="width:206px">
+            <div class="scn-cap">常用</div>
+            <div class="scn-mi on">Python<span class="r">✓</span></div>
+            <div class="scn-mi">JavaScript</div><div class="scn-mi">TypeScript</div>
+            <div class="scn-mi">C</div><div class="scn-mi">C++</div><div class="scn-mi">Java</div>
+            <div class="scn-msep"></div><div class="scn-cap">全部</div>
+            <div class="scn-mi">Bash</div><div class="scn-mi">Go</div><div class="scn-mi">Rust</div>
+            <div class="scn-mi">JSON</div><div class="scn-mi">Plain Text</div>
+          </div></div>
+        <div><div class="scn-lb" style="margin-bottom:6px">风格选择弹窗（4 项）</div>
+          <div class="scn-m" style="width:170px">
+            <div class="scn-cap">代码风格</div>
+            <div class="scn-mi"><span class="scn-ci cl" style="width:14px;height:14px;font-size:7px">‹ ›</span>经典<span class="r">✓</span></div>
+            <div class="scn-mi"><span class="scn-ci da" style="width:14px;height:14px;font-size:7px">‹ ›</span>深色</div>
+            <div class="scn-mi"><span class="scn-ci ey" style="width:14px;height:14px;font-size:7px">‹ ›</span>护眼</div>
+            <div class="scn-mi"><span class="scn-ci mn" style="width:14px;height:14px;font-size:7px">‹ ›</span>极简</div>
+          </div></div>
+        <div><div class="scn-lb" style="margin-bottom:6px">二合一弹层<span class="scn-todo">待定</span>（语言 + 风格同一层）</div>
+          <div class="scn-m" style="width:206px">
+            <div class="scn-cap">语言</div>
+            <div class="scn-mi on">Python<span class="r">✓</span></div>
+            <div class="scn-mi">JavaScript</div><div class="scn-mi">Bash</div>
+            <div class="scn-msep"></div><div class="scn-cap">代码风格</div>
+            <div class="scn-mi"><span class="scn-ci cl" style="width:14px;height:14px;font-size:7px">‹ ›</span>经典<span class="r">✓</span></div>
+            <div class="scn-mi"><span class="scn-ci da" style="width:14px;height:14px;font-size:7px">‹ ›</span>深色</div>
+            <div class="scn-mi"><span class="scn-ci ey" style="width:14px;height:14px;font-size:7px">‹ ›</span>护眼</div>
+            <div class="scn-mi"><span class="scn-ci mn" style="width:14px;height:14px;font-size:7px">‹ ›</span>极简</div>
+          </div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- S6 右键菜单 -->
+  <div class="scn-sec">
+    <div class="scn-ph"><span class="n">S6</span><h3>右键菜单 · 按元素类型（全部二级展开）</h3><span class="d">图片为完整态，其余并列对照</span></div>
+    <div class="scn-pb">
+      <div class="scn-menus">
+        <div class="scn-mcol">
+          <div class="scn-lb">① 图片（252px 加宽）</div>
+          <div class="scn-m wd">
+            <div class="scn-cap">当前块：图片</div>
+            <div class="scn-mrow"><div class="scn-mi"><span class="i">⭰</span>靠左</div><div class="scn-mi"><span class="i">⭲</span>靠右</div></div>
+            <div class="scn-mrow"><div class="scn-mi"><span class="i">↺</span>重置尺寸</div><div class="scn-mi"><span class="i">⤢</span>大小设置</div></div>
+            <div class="scn-mrow"><div class="scn-mi"><span class="i">🔁</span>替换图片</div><div class="scn-mi"><span class="i">👁</span>显示图片</div></div>
+            <div class="scn-mrow"><div class="scn-mi"><span class="i">✂</span>裁剪图片</div><div class="scn-mi"><span class="i">✎</span>图注</div></div>
+            <div class="scn-mrow"><div class="scn-mi"><span class="i">🖼</span>复制图片</div><div class="scn-mi"><span class="i">⧉</span>复制块</div></div>
+            <div class="scn-mi"><span class="i">🔄</span>转化为相对路径存储</div>
+            <div class="scn-mi"><span class="i">✏</span>修改图片名称</div>
+            <div class="scn-msep"></div>
+            <div class="scn-mrow"><div class="scn-mi"><span class="i">⬆</span>上移</div><div class="scn-mi"><span class="i">⬇</span>下移</div></div>
+            <div class="scn-msep"></div>
+            <div class="scn-mi dg"><span class="i">🗑</span>删除块</div>
+          </div>
+        </div>
+
+        <div class="scn-mcol">
+          <div class="scn-lb">② 段落 / 正文</div>
+          <div class="scn-m">
+            <div class="scn-cap">当前块：段落</div>
+            <div class="scn-mi"><span class="i">H</span>标题<span class="r">›</span></div>
+            <div class="scn-sub"><div class="scn-sl">标题 ▸ 已展开</div><div class="scn-mini">
+              <div class="scn-mi"><span class="i">H1</span>标题 1</div><div class="scn-mi"><span class="i">H2</span>标题 2</div>
+              <div class="scn-mi on"><span class="i">H3</span>标题 3<span class="k">·</span></div>
+              <div class="scn-mi"><span class="i">H4</span>标题 4</div><div class="scn-mi"><span class="i">H5</span>标题 5</div>
+              <div class="scn-mi"><span class="i">H6</span>标题 6</div></div></div>
+            <div class="scn-mi"><span class="i">¶</span>段落</div>
+            <div class="scn-mi"><span class="i">•</span>列表<span class="r">›</span></div>
+            <div class="scn-sub"><div class="scn-sl">列表 ▸ 已展开</div><div class="scn-mini">
+              <div class="scn-mi"><span class="i">•</span>无序列表</div><div class="scn-mi"><span class="i">1.</span>有序列表</div>
+              <div class="scn-mi"><span class="i">☑</span>任务列表</div></div></div>
+            <div class="scn-mi"><span class="i">‹›</span>代码块</div>
+            <div class="scn-mi"><span class="i">❝</span>引用</div>
+            <div class="scn-msep"></div>
+            <div class="scn-mi"><span class="i">⧉</span>复制块</div>
+            <div class="scn-mrow"><div class="scn-mi"><span class="i">⬆</span>上移</div><div class="scn-mi"><span class="i">⬇</span>下移</div></div>
+            <div class="scn-msep"></div>
+            <div class="scn-mi dg"><span class="i">🗑</span>删除块</div>
+          </div>
+        </div>
+
+        <div class="scn-mcol">
+          <div class="scn-lb">③ 表格</div>
+          <div class="scn-m">
+            <div class="scn-cap">当前块：表格</div>
+            <div class="scn-mi"><span class="i">🏷</span>表格标注</div>
+            <div class="scn-mi dg"><span class="i">🗑</span>删除块</div>
+            <div class="scn-msep"></div>
+            <div class="scn-mi"><span class="i">↺</span>还原尺寸</div>
+            <div class="scn-mi"><span class="i">⧉</span>复制块</div>
+            <div class="scn-mi"><span class="i">⬆</span>上移</div><div class="scn-mi"><span class="i">⬇</span>下移</div>
+          </div>
+          <div class="scn-lb" style="margin-top:4px">③-b 选中单元格时</div>
+          <div class="scn-m nw">
+            <div class="scn-cap">表格工具</div>
+            <div class="scn-mi"><span class="i">⊕</span>合并单元格</div>
+            <div class="scn-mi"><span class="i">⊗</span>拆分单元格<span class="r">›</span></div>
+            <div class="scn-sub"><div class="scn-sl">拆分 ▸ 网格</div>
+              <div class="scn-mini" style="padding:6px">
+                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px">
+                  <div style="height:22px;border:1px solid #e6e8eb;border-radius:2px;background:#fff"></div>
+                  <div style="height:22px;border:1px solid #e6e8eb;border-radius:2px;background:#fff"></div>
+                  <div style="height:22px;border:1px solid #e6e8eb;border-radius:2px;background:#fff"></div>
+                  <div style="height:22px;border:1px solid #e6e8eb;border-radius:2px;background:#fff"></div>
+                  <div style="height:22px;border:1px solid #e6e8eb;border-radius:2px;background:#fff"></div>
+                  <div style="height:22px;border:1px solid #0052d9;border-radius:2px;background:#dbe7ff"></div>
+                  <div style="height:22px;border:1px solid #0052d9;border-radius:2px;background:#dbe7ff"></div>
+                  <div style="height:22px;border:1px solid #e6e8eb;border-radius:2px;background:#fff"></div>
+                  <div style="height:22px;border:1px solid #e6e8eb;border-radius:2px;background:#fff"></div>
+                  <div style="height:22px;border:1px solid #0052d9;border-radius:2px;background:#dbe7ff"></div>
+                  <div style="height:22px;border:1px solid #0052d9;border-radius:2px;background:#dbe7ff"></div>
+                  <div style="height:22px;border:1px solid #e6e8eb;border-radius:2px;background:#fff"></div>
+                </div>
+                <div class="scn-lb" style="text-align:center;margin-top:4px">2 × 2</div>
+              </div></div>
+            <div class="scn-mi"><span class="i">➕</span>插入行 / 列<span class="r">›</span></div>
+            <div class="scn-sub"><div class="scn-sl">插入 ▸ 已展开</div><div class="scn-mini">
+              <div class="scn-mi"><span class="i">↑</span>在上方插入行</div><div class="scn-mi"><span class="i">↓</span>在下方插入行</div>
+              <div class="scn-mi"><span class="i">←</span>在左侧插入列</div><div class="scn-mi"><span class="i">→</span>在右侧插入列</div></div></div>
+            <div class="scn-mi dg"><span class="i">➖</span>删除行 / 列<span class="r">›</span></div>
+            <div class="scn-sub"><div class="scn-sl">删除 ▸ 已展开</div><div class="scn-mini">
+              <div class="scn-mi"><span class="i">━</span>删除当前行</div><div class="scn-mi"><span class="i">┃</span>删除当前列</div></div></div>
+            <div class="scn-mi"><span class="i">≡</span>对齐<span class="r">›</span></div>
+            <div class="scn-sub"><div class="scn-sl">对齐 ▸ 已展开</div><div class="scn-mini">
+              <div class="scn-mi"><span class="i">⭰</span>靠左</div><div class="scn-mi on"><span class="i">⊙</span>居中<span class="k">·</span></div>
+              <div class="scn-mi"><span class="i">⭲</span>靠右</div></div></div>
+            <div class="scn-mi dg"><span class="i">⌫</span>清空内容</div>
+          </div>
+        </div>
+
+        <div class="scn-mcol">
+          <div class="scn-lb">④ 代码块 · 小块（≤3 行）</div>
+          <div class="scn-m">
+            <div class="scn-cap">当前块：代码块 · 3 行</div>
+            <div class="scn-mi"><span class="i">‹›</span>语言<span class="r">Python</span></div>
+            <div class="scn-mi"><span class="i">🎨</span>风格<span class="r">经典</span></div>
+            <div class="scn-msep"></div>
+            <div class="scn-mi"><span class="i">⧉</span>复制块</div>
+            <div class="scn-mi"><span class="i">⧉</span>复制全部代码<span class="scn-todo">待定</span></div>
+            <div class="scn-mrow"><div class="scn-mi"><span class="i">⬆</span>上移</div><div class="scn-mi"><span class="i">⬇</span>下移</div></div>
+            <div class="scn-msep"></div>
+            <div class="scn-mi"><span class="i">¶</span>转为段落<span class="scn-todo">待定</span></div>
+            <div class="scn-mi dg"><span class="i">🗑</span>删除块</div>
+          </div>
+          <div class="scn-lb" style="margin-top:4px">④-b 代码块 · 大块（&gt;3 行）</div>
+          <div class="scn-m">
+            <div class="scn-cap">当前块：代码块 · 42 行</div>
+            <div class="scn-mi"><span class="i">⌃</span>折叠代码块<span class="scn-todo">待定</span></div>
+            <div class="scn-mi"><span class="i">‹›</span>语言<span class="r">Python</span></div>
+            <div class="scn-mi"><span class="i">🎨</span>风格<span class="r">深色</span></div>
+            <div class="scn-sub"><div class="scn-sl">风格 ▸ 已展开</div><div class="scn-mini">
+              <div class="scn-mi"><span class="i">▤</span>经典</div><div class="scn-mi on"><span class="i">▧</span>深色<span class="k">✓</span></div>
+              <div class="scn-mi"><span class="i">▨</span>护眼</div><div class="scn-mi"><span class="i">▭</span>极简</div></div></div>
+            <div class="scn-msep"></div>
+            <div class="scn-mi"><span class="i">#</span>显示行号<span class="r">开</span><span class="scn-todo">待定</span></div>
+            <div class="scn-mi"><span class="i">↵</span>自动换行<span class="r">关</span><span class="scn-todo">待定</span></div>
+            <div class="scn-mi"><span class="i">⛶</span>全屏查看<span class="scn-todo">待定</span></div>
+            <div class="scn-mi"><span class="i">⧉</span>复制全部代码<span class="scn-todo">待定</span></div>
+            <div class="scn-mi"><span class="i">⧉</span>复制块</div>
+            <div class="scn-mrow"><div class="scn-mi"><span class="i">⬆</span>上移</div><div class="scn-mi"><span class="i">⬇</span>下移</div></div>
+            <div class="scn-msep"></div>
+            <div class="scn-mi dg"><span class="i">🗑</span>删除块</div>
+          </div>
+        </div>
+
+        <div class="scn-mcol">
+          <div class="scn-lb">⑤ 公式</div>
+          <div class="scn-m nw">
+            <div class="scn-cap">当前块：公式</div>
+            <div class="scn-mi"><span class="i">✎</span>编辑源码</div>
+            <div class="scn-mi"><span class="i">🏷</span>图注<span class="scn-todo">待定</span></div>
+            <div class="scn-msep"></div>
+            <div class="scn-mi"><span class="i">⧉</span>复制块</div>
+            <div class="scn-mrow"><div class="scn-mi"><span class="i">⬆</span>上移</div><div class="scn-mi"><span class="i">⬇</span>下移</div></div>
+            <div class="scn-msep"></div>
+            <div class="scn-mi dg"><span class="i">🗑</span>删除块</div>
+          </div>
+          <div class="scn-lb" style="margin-top:4px">⑥ 链接<span class="scn-todo">待定</span></div>
+          <div class="scn-m nw">
+            <div class="scn-cap">当前对象：链接</div>
+            <div class="scn-mi"><span class="i">✎</span>编辑链接</div>
+            <div class="scn-mi"><span class="i">🔗</span>复制链接地址</div>
+            <div class="scn-mi"><span class="i">↗</span>在浏览器中打开</div>
+            <div class="scn-msep"></div>
+            <div class="scn-mi dg"><span class="i">⊘</span>取消链接</div>
+          </div>
+          <div class="scn-lb" style="margin-top:4px">⑦ 分割线</div>
+          <div class="scn-m nw">
+            <div class="scn-cap">当前块：分割线</div>
+            <div class="scn-mi"><span class="i">⧉</span>复制块</div>
+            <div class="scn-mrow"><div class="scn-mi"><span class="i">⬆</span>上移</div><div class="scn-mi"><span class="i">⬇</span>下移</div></div>
+            <div class="scn-msep"></div>
+            <div class="scn-mi dg"><span class="i">🗑</span>删除块</div>
+          </div>
+        </div>
+
+        <div class="scn-mcol">
+          <div class="scn-lb">⑧ 图表（含图表主题二级）</div>
+          <div class="scn-m">
+            <div class="scn-cap">当前块：图表</div>
+            <div class="scn-mrow"><div class="scn-mi"><span class="i">✎</span>编辑源码</div><div class="scn-mi"><span class="i">🏷</span>图注</div></div>
+            <div class="scn-mrow"><div class="scn-mi"><span class="i">⭯</span>重置尺寸</div><div class="scn-mi"><span class="i">⤢</span>大小设置</div></div>
+            <div class="scn-mrow"><div class="scn-mi"><span class="i">⭰</span>靠左</div><div class="scn-mi"><span class="i">⭲</span>靠右</div></div>
+            <div class="scn-mi dis"><span class="i">🖼</span>转化为图片（请先保存文档）</div>
+            <div class="scn-mi"><span class="i">🎨</span>图表主题<span class="r">›</span></div>
+            <div class="scn-sub"><div class="scn-sl">图表主题 ▸ 已展开</div><div class="scn-mini">
+              <div class="scn-mi on"><span class="i">◐</span>跟随界面主题<span class="k">✓</span></div>
+              <div class="scn-mi"><span class="i">🟦</span>晴空</div><div class="scn-mi"><span class="i">🟩</span>薄荷</div>
+              <div class="scn-mi"><span class="i">🟨</span>暖沙</div><div class="scn-mi"><span class="i">🩶</span>石墨</div>
+              <div class="scn-mi"><span class="i">🟪</span>暗夜</div><div class="scn-mi"><span class="i">🟧</span>琥珀</div>
+              <div class="scn-mi"><span class="i">⬛</span>黑白</div></div></div>
+            <div class="scn-mi"><span class="i">⧉</span>复制块</div>
+            <div class="scn-mrow"><div class="scn-mi"><span class="i">⬆</span>上移</div><div class="scn-mi"><span class="i">⬇</span>下移</div></div>
+            <div class="scn-msep"></div>
+            <div class="scn-mi dg"><span class="i">🗑</span>删除块</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- S7 悬浮工具栏 + 格式化菜单 -->
+  <div class="scn-sec">
+    <div class="scn-ph"><span class="n">S7</span><h3>悬浮工具栏 / 格式化菜单 · 展开态</h3><span class="d">全部二级同时展开以便评审</span></div>
+    <div class="scn-pb">
+      <div class="scn-doc">
+        <div class="scn-lb">① 现状悬浮栏（选中文字）</div>
+        <div style="display:flex;justify-content:center">
+          <div class="scn-fb">
+            <button><b>B</b></button><button><i>I</i></button><button><u>U</u></button><button><s>S</s></button>
+            <button><span class="mk">A</span></button><button class="c">&lt;/&gt;</button>
+            <span class="scn-vs"></span><button>🔗</button><button style="font-family:Georgia,serif">T×</button>
+            <span class="scn-ct">已选 6 字</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="scn-doc">
+        <div class="scn-lb">② 建议方案（重新设计：一级只留高频，低频收进「⋯ 更多」）</div>
+        <div style="display:flex;justify-content:center;gap:16px;flex-wrap:wrap;align-items:flex-start">
+          <div class="scn-fb">
+            <button><b>B</b></button><button><i>I</i></button><button><s>S</s></button>
+            <button><span class="mk">A</span></button><button class="c">&lt;/&gt;</button>
+            <span class="scn-vs"></span><button>🔗</button><button>⋯<span class="scn-todo">待定</span></button>
+            <span class="scn-vs"></span><button style="font-family:Georgia,serif">T×</button>
+            <span class="scn-ct">已选 6 字</span>
+          </div>
+          <div class="scn-m nw">
+            <div class="scn-cap">⋯ 更多 ▸ 已展开</div>
+            <div class="scn-mi"><span class="i">U</span>下划线<span class="r">Ctrl+U</span></div>
+            <div class="scn-mi"><span class="i">∑</span>行内公式<span class="scn-todo">待定</span></div>
+            <div class="scn-mi"><span class="i">X²</span>上标<span class="scn-todo">待定</span></div>
+            <div class="scn-mi"><span class="i">X₂</span>下标<span class="scn-todo">待定</span></div>
+            <div class="scn-msep"></div>
+            <div class="scn-mi"><span class="i">🎨</span>文字颜色<span class="scn-todo">待定</span></div>
+            <div class="scn-mi"><span class="i">⇔</span>标题居中切换<span class="r">仅标题</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="scn-doc">
+        <div class="scn-lb">③ 沉浸式块内的极简悬浮（代码块 / 图表 / 公式内选中文字只留删除，避免把 ** 写进源码）</div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap">
+          <div><div class="scn-lb" style="margin-bottom:5px">代码块内选中文字</div>
+            <div class="scn-fb"><button>🗑</button><span class="scn-ct">代码块 · 已选 12 字</span></div></div>
+          <div><div class="scn-lb" style="margin-bottom:5px">代码块整体 · 小块</div>
+            <div class="scn-fb"><button>⧉</button><button>‹›</button><button>🎨</button><span class="scn-vs"></span><button>🗑</button></div></div>
+          <div><div class="scn-lb" style="margin-bottom:5px">代码块整体 · 大块</div>
+            <div class="scn-fb"><button>⌃</button><button>⧉</button><button>‹›</button><button>🎨</button><button>#</button><button>↵</button>
+              <span class="scn-vs"></span><button>🗑</button><span class="scn-ct">42 行</span></div></div>
+        </div>
+      </div>
+
+      <div class="scn-doc">
+        <div class="scn-lb">④ 格式化菜单（Ctrl+/ · ⠿ 手柄 · 右键三入口共用）· 全部二级展开</div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+          <div class="scn-m">
+            <div class="scn-cap">当前块：段落</div>
+            <div class="scn-mi"><span class="i">H</span>标题<span class="r">›</span></div>
+            <div class="scn-sub"><div class="scn-sl">标题 ▸</div><div class="scn-mini">
+              <div class="scn-mi"><span class="i">H1</span>标题 1</div><div class="scn-mi"><span class="i">H2</span>标题 2</div>
+              <div class="scn-mi on"><span class="i">H3</span>标题 3<span class="k">·</span></div>
+              <div class="scn-mi"><span class="i">H4</span>标题 4</div><div class="scn-mi"><span class="i">H5</span>标题 5</div>
+              <div class="scn-mi"><span class="i">H6</span>标题 6</div></div></div>
+            <div class="scn-mi"><span class="i">¶</span>段落</div>
+            <div class="scn-mi"><span class="i">•</span>列表<span class="r">›</span></div>
+            <div class="scn-sub"><div class="scn-sl">列表 ▸</div><div class="scn-mini">
+              <div class="scn-mi"><span class="i">•</span>无序列表</div><div class="scn-mi"><span class="i">1.</span>有序列表</div>
+              <div class="scn-mi"><span class="i">☑</span>任务列表</div></div></div>
+            <div class="scn-mi"><span class="i">‹›</span>代码块<span class="r">›</span></div>
+            <div class="scn-sub"><div class="scn-sl">代码块 ▸</div><div class="scn-mini">
+              <div class="scn-mi"><span class="i">‹›</span>Python</div><div class="scn-mi"><span class="i">‹›</span>JavaScript</div>
+              <div class="scn-mi"><span class="i">‹›</span>Bash</div></div></div>
+            <div class="scn-mi"><span class="i">❝</span>引用</div>
+            <div class="scn-msep"></div>
+            <div class="scn-mi"><span class="i">⧉</span>复制块</div>
+            <div class="scn-mrow"><div class="scn-mi"><span class="i">⬆</span>上移</div><div class="scn-mi"><span class="i">⬇</span>下移</div></div>
+            <div class="scn-msep"></div>
+            <div class="scn-mi dg"><span class="i">🗑</span>删除块</div>
+          </div>
+          <div style="flex:1;min-width:300px">
+            <div class="scn-mini" style="padding:12px;line-height:1.95;font-size:11px;color:#5f6672">
+              · <b>边界置灰</b>：首块「上移」、末块「下移」自动置灰<br>
+              · <b>自身项隐藏</b>：已是引用不显示「转为引用」；标题块高亮当前级别<br>
+              · <b>引用内代码块</b>：语言 / 风格 / 行号切换置灰并提示「双击转源码修改」<br>
+              · <b>图表未保存</b>：「转化为图片」置灰并写明原因<br>
+              · <b>删除项</b>：恒在末尾，danger 红，不参与并排<br>
+              · <b>图片菜单</b>加宽到 252px，保证六个并排项不断行
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- S8 大纲 -->
+  <div class="scn-sec">
+    <div class="scn-ph"><span class="n">S8</span><h3>大纲面板</h3><span class="d">树形层级 / 显示级别 / 分节字数后缀</span></div>
+    <div class="scn-pb">
+      <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start">
+        <div>
+          <div class="scn-lb" style="margin-bottom:6px">① 大纲（默认展开到 3 级）</div>
+          <div class="scn-ol">
+            <div class="scn-olh"><div>文件</div><div class="on">大纲</div></div>
+            <div class="scn-olt">
+              <div class="scn-oi on"><span class="tr">▾</span><span class="lv">H1</span>文档标题</div>
+              <div class="scn-oi scn-ind"><span class="tr">▾</span><span class="lv">H2</span>安装说明</div>
+              <div class="scn-oi" style="padding-left:28px"><span class="tr"></span><span class="lv">H3</span>依赖环境</div>
+              <div class="scn-oi" style="padding-left:28px"><span class="tr"></span><span class="lv">H3</span>构建步骤</div>
+              <div class="scn-oi scn-ind"><span class="tr">▸</span><span class="lv">H2</span>使用说明</div>
+              <div class="scn-oi scn-ind"><span class="tr">▸</span><span class="lv">H2</span>常见问题</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="scn-lb" style="margin-bottom:6px">② 开启「分节字数」后缀</div>
+          <div class="scn-ol">
+            <div class="scn-olh"><div>文件</div><div class="on">大纲</div></div>
+            <div class="scn-olt">
+              <div class="scn-oi"><span class="tr">▾</span><span class="lv">H1</span>文档标题<span class="wc">· 1,204 字</span></div>
+              <div class="scn-oi scn-ind"><span class="tr">▾</span><span class="lv">H2</span>安装说明<span class="wc">· 386 字</span></div>
+              <div class="scn-oi" style="padding-left:28px"><span class="tr"></span><span class="lv">H3</span>依赖环境<span class="wc">· 112 字</span></div>
+              <div class="scn-oi" style="padding-left:28px"><span class="tr"></span><span class="lv">H3</span>构建步骤<span class="wc">· 208 字</span></div>
+              <div class="scn-oi scn-ind"><span class="tr">▸</span><span class="lv">H2</span>使用说明<span class="wc">· 512 字</span></div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="scn-lb" style="margin-bottom:6px">③ 大纲右键菜单</div>
+          <div class="scn-m nw">
+            <div class="scn-cap">当前节点：安装说明</div>
+            <div class="scn-mi"><span class="i">⊞</span>展开子节点</div>
+            <div class="scn-mi"><span class="i">⊟</span>折叠子节点</div>
+            <div class="scn-msep"></div>
+            <div class="scn-mi"><span class="i">↪</span>跳转到位置</div>
+          </div>
+          <div class="scn-lb" style="margin-top:10px;margin-bottom:6px">④ 相关设置（已迁至 通用）</div>
+          <div class="scn-mini" style="padding:10px;line-height:1.9;font-size:11px;color:#5f6672">
+            大纲显示级别（超过该级别的标题默认折叠）<br>
+            大纲显示分节字数（标题后追加「· N 字」）<br>
+            <span class="scn-lb">拖拽节点可调序（H 文章内容按新顺序整段移动）</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<!-- ===== /附加场景 ===== -->
+
+</body>
+</html>

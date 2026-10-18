@@ -73,14 +73,28 @@ js("(function(){var blk=document.querySelectorAll('#editor .blk')[0];"
 wait(300)
 dbg1 = js("window.__raw()")
 # 在块尾连按两次回车 → 产生两个空块
-js("(function(){var el=document.querySelector('.raw-edit');"
-   "el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));"
-   "return 'x'})()")
+# v3.38（WYS-4）：段落保持渲染态 —— 聚焦 p[contenteditable] 派发 Enter
+# （WYS-4 分支切段，焦点落新块渲染态；兼容源码态 raw-edit）
+HOST0 = ('(function(){var b=document.querySelectorAll("#editor .blk")[0];'
+         'var h=b.querySelector("p[contenteditable]")||b.querySelector(".raw-edit");'
+         'if(!h) return "NOHOST";h.focus();'
+         'var rg=document.createRange();rg.selectNodeContents(h);rg.collapse(false);'
+         'var s=getSelection();s.removeAllRanges();s.addRange(rg);'
+         'h.dispatchEvent(new KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true}));'
+         'return "x"})()')
+js(HOST0)
 wait(250)
 dbg2 = js("window.__raw() + ' LOG:' + JSON.stringify(window.__elog || [])")
 js("window.__elog = []")
-js("(function(){var el=document.querySelector('.raw-edit');"
-   "el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));"
+# 第二次回车：焦点已落新空块（渲染态 p 或源码态 raw-edit 均可）
+js("(function(){var h=document.activeElement;"
+   "var ok=h&&(h.classList&&(h.classList.contains('raw-edit')||h.getAttribute('contenteditable')));"
+   "if(!ok){var b=document.querySelectorAll('#editor .blk')[1];"
+   "h=b&&(b.querySelector('p[contenteditable]')||b.querySelector('.raw-edit'));"
+   "if(!h) return 'NOHOST2';h.focus();"
+   "var rg=document.createRange();rg.selectNodeContents(h);rg.collapse(true);"
+   "var s=getSelection();s.removeAllRanges();s.addRange(rg);}"
+   "h.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));"
    "return 'x'})()")
 wait(250)
 dbg3 = js("window.__raw()")
@@ -108,17 +122,21 @@ wait(300)
 js("(function(){var blk=document.querySelectorAll('#editor .blk')[0];"
    "blk.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,detail:1}));return 'x'})()")
 wait(300)
-js("(function(){var el=document.querySelector('.raw-edit');"
-   "var tn=el.firstChild;var rg=document.createRange();rg.setStart(tn,1);rg.collapse(true);"
+# v3.38（WYS-4）：渲染态 p 定位光标到中部并派发 Enter（兼容源码态）
+js("(function(){var b=document.querySelectorAll('#editor .blk')[0];"
+   "var h=b.querySelector('p[contenteditable]')||b.querySelector('.raw-edit');"
+   "var tn=h.firstChild;var rg=document.createRange();rg.setStart(tn,1);rg.collapse(true);"
    "var s=getSelection();s.removeAllRanges();s.addRange(rg);return 'x'})()")
 wait(150)
-js("(function(){var el=document.querySelector('.raw-edit');"
-   "el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));"
+js("(function(){var b=document.querySelectorAll('#editor .blk')[0];"
+   "var h=b.querySelector('p[contenteditable]')||b.querySelector('.raw-edit');"
+   "h.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));"
    "return 'x'})()")
 wait(300)
 r = js("window.__raw()")
+# v3.38（WYS-4）：拆分后焦点落新块渲染态（editIdx=-1），不再切源码
 check("mid-block enter splits without duplication",
-      r == '{"raw":["A","B"],"editIdx":1}', r)
+      r == '{"raw":["A","B"],"editIdx":-1}', r)
 
 # ---------- 3) 右键空白块 → 斜杠菜单 ----------
 js("window.setMarkdown('')")

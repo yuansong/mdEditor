@@ -26,6 +26,26 @@ if os.path.exists(result):
             os.replace(result, result + ".trash")
         except OSError:
             pass
+# v3.39.9：部分探针的结果文件名与脚本名不同步（如 _m159_mmdrz.py → _m159.txt、
+# _m158_mmdmenu.py → _m158.txt），按 _mNNN 前缀把对应历史结果一并删除，
+# 否则超时/崩溃后 verdict 会读到上一轮陈旧结果
+import re as _re
+_m = _re.match(r'_m(\d+)', os.path.basename(target))
+if _m:
+    alt = os.path.join(here, '_m%s.txt' % _m.group(1))
+else:
+    # v3.39.10：smoke 等非 _mNNN 探针无别名 —— 原实现在此分支对 None 调
+    # os.path.abspath 直接 TypeError，runner 秒挂且不产生任何 run 文件
+    # （smoke11~33「crash/noresult」假象、smoke31~33 读陈旧结果假通过同源）
+    alt = None
+if alt and os.path.abspath(alt) != os.path.abspath(result) and os.path.exists(alt):
+    try:
+        os.remove(alt)
+    except OSError:
+        try:
+            os.replace(alt, alt + ".trash")
+        except OSError:
+            pass
 py = sys.executable
 
 # v3.28：单个 smoke 的时限收紧到 420s（正常 30~90s），超时视为
@@ -51,12 +71,60 @@ def attempt(tag):
     with open(out, mode, encoding="utf-8") as f:
         if tag > 1:
             f.write("\n===== RETRY after timeout =====\n")
-        try:
-            r = subprocess.run([py, target], stdout=f, stderr=subprocess.STDOUT,
-                               cwd=here, env=env, timeout=TIMEOUT)
-            return r.returncode, False
-        except subprocess.TimeoutExpired:
+        # v3.39.9：探针「结果文件已写完但进程不退出」（QWebEngine 退出竞态，
+        # GPU/IPC 线程偶发挂住，实测同一探针时 hang 时不 hang）不再干等 420s ——
+        # Popen + 轮询：结果文件生成且连续 ~3s 大小不变即判定完成，主动结束进程。
+        proc = subprocess.Popen([py, target], stdout=f, stderr=subprocess.STDOUT,
+                                cwd=here, env=env)
+        deadline = time.time() + TIMEOUT
+        # v3.39.9b：稳定性判定必须基于「本轮新写入」——若旧结果文件删除失败
+        # （沙箱删除拦截/配额），陈旧文件会被误判为已完成、3 秒就杀掉新探针。
+        # 记录启动时刻，轮询时要求文件 mtime 晚于启动才算本轮产出。
+        start_ts = time.time()
+        last_size = -1
+        stable = 0
+        finished = False
+        timed_out = False
+        while True:
+            if proc.poll() is not None:
+                finished = True      # 进程自然退出（正常路径）
+                break
+            if time.time() >= deadline:
+                timed_out = True
+                break
+            sz = -1
+            for cand in ((result, alt) if alt else (result,)):
+                try:
+                    st = os.stat(cand)
+                    if st.st_mtime > start_ts:
+                        sz = max(sz, st.st_size)
+                except OSError:
+                    pass
+            if sz > 0:
+                if sz == last_size:
+                    stable += 1
+                    # v3.39.11：3s → 8s —— m104 D 组等慢段（setmd+菜单+提交连续
+                    # 等待 ~3s 不写文件）会被 3s 判定误杀（exit=0 但结果截断、
+                    # 无 SUMMARY），实测三次两杀；8s 仍远小于 420s 超时
+                    if stable >= 8:  # 结果文件 ~8s 无增长 = 已写完
+                        finished = True
+                        break
+                else:
+                    stable = 0
+                last_size = sz
+            time.sleep(1)
+        if not finished:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            try:
+                proc.wait(timeout=10)
+            except Exception:
+                pass
+        if timed_out:
             return None, True
+        return 0, False
 
 
 rc, timed_out = attempt(1)

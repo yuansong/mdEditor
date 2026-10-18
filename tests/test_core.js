@@ -1,9 +1,12 @@
 // editor core smoke tests (run with node)
 const fs = require('fs');
 const html = fs.readFileSync(__dirname + '/../src/editor.html', 'utf8');
-const m = html.match(/<script>([\s\S]*)<\/script>/);
-if (!m) { console.error('FAIL: script tag not found'); process.exit(1); }
-let code = m[1];
+// v3.44.10：editor.html 现含多个内联 script（dual 模式小段 + 内核主 IIFE），
+// 旧贪婪正则 /<script>[\s\S]*<\/script>/ 会把中间的 HTML 一并 eval 而语法报错；
+// 改为提取所有无属性 script 块、取最长者（内核主块 ~64 万字符）。
+const blocks = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+const code = blocks.sort((a, b) => b.length - a.length)[0];
+if (!code) { console.error('FAIL: script tag not found'); process.exit(1); }
 
 // minimal DOM stubs so the IIFE can load
 function fakeEl() {
@@ -127,7 +130,7 @@ eq(core.blockInfo('```mermaid cap="含 空格 与 引号"\nx\n```').attrs.cap, '
 eq(core.blockInfo('```mermaid w=520 captop\nx\n```').attrs.captop, true, 'v322: 围栏布尔属性 captop');
 eq(core.blockInfo('```python\nx\n```').lang, 'python', 'v322: 普通围栏 lang 仍取第一个词');
 eq(core.blockHTML('```mermaid w=400 cap="说明"\nx --> y\n```'),
-  '<div class="mmd-wrap"><div class="mermaidblock sized" data-src="x --&gt; y" style="width:400px;"></div>' +
+  '<div class="mmd-wrap"><div class="mermaidblock sized" data-src="x --&gt; y" data-mmd-w="400" style="width:400px;"></div>' +
   '<div class="mmd-cap">说明</div></div>', 'v322: 图表宽度 + 下方图注');
 eq(core.blockHTML('```mermaid cap="上注" captop\nx --> y\n```')
     .indexOf('<div class="mmd-cap">上注</div><div class="mermaidblock"') !== -1, true, 'v322: 图注渲染在图表上方');

@@ -155,8 +155,9 @@ def main():
     wait(300)
     d4 = json.loads(js(win, CELL_PH) or "{}")
     log("[D] %s" % json.dumps(d4, ensure_ascii=False))
-    check("D1 空格盖章 data-ph（TBL-F2）",
-          d4.get("phEmpty") == "输入 / 插入列表、图片、图表", json.dumps(d4, ensure_ascii=False))
+    # v3.38（TBL-F3）：占位提示按用户需求移除 —— 任何单元格都不再有 data-ph
+    check("D1 空格无 data-ph（TBL-F3 已移除占位提示）",
+          d4.get("phEmpty") is None, json.dumps(d4, ensure_ascii=False))
     check("D2 非空格无 data-ph", d4.get("phFull") is None, json.dumps(d4, ensure_ascii=False))
 
     # ---------- E：命令面板通道 __blkCmd ----------

@@ -229,7 +229,8 @@ note("E1 末行空行 data-ph 占位")
 setmd("> 文字\n>")
 wait(400)
 st = state_now()
-check("E1 空末行显示占位", st.get("ph") == "回车退出引用 · Tab 嵌套 / Shift+Tab 减少",
+# v3.38（QUO-12）：提示文案明确化
+check("E1 空末行显示占位", st.get("ph") == "空行上回车退出引用 · Tab 加一层 / Shift+Tab 减一层",
       "ph=%s" % st.get("ph"))
 setmd("> 文字")
 wait(400)

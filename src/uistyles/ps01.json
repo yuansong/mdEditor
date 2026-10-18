@@ -1,0 +1,11 @@
+{
+  "id": "ps01",
+  "name": "现代经典（默认 · PS01）",
+  "desc": "主界面效果图 PS01 现代经典桌面风：扁平浅灰、蓝色强调。默认风格，锁定不可删除；不覆盖任何配色（与既有外观完全一致）。",
+  "locked": true,
+  "suggest_theme": "light",
+  "palette": {},
+  "qss": "",
+  "editor_css": "#editor { max-width: 960px; margin: 0 auto; padding: 34px 120px 45vh 120px; }",
+  "editor_css_dark": ""
+}

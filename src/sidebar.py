@@ -8,8 +8,8 @@ import os
 import re
 import tempfile
 
-from PySide6.QtCore import QEvent, Qt, QPointF
-from PySide6.QtGui import QBrush, QColor, QPainter, QPen, QPixmap, QPolygonF
+from PySide6.QtCore import QEvent, QSize, QStandardPaths, Qt, QPointF
+from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QApplication, QAbstractItemView, QButtonGroup, QCheckBox, QComboBox,
     QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
@@ -18,8 +18,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from config import FILE_LIST_DEFAULT_DIR, HERE
+from config import DRAFT_DIR, FILE_LIST_DEFAULT_DIR, HERE
 from styles import SIDEBAR_QSS
+from icons import icon_file, icon_folder, icon_up
 
 # 跨文件搜索上限（避免在超大目录上卡死界面）
 SEARCH_MAX_FILES = 1500
@@ -266,21 +267,39 @@ class Sidebar(QWidget):
 
     TAB_FILES, TAB_OUTLINE = 0, 1
     MD_EXTS = (".md", ".markdown", ".mdown", ".txt")
+    # v3.39（FL-4）：非 md 灰显时隐藏的系统噪音文件（大小写不敏感）
+    IGNORE_NAMES = {"desktop.ini", "thumbs.db", "$recycle.bin", "autorun.inf"}
+    # v3.39（FL-6）：固定目录上限
+    PIN_MAX = 8
+
+    def sizeHint(self):
+        """v3.39.14（UIUX-2）：钉死建议宽度=固定宽 224。
+
+        QSplitter 初始槽位按 sizeHint() 分配（布局树算出约 370px），
+        比固定宽多出的部分变成侧栏右侧的死白区；覆写后 splitter
+        初始即按 224 分配，消除「侧栏与内容区间距过大」。"""
+        return QSize(232, super().sizeHint().height())
 
     def __init__(self, win):
         super().__init__(win)
         self._win = win
         self.setObjectName("sidebar")
-        self.setFixedWidth(252)
+        self.setFixedWidth(224)
+        # v3.39.14（UIUX-2）：sizePolicy=Fixed —— 配合 sizeHint 覆写，
+        # 修复 splitter 初始按布局树 sizeHint（约 370px）分配槽位、
+        # 而控件实际只画 224px 导致的右侧死白区
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         self.setStyleSheet(SIDEBAR_QSS)
         self._outline_sig = None
         self._outline_level = 3      # 大纲展开显示级别（1~6，系统设置可改）
         self._outline_words = False  # v3.31.2（#3）：分节字数后缀开关（默认关）
         self._last_headings = None   # 最近一次大纲数据（级别切换时复用重建）
         self._file_mode = "current"  # 文件列表显示模式：current=跟随当前文档 / blank=空白项
+        self._initial_restored = False  # v3.38（FLP-2）：启动/首次打开 tab 是否已定位过
 
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 6, 0, 0)
+        # v3.39.14（HEAD-1）：头行边距对齐——侧栏头行与主区页签条同高 42px、顶空 5px
+        lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(4)
 
         # ---- 顶部标签（文件 / 大纲，均分宽度）----
@@ -289,7 +308,7 @@ class Sidebar(QWidget):
         tab_row = QHBoxLayout(tabcap)
         tab_row.setContentsMargins(0, 0, 0, 0)
         tab_row.setSpacing(2)
-        self.btn_files = QToolButton(tabcap, text="文件")
+        self.btn_files = QToolButton(tabcap, text="文件列表")   # v3.44.3（DESIGN01）：设计稿页签名
         self.btn_outline = QToolButton(tabcap, text="大纲")
         for b in (self.btn_files, self.btn_outline):
             b.setCheckable(True)
@@ -304,8 +323,26 @@ class Sidebar(QWidget):
         self.btn_files.clicked.connect(lambda: self.select_tab(self.TAB_FILES))
         self.btn_outline.clicked.connect(lambda: self.select_tab(self.TAB_OUTLINE))
         cap_row = QHBoxLayout()
-        cap_row.setContentsMargins(10, 6, 10, 2)
+        # HEAD-1：左右 10px 与文件列表/大纲面板基准线一致；HEAD-2 行高 40 同步
+        cap_row.setContentsMargins(10, 3, 10, 3)
         cap_row.addWidget(tabcap)
+        # v3.43.0（OUT-LOOK）：页签行右侧工具钮（设计稿同款）——重建大纲 / 折叠·展开全部
+        self.btn_ol_refresh = QToolButton(self)
+        self.btn_ol_refresh.setText("⟳")
+        self.btn_ol_refresh.setObjectName("olTool")
+        self.btn_ol_refresh.setToolTip("重建大纲（按当前过滤与显示级别重新生成）")
+        self.btn_ol_refresh.setCursor(Qt.PointingHandCursor)
+        self.btn_ol_refresh.setFixedSize(22, 22)
+        self.btn_ol_refresh.clicked.connect(self.refresh_outline)
+        self.btn_ol_fold = QToolButton(self)
+        self.btn_ol_fold.setText("⌄")
+        self.btn_ol_fold.setObjectName("olTool")
+        self.btn_ol_fold.setToolTip("折叠全部 / 展开全部（大纲树）")
+        self.btn_ol_fold.setCursor(Qt.PointingHandCursor)
+        self.btn_ol_fold.setFixedSize(22, 22)
+        self.btn_ol_fold.clicked.connect(self.toggle_outline_fold)
+        cap_row.addWidget(self.btn_ol_refresh)
+        cap_row.addWidget(self.btn_ol_fold)
         lay.addLayout(cap_row)
 
         # ---- 中部：文件列表（仅一级目录）/ 大纲 ----
@@ -324,16 +361,41 @@ class Sidebar(QWidget):
         self.file_list = QListWidget(self)
         self.file_list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
         self.file_list.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.file_list.setIconSize(QSize(16, 16))
         self.file_list.itemDoubleClicked.connect(self._on_file_dbl)
+        # v3.44.2（FILE-UX）：文件夹图标主题色（随 apply_theme 重填），文件用中性灰描边图标
+        self._folder_accent = "#0052d9"
+        # v3.39（FL-3）：列表键盘快捷键经事件过滤器处理（列表有焦点才生效）
+        self.file_list.installEventFilter(self)
         # v3.25：右键菜单 —— 在资源管理器中显示 / 用外部程序打开（原「文件」菜单项迁入）
         self.file_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.file_list.customContextMenuRequested.connect(self._on_file_menu)
 
+        # v3.39（FL-1）：面包屑路径条 —— 路径段按钮一键直达任意上级；
+        # 双击面包屑 = 返回上一级（保留原 file_header 双击习惯）
+        self.crumbs = QWidget(self)
+        self.crumbs.setObjectName("crumbs")
+        self._crumb_lay = QHBoxLayout(self.crumbs)
+        self._crumb_lay.setContentsMargins(10, 2, 10, 2)
+        self._crumb_lay.setSpacing(1)
+        self.crumbs.setToolTip("双击返回上一级目录")
+        self.crumbs.installEventFilter(self)
+        # v3.44.5（DESIGN01）：面包屑首部「↑ 上级目录」按钮（设计稿 .crumb .up）
+        self._crumb_up = QPushButton(self)
+        self._crumb_up.setObjectName("crumbUp")
+        self._crumb_up.setText("")
+        self._crumb_up.setIcon(icon_up(16))
+        self._crumb_up.setIconSize(QSize(16, 16))
+        self._crumb_up.setCursor(Qt.PointingHandCursor)
+        self._crumb_up.setFixedSize(22, 22)
+        self._crumb_up.setToolTip("返回上一级目录")
+        self._crumb_up.clicked.connect(self.go_up)
         self.file_panel = QWidget(self)
         fp_lay = QVBoxLayout(self.file_panel)
         fp_lay.setContentsMargins(0, 0, 0, 0)
         fp_lay.setSpacing(2)
         fp_lay.addWidget(self.file_header)
+        fp_lay.addWidget(self.crumbs)
         fp_lay.addWidget(self.file_list, 1)
 
         # 大纲：树形结构，默认展开到 3 级，更深层级默认折叠（可手动展开）
@@ -350,12 +412,23 @@ class Sidebar(QWidget):
         self.outline.setContextMenuPolicy(Qt.CustomContextMenu)
         self.outline.customContextMenuRequested.connect(self._on_outline_menu)
 
+        # ---- v3.44.9（OUT-STRIP2）：大纲面板 = 纯标题树 ----
+        #      移除顶部「全部 / H1 / H2 / H3」级别过滤 chip 行（v3.44.8），
+        #      并移除底部「N 个标题」计数行（v3.44.9）；大纲仅显示标题树。
+        self._outline_filter = 0      # 0=全部（内部逻辑保留，UI 不再暴露级别过滤）
+
+        self.outline_panel = QWidget(self)
+        op = QVBoxLayout(self.outline_panel)
+        op.setContentsMargins(0, 0, 0, 0)
+        op.setSpacing(0)
+        op.addWidget(self.outline, 1)
+
         # v3.31.2：树形「目录」页已移除（与文件页重合，管理操作迁文件页右键）
         # 全局搜索面板（v3.24 起移入「查找」对话框的「全局搜索」页签）：
         # 面板构造与检索逻辑见 GlobalSearchPanel，侧栏只保留文件 / 大纲两个标签页。
         self.stack = QStackedWidget(self)
         self.stack.addWidget(self.file_panel)
-        self.stack.addWidget(self.outline)
+        self.stack.addWidget(self.outline_panel)   # v3.43.0：大纲页 = 过滤条 + 树
         lay.addWidget(self.stack, 1)
 
         # 初始进入「此电脑」层
@@ -366,11 +439,11 @@ class Sidebar(QWidget):
 
     # ---- v3.26：大纲树展开/收拢箭头 ----
     def set_tree_arrows(self, theme_id="light"):
-        """用运行时绘制的 chevron 折线箭头替换 QTreeWidget 默认的细小分支箭头。
+        """用运行时绘制的实心三角箭头替换 QTreeWidget 默认的细小分支箭头。
 
-        v3.31.3（#21 美化）：实心三角 → 细线 chevron（› / ˅，2.2px 圆头折线，
-        VS Code 风格），16×16 px；颜色取主题次级文字色，选中行箭头换主题强调色
-        （:selected 变体）。换肤时由 mainwindow.apply_theme 再次调用。"""
+        v3.44.3（DESIGN01）：按需求改回「三角形」——收拢 = 右向实心 ▶，
+        展开 = 下向实心 ▼，16×16 px；颜色取主题次级文字色，选中行箭头换
+        主题强调色（:selected 变体）。换肤时由 mainwindow.apply_theme 再次调用。"""
         from styles import palette
         try:
             pal = palette(theme_id)
@@ -383,22 +456,18 @@ class Sidebar(QWidget):
         os.makedirs(cache, exist_ok=True)
 
         def _draw(name, kind, color):
-            """kind: closed=右向 ›（收拢）/ open=下向 ˅（展开）。
-            细线 chevron：圆头折线，居中绘制在 16×16 画布。"""
+            """kind: closed=右向 ▶（收拢）/ open=下向 ▼（展开）。实心三角。"""
             pm = QPixmap(16, 16)
             pm.fill(Qt.transparent)
             p = QPainter(pm)
             p.setRenderHint(QPainter.Antialiasing)
-            pen = QPen(color, 2.2)
-            pen.setCapStyle(Qt.RoundCap)
-            pen.setJoinStyle(Qt.RoundJoin)
-            p.setPen(pen)
-            p.setBrush(Qt.NoBrush)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(color))
             if kind == "closed":
-                pts = [QPointF(6.0, 3.5), QPointF(11.0, 8.0), QPointF(6.0, 12.5)]
+                pts = [QPointF(5.5, 3.5), QPointF(12.5, 8.0), QPointF(5.5, 12.5)]
             else:
-                pts = [QPointF(3.5, 6.0), QPointF(8.0, 11.0), QPointF(12.5, 6.0)]
-            p.drawPolyline(QPolygonF(pts))
+                pts = [QPointF(3.5, 5.5), QPointF(12.5, 5.5), QPointF(8.0, 12.5)]
+            p.drawPolygon(QPolygonF(pts))
             p.end()
             fp = os.path.join(cache, f"{name}_{theme_id}.png")
             pm.save(fp, "PNG")
@@ -414,13 +483,88 @@ class Sidebar(QWidget):
                     f"QTreeWidget::branch{sel}{variant} {{ image: url({url}); }}"
                 )
         self.outline.setStyleSheet("\n".join(qss))
+        # v3.43.0（OUT-LOOK）：大纲过滤 chip / 计数 / 页签行工具钮随主题调色
+        try:
+            import uistyles
+            _pal = uistyles.merge_palette(theme_id)
+        except Exception:
+            _pal = {}
+        self._apply_outline_chrome_qss(_pal)
+
+    # ---- v3.44.2（FILE-UX）：文件列表文件夹图标随主题强调色 ----
+    def set_folder_theme(self, theme_id="light"):
+        """刷新文件夹图标颜色（= 当前主题 accent），并就地重着色已有目录项。
+
+        由 mainwindow.apply_theme 在每个主题切换入口调用（与 set_tree_arrows 同源）。
+        文件项图标为中性灰描边、不随主题变化，故无需重绘。"""
+        from styles import palette
+        try:
+            self._folder_accent = palette(theme_id).get("accent") or "#0052d9"
+        except Exception:
+            self._folder_accent = "#0052d9"
+        for i in range(self.file_list.count()):
+            it = self.file_list.item(i)
+            d = it.data(Qt.UserRole)
+            if d and d[0] == "dir":
+                it.setIcon(icon_folder(self._folder_accent))
+
+    def _apply_outline_chrome_qss(self, pal):
+        """v3.44.9：大纲工具钮（重建 / 折叠）随主题调色（底部计数行已移除）。
+
+        关键修复：btn_ol_refresh/btn_ol_fold 是 #sidebar 内的 QToolButton，会被
+        #sidebar QToolButton 规则套上 padding:5px 12px；而它们 setFixedSize(22,22)，
+        12px 横向内边距使内容宽度为 22-24=-2px，⟳/⌄ 字形被裁掉 → 按钮呈空白方块
+        （"未正常显示"根因）。此处显式 padding:2px + min-width/min-height 复位，
+        给字形留出渲染空间。"""
+        g = lambda k, d: (pal or {}).get(k, d)
+        qss = (
+            "QToolButton#olTool {{ border:none; background:transparent; color:{muted};"
+            " font-size:14px; padding:2px; min-width:18px; min-height:18px;"
+            " border-radius:4px; }}"
+            "QToolButton#olTool:hover {{ background:{hov}; }}"
+        ).format(hov=g("hover_bg", "#eef2f7"),
+                 muted=g("text_muted", "#6b7280"))
+        for b in (self.btn_ol_refresh, self.btn_ol_fold):
+            b.setStyleSheet(qss)
 
     # ---- 行为 ----
     def eventFilter(self, obj, ev):
         if obj is self.file_header and ev.type() == QEvent.MouseButtonDblClick:
             self.go_up()
             return True
+        if obj is self.crumbs and ev.type() == QEvent.MouseButtonDblClick:
+            self.go_up()          # v3.39（FL-1）：双击面包屑返回上一级
+            return True
+        if obj is self.file_list and ev.type() == QEvent.KeyPress:
+            if self._file_list_key(ev):   # v3.39（FL-3）
+                return True
         return super().eventFilter(obj, ev)
+
+    def _file_list_key(self, ev):
+        """v3.39（FL-3）：文件列表键盘快捷键 —— F2 重命名 / Del 删除（走既有
+        确认框）/ Enter 打开·进入（等价双击）/ F5 刷新。
+        作用域：列表有焦点（事件过滤器天然保证）+ 当前项有效。"""
+        key = ev.key()
+        if key not in (Qt.Key_F2, Qt.Key_Delete, Qt.Key_Return, Qt.Key_Enter, Qt.Key_F5):
+            return False
+        if key == Qt.Key_F5:
+            self._refresh_files()
+            return True
+        it = self.file_list.currentItem()
+        row = self.file_list.currentRow()
+        if row < 0 or it is None or self._file_mode == "blank":
+            return True       # 无当前项：吞键防误落其它行为，但不动作
+        data = it.data(Qt.UserRole)
+        if not data:
+            return False
+        _kind, p = data
+        if key == Qt.Key_F2:
+            self._file_rename(p)
+        elif key == Qt.Key_Delete:
+            self._file_delete(p)
+        else:
+            self._on_file_dbl(it)
+        return True
 
     def _on_file_dbl(self, item):
         data = item.data(Qt.UserRole)
@@ -431,6 +575,8 @@ class Sidebar(QWidget):
             self._cur_dir = p
             self._refresh_files()
             self._update_file_header()
+        elif kind == "ext":                    # v3.39（FL-4）：非 md → 外部程序
+            self._win.open_external(p)
         else:
             self._win.open_file(p)
 
@@ -448,7 +594,16 @@ class Sidebar(QWidget):
                 menu.addAction("新建 Markdown 文件", lambda: self._file_new_file(d))
                 menu.addAction("新建文件夹", lambda: self._file_new_dir(d))
                 menu.addSeparator()
+                sort_menu = menu.addMenu("排序方式")   # v3.39（FL-5）
+                for _label, _mode in (("名称升序", 0), ("名称降序", 1),
+                                      ("修改时间 新→旧", 2)):
+                    sort_menu.addAction(_label,
+                                        lambda m=_mode: self._set_sort_mode(m))
+                menu.addSeparator()
                 menu.addAction("刷新", self._refresh_files)
+            elif self._cur_dir is None and self._pinned_dirs():
+                # v3.39（FL-6）：「此电脑」层空白右键 —— 清理失效固定项
+                menu.addAction("清理失效的固定目录", self._clean_dead_pins)
             if menu.isEmpty():
                 return
             menu.exec(self.file_list.mapToGlobal(pos))
@@ -459,6 +614,14 @@ class Sidebar(QWidget):
         kind, p = data
         if kind == "dir":
             menu.addAction("进入文件夹", lambda: self._on_file_dbl(item))
+            # v3.39（FL-6）：固定 / 取消固定
+            menu.addSeparator()
+            if p in self._pinned_dirs():
+                menu.addAction("取消固定", lambda: self._unpin_dir(p))
+            else:
+                menu.addAction("固定此目录", lambda: self._pin_dir(p))
+        elif kind == "ext":                    # v3.39（FL-4）
+            menu.addAction("用外部程序打开", lambda: self._win.open_external(p))
         else:
             menu.addAction("打开", lambda: self._win.open_file(p))
         menu.addAction("在资源管理器中显示", lambda: self._win.show_in_explorer(p))
@@ -501,6 +664,21 @@ class Sidebar(QWidget):
         if self._file_mode == "blank":
             return  # 空白项模式：不显示任何内容
         if self._cur_dir is None:
+            # v3.39（FL-6）：固定目录分组置顶（双击直达；失效项灰显）
+            pins = self._pinned_dirs()
+            for p in pins:
+                it = QListWidgetItem("📌 " + (os.path.basename(p.rstrip("/\\")) or p))
+                it.setData(Qt.UserRole, ("dir", p))
+                if self._dir_usable(p):
+                    it.setToolTip(p)
+                else:
+                    it.setToolTip(p + "\n（目录已失效，可右键取消固定）")
+                    it.setForeground(self._muted_color())
+                self.file_list.addItem(it)
+            if pins:
+                sep = QListWidgetItem()
+                sep.setFlags(Qt.NoItemFlags)
+                self.file_list.addItem(sep)
             # 「此电脑」层：列出所有盘符
             for d in self._drives():
                 it = QListWidgetItem("💽 " + d)
@@ -519,17 +697,41 @@ class Sidebar(QWidget):
         files = sorted(n for n in names
                        if os.path.isfile(os.path.join(self._cur_dir, n))
                        and n.lower().endswith(self.MD_EXTS))
+        # v3.39（FL-4）：非 md 文件第三组（隐藏系统噪音；md 行为零变化）
+        others = sorted(n for n in names
+                        if os.path.isfile(os.path.join(self._cur_dir, n))
+                        and not n.lower().endswith(self.MD_EXTS)
+                        and not n.startswith(".") and n.lower() not in self.IGNORE_NAMES)
+        # v3.39（FL-5）：排序方式（文件夹恒在文件前，沿用现哲学）
+        mode = self._sort_mode()
+        if mode == 1:
+            files.reverse(); others.reverse()
+        elif mode == 2:
+            def _mtime(n):
+                try:
+                    return os.path.getmtime(os.path.join(self._cur_dir, n))
+                except OSError:
+                    return 0.0
+            files.sort(key=_mtime, reverse=True)
+            others.sort(key=_mtime, reverse=True)
         for n in dirs:
             p = os.path.join(self._cur_dir, n)
-            it = QListWidgetItem("📁 " + n)
+            it = QListWidgetItem(icon_folder(self._folder_accent), n)
             it.setData(Qt.UserRole, ("dir", p))
             it.setToolTip(p)
             self.file_list.addItem(it)
         for n in files:
             p = os.path.join(self._cur_dir, n)
-            it = QListWidgetItem("📄 " + n)
+            it = QListWidgetItem(icon_file(), n)
             it.setData(Qt.UserRole, ("file", p))
             it.setToolTip(p)
+            self.file_list.addItem(it)
+        for n in others:
+            p = os.path.join(self._cur_dir, n)
+            it = QListWidgetItem(icon_file(), n)
+            it.setData(Qt.UserRole, ("ext", p))
+            it.setToolTip(p + "\n（非 Markdown 文件，将用外部程序打开）")
+            it.setForeground(self._muted_color())
             self.file_list.addItem(it)
         # 高亮当前文件
         if self._cur_file:
@@ -538,54 +740,216 @@ class Sidebar(QWidget):
                 if d and d[1] == self._cur_file:
                     self.file_list.setCurrentRow(row)
                     break
-        self._apply_file_filter()   # v3.29d（UX #6）：刷新后保持过滤词生效
 
-    def _apply_file_filter(self):
-        """v3.29d（UX #6）：按过滤框关键词隐藏不匹配的条目（输入即筛）。"""
-        if not hasattr(self, "file_filter"):
+    # ============ v3.39（FL-5）：排序方式 ============
+    def _sort_mode(self):
+        try:
+            return int(self._win._settings.value("files/sortMode", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _set_sort_mode(self, mode):
+        self._win._settings.setValue("files/sortMode", int(mode))
+        self._refresh_files()
+
+    # ============ v3.39（FL-6）：常用目录固定 Pin ============
+    def _pinned_dirs(self):
+        """QSettings `sidebar/pinnedDirs`（QSettings 单元素列表会退化为 str，需归一）。"""
+        v = self._win._settings.value("sidebar/pinnedDirs", []) or []
+        if isinstance(v, str):
+            v = [v]
+        return [x for x in v if x]
+
+    def _pin_dir(self, p):
+        pins = self._pinned_dirs()
+        if p in pins:
             return
-        q = self.file_filter.text().strip().lower()
-        for row in range(self.file_list.count()):
-            it = self.file_list.item(row)
-            d = it.data(Qt.UserRole)
-            name = (d[1] if d else it.text()) or ""
-            it.setHidden(bool(q) and q not in os.path.basename(name).lower())
+        if len(pins) >= self.PIN_MAX:
+            self._win.show_status("固定目录最多 %d 个，请先取消固定再试" % self.PIN_MAX)
+            return
+        pins.append(p)
+        self._win._settings.setValue("sidebar/pinnedDirs", pins)
+        if self._cur_dir is None:
+            self._refresh_files()
+
+    def _unpin_dir(self, p):
+        pins = [x for x in self._pinned_dirs() if x != p]
+        self._win._settings.setValue("sidebar/pinnedDirs", pins)
+        if self._cur_dir is None:
+            self._refresh_files()
+
+    def _clean_dead_pins(self):
+        pins = [x for x in self._pinned_dirs() if self._dir_usable(x)]
+        self._win._settings.setValue("sidebar/pinnedDirs", pins)
+        if self._cur_dir is None:
+            self._refresh_files()
+        self._win.show_status("已清理失效的固定目录")
+
+    def _muted_color(self):
+        """主题禁用色（FL-4 灰显 / FL-6 失效固定项）。"""
+        from styles import palette
+        try:
+            return QColor(palette(getattr(self._win, "_theme", "light"))["text_muted"])
+        except Exception:      # noqa: BLE001 —— 主题键缺失时兜底
+            return QColor("#6b7280")
 
     def _update_file_header(self):
-        # 顶部始终显示当前所在文件夹（Typora 风格），双击逐级返回
+        # v3.44.3（DESIGN01）：对齐设计稿侧栏结构 —— 不再显示「当前选中目录名」行
+        # （设计稿只有 页签行 + 面包屑路径 + 列表），路径统一由面包屑承担；
+        # 仅 blank 模式保留头行提示。双击面包屑返回上一级的习惯不变。
         if self._file_mode == "blank":
             self.file_header.setText("空白")
             self.file_header.setToolTip("文件列表已设置为空白项\n（可在 系统设置→通用 修改）")
+            self.file_header.setVisible(True)
+            self._rebuild_crumbs()   # v3.39（FL-1）：blank 模式隐藏面包屑
             return
+        self.file_header.setVisible(False)
         if self._cur_dir is None:
-            self.file_header.setText("💻 此电脑")
             self.file_header.setToolTip("我的电脑（顶层）\n列表为所有盘符")
         else:
-            base = os.path.basename(self._cur_dir.rstrip("/\\")) or self._cur_dir
-            self.file_header.setText("📁 " + base)
             self.file_header.setToolTip(self._cur_dir + "\n双击返回上一级目录")
+        self._rebuild_crumbs()
+
+    # ============ v3.39（FL-1）：面包屑路径条 ============
+    def _rebuild_crumbs(self):
+        """路径段按钮（此电脑 › 盘 › 目录…），点击段一键直达；中间溢出折叠为
+        「…」（点击 = 返回上一级）。blank 模式整条隐藏。"""
+        lay = self._crumb_lay
+        while lay.count():
+            it = lay.takeAt(0)
+            w = it.widget()
+            if w is not None and w is not self._crumb_up:
+                w.deleteLater()
+        if self._file_mode == "blank":
+            self.crumbs.setVisible(False)
+            return
+        self.crumbs.setVisible(True)
+        # v3.44.6：顶层（此电脑层）无父级可回退，隐藏「↑上级」按钮，
+        # 避免其以带边框小框形态出现在「此电脑」前方形成多余占位。
+        if self._cur_dir is not None:
+            lay.addWidget(self._crumb_up)
+
+        def seg(text, tip, cb, cur=False):
+            b = QToolButton(self.crumbs)
+            b.setText(text)
+            b.setToolTip(tip)
+            b.setCursor(Qt.PointingHandCursor)
+            b.setAutoRaise(True)
+            b.setStyleSheet("QToolButton{border:none;padding:1px 3px;}"
+                            + ("font-weight:600;" if cur else ""))
+            b.clicked.connect(cb)
+            lay.addWidget(b)
+            arrow = QLabel("›", self.crumbs)
+            arrow.setStyleSheet("padding:0 1px;")
+            lay.addWidget(arrow)
+
+        if self._cur_dir is None:
+            seg("此电脑", "我的电脑（顶层）", lambda: None, cur=True)
+            lay.addStretch(1)
+            return
+        norm = self._cur_dir.rstrip("/\\")
+        # 拆段：盘符段 + 逐级目录
+        parts = []          # (显示名, 绝对路径)
+        drive = os.path.splitdrive(norm)[0]
+        if drive:
+            rest = norm[len(drive):].lstrip("/\\")
+            parts.append((drive + "\\", drive + "\\"))
+            if rest:
+                acc = drive + "\\"
+                for segn in re.split(r"[\\/]", rest):
+                    if segn:
+                        acc = os.path.join(acc, segn)
+                        parts.append((segn, acc))
+        else:
+            parts.append((norm or self._cur_dir, self._cur_dir))
+        seg("此电脑", "我的电脑（顶层）", self._enter_this_pc)
+        if len(parts) > 4:                       # 中间溢出折叠
+            seg("…", "返回上一级", self.go_up)
+            parts = parts[-3:]
+        for i, (name, pth) in enumerate(parts):
+            cur = i == len(parts) - 1
+            seg(name, pth if not cur else pth + "\n（当前目录）",
+                lambda pp=pth: self._enter_dir(pp), cur=cur)
+        lay.addStretch(1)
+
+    def _enter_this_pc(self):
+        self._cur_dir = None
+        self._cur_file = None
+        self._refresh_files()
+        self._update_file_header()
+
+    def _enter_dir(self, p):
+        if os.path.isdir(p):
+            self._cur_dir = p
+            self._refresh_files()
+            self._update_file_header()
 
     def _on_outline_clicked(self, item, _col=0):
         # v3.38（OUT-4）：附带标题文本，JS 侧校验缓存 index 是否过期
         self._win.jump_to_heading(item.data(0, Qt.UserRole),
                                   item.data(0, Qt.UserRole + 1))
 
-    # ================= v3.32.2（OUT-2）大纲右键：展开 / 折叠子节点 =================
+    # ================= 大纲右键（v3.43.0 扩为 6 项，对齐设计稿） =================
     def _on_outline_menu(self, pos):
-        """大纲节点右键菜单：展开 / 折叠子节点（递归作用于全部嵌套子级，
-        不影响其他分支）；无子节点时不弹菜单。"""
+        """大纲节点右键菜单：跳转到此处 / 复制标题文本 / 展开·折叠子节点 /
+        移到开头 / 移到末尾。前四项为只读操作，后两项复用拖拽调序通道整段移动。"""
         item = self.outline.itemAt(pos)
-        if item is None or item.childCount() == 0:
+        if item is None or item.isDisabled():   # 空态引导占位项不弹菜单
             return
         self.outline.setCurrentItem(item)
         menu = QMenu(self)
+        act_jump = menu.addAction("跳转到此处")
+        act_copy = menu.addAction("复制标题文本")
+        menu.addSeparator()
         act_exp = menu.addAction("展开子节点")
         act_col = menu.addAction("折叠子节点")
+        menu.addSeparator()
+        act_top = menu.addAction("移到开头")
+        act_end = menu.addAction("移到末尾")
         act = menu.exec(self.outline.viewport().mapToGlobal(pos))
-        if act is act_exp:
+        if act is act_jump:
+            self._on_outline_clicked(item)
+        elif act is act_copy:
+            text = item.data(0, Qt.UserRole + 1) or item.text(0)
+            QApplication.clipboard().setText(str(text))
+            win = getattr(self, "_win", None)
+            if win is not None and hasattr(win, "show_status"):
+                win.show_status("已复制标题文本")
+        elif act is act_exp:
             self._set_children_expanded(item, True)
         elif act is act_col:
             self._set_children_expanded(item, False)
+        elif act is act_top:
+            self._outline_move(item, True)
+        elif act is act_end:
+            self._outline_move(item, False)
+
+    def _outline_move(self, item, to_start):
+        """把节点移到同级开头 / 末尾，随后复用拖拽调序通道把整段写回文档。"""
+        try:
+            parent = item.parent()
+            if parent is None:
+                i = self.outline.indexOfTopLevelItem(item)
+                if i < 0:
+                    return
+                self.outline.takeTopLevelItem(i)
+                if to_start:
+                    self.outline.insertTopLevelItem(0, item)
+                else:
+                    self.outline.addTopLevelItem(item)
+            else:
+                i = parent.indexOfChild(item)
+                if i < 0:
+                    return
+                parent.takeChild(i)
+                if to_start:
+                    parent.insertChild(0, item)
+                else:
+                    parent.addChild(item)
+        except Exception:
+            return
+        self.outline.setCurrentItem(item)
+        self._on_outline_dropped()
 
     def _set_children_expanded(self, item, expanded):
         """递归设置 item 全部嵌套子级的展开态（不改动 item 自身）。"""
@@ -725,15 +1089,33 @@ class Sidebar(QWidget):
             self._win.show_status(f"文件列表已定位到默认路径 · {target}")
         return True
 
-    def restore_initial_dir(self):
-        """初始化定位：**上次访问目录（优先）→ 默认打开路径 → 根层**。
+    def restore_initial_dir(self, once=False):
+        """初始化定位（FLP-2 优先级链，v3.38）：
 
-        与既有加载逻辑兼容：本模型没有懒加载目录树，`_refresh_files()` 只列**当前一层**，
-        子目录在被逐级进入时才 listdir —— 因此这里只设 `_cur_dir` 并刷新一层，
-        不会预展开任何子树、也不会在启动时做递归扫描（大目录不阻塞启动）。
+        **上次成功打开文件目录 → 上次访问目录 → 配置默认路径 →
+        系统文档目录 → 当前工作目录 → 根层**
+
+        · `once=True`（首次打开文件列表 tab 的补定位）：已定位过则不再移动，
+          避免打断用户后续浏览。
+        · 与既有加载逻辑兼容：本模型没有懒加载目录树，`_refresh_files()` 只列
+          **当前一层**，子目录被逐级进入时才 listdir —— 不会预展开子树、
+          也不会在启动时做递归扫描（大目录不阻塞启动）。
         """
+        if once and self._initial_restored:
+            return False
+        self._initial_restored = True
         if self._file_mode == "blank":
             return False
+        # ① 最近一次成功打开文件的目录（FLP-2，QSettings files/lastOpenDir）
+        try:
+            lod = str(self._win.last_open_dir() or "")
+        except Exception:      # noqa: BLE001
+            lod = ""
+        if lod and self._dir_usable(lod):
+            self.set_root(os.path.abspath(lod))
+            self.highlight_dir(lod)
+            return True
+        # ② 上次访问的侧栏目录（FLP-1 既有，QSettings lastSidebarDir）
         try:
             last = str(self._win.last_sidebar_dir() or "")
         except Exception:      # noqa: BLE001
@@ -742,7 +1124,49 @@ class Sidebar(QWidget):
             self.set_root(os.path.abspath(last))
             self.highlight_dir(last)
             return True
-        return self.apply_default_dir(toast=False)
+        # ③ 配置的默认打开路径（FLP-1，系统设置可改）
+        if self.apply_default_dir(toast=False):
+            return True
+        # ③½ v3.39.2（PATH-1）：首次启动（无任何记录）→ 临时文档（草稿）目录 ——
+        # 应用自身的草稿保存处，比系统文档目录更贴近「打开上次工作区」的预期
+        try:
+            _draft = str(DRAFT_DIR or "")
+            if _draft and not os.path.isdir(_draft):
+                os.makedirs(_draft, exist_ok=True)
+        except Exception:      # noqa: BLE001 —— 建目录失败按不可用处理
+            _draft = ""
+        if _draft and self._dir_usable(_draft):
+            self.set_root(os.path.abspath(_draft))
+            self.highlight_dir(_draft)
+            return True
+        # ④⑤ 系统级回退：文档目录 → 当前工作目录（FLP-2，全部不可用则落 ⑥）
+        for cand in self._system_fallback_dirs():
+            self.set_root(os.path.abspath(cand))
+            self.highlight_dir(cand)
+            return True
+        # ⑥ 根层兜底
+        self._cur_dir = None
+        self._cur_file = None
+        self._refresh_files()
+        self._update_file_header()
+        return False
+
+    @staticmethod
+    def _system_fallback_dirs():
+        """FLP-2 系统级回退目录（按序取第一个可用项，可全空）：
+        系统文档目录（QStandardPaths DocumentsLocation）→ 当前工作目录。"""
+        out = []
+        try:
+            docs = QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+            if docs:
+                out.append(docs)
+        except Exception:      # noqa: BLE001
+            pass
+        try:
+            out.append(os.getcwd())
+        except Exception:      # noqa: BLE001
+            pass
+        return [p for p in out if Sidebar._dir_usable(p)]
 
     # 大纲默认展开层级：1~3 级直接可见，4 级及以下默认折叠（可手动展开）。
     # 级别可经 系统设置→通用 修改（OUTLINE_EXPAND_LEVEL 仅作默认值）
@@ -785,10 +1209,13 @@ class Sidebar(QWidget):
     def set_outline(self, headings):
         """大纲树构建：h1~h{级别} 按层级展开；更深层级挂到最近的上级标题下并默认折叠。"""
         self._last_headings = headings
+        # v3.43.0（OUT-LOOK）：级别过滤（0=全部；n=只看该级及其父级，保证祖先链不断层）
+        flt = int(getattr(self, "_outline_filter", 0) or 0)
         # 内容未变化时跳过重建，避免闪烁与点击丢失
         # v3.31（#8）：签名不含分节字数 —— 字数变化原地更新后缀，不重建树（不抢点击）
-        sig = json.dumps([[h.get("index"), h.get("level"), h.get("text")]
-                          for h in (headings or [])], ensure_ascii=False)
+        # v3.43.0：签名带上过滤级别 —— 切过滤必须重建
+        sig = json.dumps([flt, [[h.get("index"), h.get("level"), h.get("text")]
+                                for h in (headings or [])]], ensure_ascii=False)
         if sig == self._outline_sig:
             return
         self._outline_sig = sig
@@ -800,8 +1227,12 @@ class Sidebar(QWidget):
         self.outline.clear()
         self._outline_items = {}   # v3.31（#8）：标题块序号 -> 树节点
         last = {}   # 实际层级 -> 最近一个该层级条目
+        shown = 0   # v3.43.0：过滤后可见标题数（底部计数）
         for h in headings or []:
             real = int(h["level"])
+            if flt and real > flt:
+                continue          # 过滤掉更深的层级（父级保留，层级链不断）
+            shown += 1
             it = QTreeWidgetItem([h["text"]])
             it.setData(0, Qt.UserRole, h["index"])
             it.setData(0, Qt.UserRole + 1, h.get("text"))   # v3.38（OUT-4）：跳转校验用
@@ -824,6 +1255,12 @@ class Sidebar(QWidget):
                 del last[deeper]
             # 1~(级别-1) 级默认展开（保证第「级别」级可见）；该级别及更深默认折叠
             it.setExpanded(real < self._outline_level)
+        # v3.44.9（OUT-STRIP2）：底部「N 个标题」计数行已移除；仅保留空态引导
+        if not shown:
+            ph = QTreeWidgetItem(["用 # 开始一行即可出现在大纲"])
+            ph.setDisabled(True)
+            ph.setToolTip(0, "任意一行以 # 开头即成为标题，会出现在这里")
+            self.outline.addTopLevelItem(ph)
         self.outline.blockSignals(False)
         self._update_outline_words(headings or [])   # v3.31（#8）：分节字数后缀
         # 恢复选中项（按标题块序号匹配）
@@ -846,6 +1283,46 @@ class Sidebar(QWidget):
                 if hit is not None:
                     self.outline.setCurrentItem(hit)
                     break
+
+    # ================= v3.43.0（OUT-LOOK）大纲过滤 / 工具钮 =================
+    def set_outline_filter(self, level):
+        """设置级别过滤（0=全部 / 1~3=只看该级及其父级），立即按当前数据重建。
+        v3.44.8（OUT-STRIP）：大纲 UI 不再暴露 H1/H2/H3 过滤 chip，仅保留内部逻辑。"""
+        try:
+            level = max(0, min(3, int(level)))
+        except (TypeError, ValueError):
+            return
+        if level == getattr(self, "_outline_filter", 0):
+            return
+        self._outline_filter = level
+        self._outline_sig = None      # 强制重建（签名含过滤级别）
+        self.set_outline(self._last_headings)
+
+    def refresh_outline(self):
+        """重建大纲（按当前过滤与显示级别重新生成，不重新解析文档）。"""
+        self._outline_sig = None
+        self.set_outline(self._last_headings)
+        win = getattr(self, "_win", None)
+        if win is not None and hasattr(win, "show_status"):
+            win.show_status("大纲已重建")
+
+    def toggle_outline_fold(self):
+        """折叠全部 / 展开全部（按当前是否还有展开节点自动取反）。"""
+        tree = self.outline
+        any_open = False
+        stack = [tree.topLevelItem(i) for i in range(tree.topLevelItemCount())]
+        while stack:
+            it = stack.pop()
+            if it.isExpanded():
+                any_open = True
+                break
+            stack.extend(it.child(i) for i in range(it.childCount()))
+        if any_open:
+            tree.collapseAll()
+            self.btn_ol_fold.setText("⌃")
+        else:
+            tree.expandAll()
+            self.btn_ol_fold.setText("⌄")
 
     # ================= v3.31（#8）大纲分节字数 =================
     def set_outline_words(self, on):

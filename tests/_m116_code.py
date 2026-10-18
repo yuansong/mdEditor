@@ -102,6 +102,8 @@ def cstate():
               "langTitle:(cb.querySelector('.lang-btn')||{}).title||'',"
               "hasFs:!!cb.querySelector('.fs-btn'),"
               "hasCmd:!!cb.querySelector('.cmd-btn'),"
+              "hasLnum:!!cb.querySelector('.lnum-btn'),"
+              "hasWrap:!!cb.querySelector('.wrap-btn'),"
               "chips:[].slice.call(cb.querySelectorAll('.cmdbar .cmdc')).map(function(c){return c.textContent}),"
               "note:(cb.querySelector('.fold-note')||{}).textContent||'',"
               "noteShown:!!(cb.querySelector('.fold-note')&&getComputedStyle(cb.querySelector('.fold-note')).display!=='none'),"
@@ -148,8 +150,10 @@ setmd("```python\nx = 1\n```\n\n尾段")
 code_key("Escape")
 g = rawof()
 s = jj("(function(){var d=JSON.parse(window.__raw()||'{}');return JSON.stringify({i:d.editIdx})})()")
-check("A3 非末块 Esc → 跳到下一块（原有行为不变）",
-      len(g) == 2 and str(s.get("i")) == "1",
+# v3.38（WYS-4）：段落进入渲染态编辑白名单 → Esc 跳到下一块聚焦渲染态
+# （editIdx=-1），不再切入源码态 —— 与「光标/键盘进入段落保持渲染态」一致
+check("A3 非末块 Esc → 跳到下一块渲染态（WYS-4 后不切源码）",
+      len(g) == 2 and str(s.get("i")) == "-1",
       "editIdx=%s raw=%s" % (s.get("i"), json.dumps(g, ensure_ascii=False)))
 
 # ============ B 组：CODE-10 复制入口 ============
@@ -185,26 +189,29 @@ s = cstate()
 check("C4 短代码（3 行）不显示折叠三角",
       s.get("hasTri") is False, "hasTri=%s" % s.get("hasTri"))
 
-# ============ D 组：CODE-13 自动换行 ============
-note("========== D 组：CODE-13 自动换行开关 ==========")
+# ============ D 组：CODE-14 自动换行（顶栏平级按钮） ============
+note("========== D 组：CODE-14 自动换行顶栏按钮 ==========")
 setmd("```python\nx = 1\n```")
+s = cstate()
 click("#editor .codeblock .style-btn")
 pop = jj("(function(){var P=document.getElementById('stylepop');"
          "return JSON.stringify({show:P.classList.contains('show'),"
-         "wr:[].slice.call(P.querySelectorAll('[data-wr]')).map(function(e){return e.getAttribute('data-wr')})})})()")
-check("D1 风格弹层含「自动换行」项",
-      pop.get("show") and pop.get("wr") == ["1"], "pop=%s" % json.dumps(pop, ensure_ascii=False))
-click("#stylepop [data-wr]")
+         "wr:[].slice.call(P.querySelectorAll('[data-wr]')).length,"
+         "ln:[].slice.call(P.querySelectorAll('[data-ln]')).length,"
+         "st:[].slice.call(P.querySelectorAll('[data-st]')).length})})()")
+check("D1 风格弹层回归纯风格四项（无行号/换行项）",
+      pop.get("show") and pop.get("wr") == 0 and pop.get("ln") == 0 and pop.get("st") == 4,
+      "pop=%s" % json.dumps(pop, ensure_ascii=False))
+click("#editor .codeblock .wrap-btn")
 g = rawof()
 s = cstate()
-check("D2 开启 → raw 首行写 wrap=1 且块加 .wrap-on",
+check("D2 点顶栏「换行」→ raw 首行写 wrap=1 且块加 .wrap-on",
       g and "wrap=1" in g[0] and "wrap-on" in str(s.get("cls")),
       "raw=%s cls=%s" % (json.dumps(g, ensure_ascii=False), s.get("cls")))
-click("#editor .codeblock .style-btn")
-click("#stylepop [data-wr]")
+click("#editor .codeblock .wrap-btn")
 g = rawof()
 s = cstate()
-check("D3 再点 → wrap=0 且去掉 .wrap-on",
+check("D3 再点「换行」→ wrap=0 且去掉 .wrap-on",
       g and "wrap=0" in g[0] and "wrap-on" not in str(s.get("cls")),
       "raw=%s cls=%s" % (json.dumps(g, ensure_ascii=False), s.get("cls")))
 
@@ -221,41 +228,39 @@ s = cstate()
 check("E3 全屏态 Esc → 退出全屏（不再误跳出块）",
       "fs" not in str(s.get("cls")), "cls=%s" % s.get("cls"))
 
-# ============ F 组：常见命令提示 ============
-note("========== F 组：常见命令提示 ==========")
+# ============ F 组：命令项已移除（CODE-14） ============
+note("========== F 组：命令入口已移除 ==========")
 setmd("```python\n```")
 s = cstate()
-check("F1 空 python 块 → 下方铺出命令 chips（含安装依赖）",
-      s.get("chips") and any("安装依赖" in c for c in s.get("chips")),
-      "chips=%s" % json.dumps(s.get("chips"), ensure_ascii=False))
-click("#editor .codeblock .cmdbar .cmdc")
-g = rawof()
-check("F2 点 chip → 命令写入代码区并回写源码",
-      g and "pip install -r requirements.txt" in g[0],
-      "raw=%s" % json.dumps(g, ensure_ascii=False))
+check("F1 空 python 块 → 不再铺命令 chips",
+      not s.get("chips"), "chips=%s" % json.dumps(s.get("chips"), ensure_ascii=False))
 
 setmd("```python\nprint(1)\n```")
 s = cstate()
-check("F3 非空块 → 无命令条，但有顶栏「命令」按钮",
-      s.get("hasCmd") and not s.get("chips"), "hasCmd=%s chips=%s" % (s.get("hasCmd"), s.get("chips")))
-click("#editor .codeblock .cmd-btn")
-pop = jj("(function(){var P=document.getElementById('cmdpop');"
-         "return JSON.stringify({show:P.classList.contains('show'),"
-         "items:[].slice.call(P.querySelectorAll('[data-cmd]')).length})})()")
-check("F4 点「命令」→ 弹层列出该语言命令",
-      pop.get("show") and int(pop.get("items") or 0) >= 4,
-      "pop=%s" % json.dumps(pop, ensure_ascii=False))
-click("#cmdpop [data-cmd]")
-g = rawof()
-check("F5 点命令 → 追加到新行（原有内容不丢）",
-      g and "print(1)" in g[0] and "pip install" in g[0],
-      "raw=%s" % json.dumps(g, ensure_ascii=False))
+check("F2 顶栏无「命令」按钮",
+      not s.get("hasCmd"), "hasCmd=%s" % s.get("hasCmd"))
 
 setmd("```text\nhello\n```")
 s = cstate()
-check("F6 无收录命令的语言 → 不显示命令按钮与命令条",
+check("F3 无收录命令的语言 → 同样无命令入口",
       not s.get("hasCmd") and not s.get("chips"),
       "hasCmd=%s chips=%s" % (s.get("hasCmd"), s.get("chips")))
+
+# ============ H 组：CODE-14 行号顶栏平级按钮 ============
+note("========== H 组：行号顶栏平级按钮 ==========")
+setmd("```python\nx = 1\n```")
+s = cstate()
+check("H1 顶栏有「行号」「换行」平级按钮（lang-btn 同款）",
+      s.get("hasLnum") is True and s.get("hasWrap") is True,
+      "hasLnum=%s hasWrap=%s" % (s.get("hasLnum"), s.get("hasWrap")))
+click("#editor .codeblock .lnum-btn")
+g = rawof()
+check("H2 点「行号」→ raw 首行写 lnum=0（默认开 → 关）",
+      g and "lnum=0" in g[0], "raw=%s" % json.dumps(g, ensure_ascii=False))
+click("#editor .codeblock .lnum-btn")
+g = rawof()
+check("H3 再点「行号」→ lnum=1",
+      g and "lnum=1" in g[0], "raw=%s" % json.dumps(g, ensure_ascii=False))
 
 log("")
 log("========== 汇总：%d 断言，FAIL %d ==========" % (TOTAL[0], FAIL[0]))
