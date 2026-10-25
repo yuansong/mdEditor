@@ -25,7 +25,7 @@
 
 ### `competitive/` — 竞品研究
 - `COMPETITIVE.md` — 竞品分析总览（SoloMD 等，随版本持续更新）
-- `scorecard-v3.48.11.md` — Markdown 编辑器评分榜
+- `scorecard-v3.48.24.md` — Markdown 编辑器评分榜（v3.48.24 全量复评，mdEditor 首次登顶 85.5）
 
 ### `ui-redesign/` — UI 重设计原型
 - 各视觉风格效果图：`00_界面风格总览.html`、`01~06_主界面效果图-*.html`（Win / Mac / Code / Ribbon / Notion / Zen）
