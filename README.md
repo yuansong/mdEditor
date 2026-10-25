@@ -3,7 +3,7 @@
 Typora 风格的**所见即所得**（块级 WYSIWYG）Markdown 编辑器，**开源、跨平台**的桌面应用（Windows / Linux / macOS）。
 Python + PySide6 (QtWebEngine) 外壳 + 单文件 JS 编辑内核 `src/editor.html`，全部能力离线可用（KaTeX / Mermaid 均内置）。
 
-> 当前版本 **v3.48.25**（`src/config.py: APP_VERSION`）。
+> 当前版本 **v3.48.30**（`src/config.py: APP_VERSION`）。
 > 仓库：<https://github.com/yuansong/mdEditor> · 许可：**Apache-2.0**（见 [LICENSE](LICENSE)）。
 > 「现在能用什么」看本文；「每个版本动了什么」看 [`CHANGELOG.md`](CHANGELOG.md)；「模块级功能明细」看 [`docs/功能列表-v3.31.md`](docs/功能列表-v3.31.md)；「开发 / AI 协作规则」看 [`AGENTS.md`](AGENTS.md)。
 
@@ -14,13 +14,15 @@ Python + PySide6 (QtWebEngine) 外壳 + 单文件 JS 编辑内核 `src/editor.ht
 ### 方式 1：直接运行打包产物（推荐，无需装环境）
 
 ```
-dist144\mdEditor\mdEditor.exe                # 双击运行
-dist144\mdEditor\mdEditor.exe path/to/note.md # 命令行带文件打开
+distNN\mdEditor\mdEditor.exe                # 双击运行
+distNN\mdEditor\mdEditor.exe D:\docs\note.md # 命令行带文件打开
 ```
 
+> `NN` 是**每次打包递增的滚动序号**（如 `dist185`），属本地产物编号，文档不写死具体值；请以你本地存在的最大序号目录为准。
+
 - 采用 PyInstaller **onedir** 模式：整个 `mdEditor` 文件夹缺一不可，只拷 exe 无法运行。
-- `build144\` / `spec144\` 是打包中间产物，**其中的 exe 不能直接运行**，属正常现象。
-- dist144 为最近一次成功打包的产物；`build_exe.ps1` 已指向 `dist144`。要体验最新代码请用方式 2 从源码运行。
+- `buildNN\` / `specNN\` 是打包中间产物，**其中的 exe 不能直接运行**，属正常现象。
+- 最近一次成功打包的产物即本地序号最大的 `distNN`；另有跨平台脚本 `build.py`（输出 `dist/mdEditor/`）。要体验最新代码请用方式 2 从源码运行。
 
 ### 方式 2：从源码运行
 
@@ -28,7 +30,7 @@ dist144\mdEditor\mdEditor.exe path/to/note.md # 命令行带文件打开
 
 | 组件 | 版本 | 说明 |
 |---|---|---|
-| Python | 3.13.x | 项目使用 venv：`建议使用 Python 3.13.x（venv 或系统 Python）` |
+| Python | 3.13.x | 项目使用 venv：`C:\Users\Administrator\.workbuddy\binaries\python\envs\default` |
 | PySide6 | 6.11.2 | 必须含 `QtWebEngineWidgets` |
 | python-docx | — | 导出 Word，缺失时该菜单项降级提示 |
 | pypdf | — | PDF 书签，缺失时 PDF 仍可导出但无书签 |
@@ -40,7 +42,7 @@ pip install PySide6 python-docx pypdf
 
 # 运行
 python src/main.py                 # 空文档启动
-python src/main.py path/to/note.md # 打开指定文件
+python src/main.py D:\docs\note.md # 打开指定文件
 ```
 
 启动后：单实例互斥（二次启动会把文件参数转发给已运行实例）；命令行只取第一个存在的 `.md/.markdown/.mdown/.txt` 参数。
@@ -51,9 +53,9 @@ python src/main.py path/to/note.md # 打开指定文件
 
 | 区域 | 内容 |
 |---|---|
-| 菜单栏 | 文件（导出收「导出▸」子菜单）/ 编辑 / 视图 / 工具（系统设置·快捷键设置·历史版本·迁移图片·归档）/ 帮助；**右端视图状态区**：专注 / 打字机快捷开关 + 写作 \| 源码 \| 分屏分段钮（单击直切） |
+| 菜单栏 | 文件（「导出」子菜单）/ 编辑 / 视图 / 外观（界面风格·主题·图表风格·代码风格）/ 工具（系统设置·快捷键设置·历史版本·迁移图片·归档）/ 帮助；**右端视图状态区**：专注 / 打字机快捷开关 + 写作 \| 源码 \| 分屏分段钮（单击直切） |
 | 左侧竖向工具栏 | 侧栏开关（面板图标）、新建、打开、保存、撤销、重做、查找、**历史版本**、系统设置 |
-| 侧栏（三页） | 文件列表（目录树）、大纲（级别 1~6、拖拽调序、分节字数）、搜索（跨文件全文检索） |
+| 侧栏（三页） | 文件列表（磁盘目录树）、书籍列表（章节目录树）、大纲（级别 1~6、拖拽调序、分节字数）；跨文件全文检索在「查找 / 替换 → 全局搜索」页签（`Ctrl+Shift+F`） |
 | 编辑区 | 块级渲染态直编；写作 / 源码 / 分屏三模式（`Ctrl+Shift+D` 分屏，双栏 160ms 同步滚动）；空行占位提示「输入 / …」 |
 | 状态栏 | 消息区 · **模式**（点击循环）· 字数与阅读时长（点击明细）· 行列位置 · **缩放**（点击重置 100%）· **保存态**（✓ 已保存 / ● 未保存 / ⟳ 保存中）· 当前块类型 · ⌘ 命令入口 |
 
@@ -91,11 +93,12 @@ KaTeX 行内 `$...$` 与块级（25 个模板，离线）· Mermaid 七类图表
 | PDF | WebEngine 打印，按标题写入 PDF 书签（依赖 pypdf） |
 | Word (.docx) | python-docx，代码块灰底等宽，图表位图化嵌 PNG |
 | EPUB 3 | 纯标准库，按一级标题分章 + nav 目录 |
+| 图片 (PNG) | 当前文档 / 选区导出为 PNG 位图 |
 | pandoc 通道 | 配置了路径则优先走 pandoc（`gfm+tex_math_dollars --toc`） |
 | 复制为 HTML | 富文本进剪贴板，可直接粘到 Word / 公众号 |
 
 ### 外观与设置
-六套主题（浅色 / 青空 / 护眼米黄 / 深色 / 墨夜 / 熊猫，窗口 + 编辑区 + 弹层同步换肤）· 缩放 80%~160% · 系统设置四页（外观 / 编辑器 / 通用 / **模板**）· 快捷键自定义与冲突检测 · 8 个内置模板 + 自建模板统一管理（名称上限 10 字，可改名 / 改内容 / 排序 / 恢复内置，也可在侧栏文件右键「设为模板…」）。
+六套主题（浅色 / 青空 / 护眼米黄 / 深色 / 墨夜 / 熊猫，窗口 + 编辑区 + 弹层同步换肤）· 缩放 80%~160% · 系统设置五页（**通用 / 编辑器 / 写作与输入 / 模板 / AI 连接**）· 快捷键自定义与冲突检测 · 8 个内置模板 + 自建模板统一管理（名称上限 10 字，可改名 / 改内容 / 排序 / 恢复内置，也可在侧栏文件右键「设为模板…」）。
 
 ---
 
@@ -112,10 +115,11 @@ KaTeX 行内 `$...$` 与块级（25 个模板，离线）· Mermaid 七类图表
 | `Ctrl+Shift+L` | 侧栏开关 | `Ctrl+Shift+E` / `O` | 文件列表 / 大纲 |
 | `Ctrl+Shift+[` / `]` | 折叠 / 展开全部标题 | `Ctrl+Shift+H` | 历史版本 |
 | `Ctrl+=` / `Ctrl+-` | 编辑区放大 / 缩小（重置点状态栏缩放格） | `Ctrl+PgUp` / `PgDn` | 上 / 下一标签页 |
-| `F1` / `F11` | 快捷键一览 / 全屏 | `Ctrl+Z` / `Y` | 撤销 / 重做（300 步） |
+| `F11` / `F12` | 全屏 / 使用手册 | `Ctrl+Z` / `Y` | 撤销 / 重做（300 步） |
 | `Tab` / `Shift+Tab` | 表格跳格 / 代码缩进 | `Ctrl+Enter` | 从代码块 / 引用中跳出 |
 
-> 全部快捷键均可在「工具 → 快捷键设置…」自定义；以 `F1` 一览中的实际值为准。`Ctrl+0` 仍为「正文」段落样式，缩放重置走状态栏缩放格。
+> 全部快捷键均可在「工具 → 快捷键设置…」自定义；以该设置页与《使用手册》第 10 章的实际值为准。`Ctrl+0` 仍为「正文」段落样式，缩放重置走状态栏缩放格。
+> 提示：原 F1「快捷键一览」弹窗已于 v3.44.31 移除，快捷键统一收录于《使用手册》（`F12` 或「帮助 → 使用手册」）。
 
 ---
 
@@ -138,7 +142,7 @@ mdEditor/
 │  └─ mermaid/         离线 Mermaid（随包分发）
 ├─ tests/              测试脚本与运行结果（222 个 .py；结果 .txt 不入 Git）
 ├─ docs/               规范 / 审计 / 测试报告 / 功能清单（见第七节）
-├─ build_exe.ps1       PyInstaller 一键打包（当前指向 dist144）
+├─ build_exe.ps1       PyInstaller 一键打包（输出目录见脚本内 --distpath，即 distNN）
 ├─ distNN/mdEditor/    打包产物（gitignored）
 ├─ CHANGELOG.md        逐版本变更总览
 ├─ OPTIMIZATION.md     交互优化清单
@@ -157,7 +161,7 @@ mdEditor/
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File build_exe.ps1
 ```
 
-- 输出到 `dist144\mdEditor\`，日志写 `_build_log.txt`。
+- 输出到 `distNN\mdEditor\`（`NN` 为滚动序号，见脚本内 `--distpath`），日志写 `_build_log.txt`。
 - **不要加 `--clean`**（会重建全部缓存、显著变慢且易出错）。
 - 重打同一 `distNN` 前先删掉 `distNN\mdEditor` 目录（目录被占用时用 `robocopy 空目录 目标 /MIR` 清空再删壳）。
 - `--add-data` 必须用**绝对路径**；脚本已带 `mdeditor.ico`、KaTeX、Mermaid、Qt 中文翻译。
