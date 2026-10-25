@@ -53,14 +53,28 @@ if [ ! -d "$APP_BUNDLE" ]; then
 fi
 
 # ---- codesign ----
+# QtWebEngine 在 macOS hardened runtime（--options runtime）下需要 JIT 相关授权，
+# 否则应用启动后 WebEngine 渲染进程无法启动（白屏 / 崩溃）。entitlements.plist 声明：
+#   allow-jit / allow-unsigned-executable-memory / disable-library-validation
+ENTITLEMENTS="${ROOT}/macos/entitlements.plist"
 CERT_ID="${MACOS_CERT_ID:-}"
 if [ -n "$CERT_ID" ]; then
-    echo "==> [mac] 用证书签名：$CERT_ID"
-    codesign --force --options runtime --timestamp --deep --sign "$CERT_ID" "$APP_BUNDLE"
+    _sign_id="$CERT_ID"
+    _sign_opts=(--options runtime --timestamp)
 else
-    echo "==> [mac] 未配置 MACOS_CERT_ID，执行 ad-hoc 签名（仅本机可运行，分发需真证书）"
-    codesign --force --deep --sign - "$APP_BUNDLE"
+    _sign_id="-"            # ad-hoc：本地可运行，分发需真证书 + 公证
+    _sign_opts=()
 fi
+
+# 先签署嵌套的 QtWebEngineProcess 助手（它同样需要 JIT 授权，否则运行时起不来渲染进程）
+_QT_HELPER="$APP_BUNDLE/Contents/Frameworks/QtWebEngineCore.framework/Helpers/QtWebEngineProcess.app"
+if [ -d "$_QT_HELPER" ]; then
+    echo "==> [mac] 签署嵌套 QtWebEngineProcess 助手"
+    codesign --force "${_sign_opts[@]}" --entitlements "$ENTITLEMENTS" --sign "$_sign_id" "$_QT_HELPER"
+fi
+
+echo "==> [mac] 签署主程序（${CERT_ID:+证书}${CERT_ID:-ad-hoc}）"
+codesign --force "${_sign_opts[@]}" --entitlements "$ENTITLEMENTS" --deep --sign "$_sign_id" "$APP_BUNDLE"
 
 # ---- dmg ----
 DMG="${INSTALLER_DIR}/${APP_NAME}-macOS.dmg"
