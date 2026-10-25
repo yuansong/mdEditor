@@ -1,9 +1,10 @@
 # mdEditor
 
-Typora 风格的**所见即所得**（块级 WYSIWYG）Markdown 编辑器，Windows 桌面单机应用。
+Typora 风格的**所见即所得**（块级 WYSIWYG）Markdown 编辑器，**开源、跨平台**的桌面应用（Windows / Linux / macOS）。
 Python + PySide6 (QtWebEngine) 外壳 + 单文件 JS 编辑内核 `src/editor.html`，全部能力离线可用（KaTeX / Mermaid 均内置）。
 
-> 当前版本 **v3.42.0**（`src/config.py: APP_VERSION`）。
+> 当前版本 **v3.48.25**（`src/config.py: APP_VERSION`）。
+> 仓库：<https://github.com/yuansong/mdEditor> · 许可：**Apache-2.0**（见 [LICENSE](LICENSE)）。
 > 「现在能用什么」看本文；「每个版本动了什么」看 [`CHANGELOG.md`](CHANGELOG.md)；「模块级功能明细」看 [`docs/功能列表-v3.31.md`](docs/功能列表-v3.31.md)；「开发 / AI 协作规则」看 [`AGENTS.md`](AGENTS.md)。
 
 ---
@@ -13,13 +14,13 @@ Python + PySide6 (QtWebEngine) 外壳 + 单文件 JS 编辑内核 `src/editor.ht
 ### 方式 1：直接运行打包产物（推荐，无需装环境）
 
 ```
-dist143\mdEditor\mdEditor.exe                # 双击运行
-dist143\mdEditor\mdEditor.exe D:\docs\note.md # 命令行带文件打开
+dist144\mdEditor\mdEditor.exe                # 双击运行
+dist144\mdEditor\mdEditor.exe D:\docs\note.md # 命令行带文件打开
 ```
 
 - 采用 PyInstaller **onedir** 模式：整个 `mdEditor` 文件夹缺一不可，只拷 exe 无法运行。
-- `build143\` / `spec143\` 是打包中间产物，**其中的 exe 不能直接运行**，属正常现象。
-- dist143 为最近一次成功打包的产物；`build_exe.ps1` 已指向 `dist143`。要体验最新代码请用方式 2 从源码运行。
+- `build144\` / `spec144\` 是打包中间产物，**其中的 exe 不能直接运行**，属正常现象。
+- dist144 为最近一次成功打包的产物；`build_exe.ps1` 已指向 `dist144`。要体验最新代码请用方式 2 从源码运行。
 
 ### 方式 2：从源码运行
 
@@ -137,7 +138,7 @@ mdEditor/
 │  └─ mermaid/         离线 Mermaid（随包分发）
 ├─ tests/              测试脚本与运行结果（222 个 .py；结果 .txt 不入 Git）
 ├─ docs/               规范 / 审计 / 测试报告 / 功能清单（见第七节）
-├─ build_exe.ps1       PyInstaller 一键打包（当前指向 dist62）
+├─ build_exe.ps1       PyInstaller 一键打包（当前指向 dist144）
 ├─ distNN/mdEditor/    打包产物（gitignored）
 ├─ CHANGELOG.md        逐版本变更总览
 ├─ OPTIMIZATION.md     交互优化清单
@@ -156,7 +157,7 @@ mdEditor/
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File build_exe.ps1
 ```
 
-- 输出到 `dist62\mdEditor\`，日志写 `_build_log.txt`。
+- 输出到 `dist144\mdEditor\`，日志写 `_build_log.txt`。
 - **不要加 `--clean`**（会重建全部缓存、显著变慢且易出错）。
 - 重打同一 `distNN` 前先删掉 `distNN\mdEditor` 目录（目录被占用时用 `robocopy 空目录 目标 /MIR` 清空再删壳）。
 - `--add-data` 必须用**绝对路径**；脚本已带 `mdeditor.ico`、KaTeX、Mermaid、Qt 中文翻译。
@@ -236,3 +237,12 @@ python tests/_run_full.py                     # 全量回归（语法+内核+探
 - `src/editor.html` 是 CRLF 单文件内核：改动用一次性补丁脚本（读时归一化 `\r\n`→`\n`，写时恢复），禁止同文件并行编辑。
 - 同源常量需多处同步（如 `config.MMD_THEMES` ↔ `editor.html MMD_THEMES`、模板名称上限三处、`BUILTIN_TEMPLATES` ↔ `TPL_BUILTIN`）。
 - 提交前必须跑通 `tests/_syntax_check.py` 与 `node tests/test_core.js`。
+
+---
+
+## 十一、开源与许可
+
+- **协议**：Apache License 2.0（见 [LICENSE](LICENSE)）。可自由使用、修改、再分发，含商用；再分发须保留版权与许可声明，修改过的文件须标注改动。
+- **仓库**：<https://github.com/yuansong/mdEditor>
+- **问题反馈**：GitHub Issues。
+- **参与贡献**：欢迎 Issue / Pull Request；改动前请先阅读 [`AGENTS.md`](AGENTS.md) 的开发规范。
