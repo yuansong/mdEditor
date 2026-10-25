@@ -1,3 +1,4 @@
+import os
 # -*- coding: utf-8 -*-
 """m123：v3.38 ALIGN-1 —— 居中标题（tagForm）与块转换 / 回写的交互验收
 
@@ -8,7 +9,7 @@ import json, os, sys
 
 os.environ.setdefault("QT_OPENGL", "software")
 os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
-sys.path.insert(0, "E:/WorkBuddy/md-editor/src")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QEventLoop, QTimer
 

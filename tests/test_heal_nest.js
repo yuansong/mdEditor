@@ -1,6 +1,7 @@
+const path = require('path');
 // test_heal_nest.js — NEST-1 healCrossedLine 单元测试（node 直接提取 editor.html HEAL 段）
 const fs = require('fs');
-const s = fs.readFileSync('E:/WorkBuddy/md-editor/src/editor.html', 'utf8');
+const s = fs.readFileSync(path.join(__dirname, '..', 'src', 'editor.html'), 'utf8');
 const a = s.indexOf('var HEAL_TOKENS');
 const b = s.indexOf('/* 整块自愈');
 if (a < 0 || b < 0 || b <= a) { console.log('EXTRACT FAIL'); process.exit(1); }

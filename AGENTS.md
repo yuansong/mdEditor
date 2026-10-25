@@ -2,7 +2,7 @@
 
 > 本文件是 **mdEditor 项目**的协作契约。无论是人类开发者还是 AI 会话，改动本仓库前都按同一套规则工作。
 > 阅读顺序：`README.md`（项目是什么）→ 本文件（怎么改）→ `docs/功能列表-v3.31.md`（模块明细）→ `CHANGELOG.md`（历史）。
-> 适用版本：**v3.38.0**　项目根：`E:\WorkBuddy\md-editor`
+> 适用版本：**v3.38.0**　项目根：`仓库根目录（克隆后的 mdEditor）`
 
 ---
 
@@ -20,8 +20,8 @@
 
 | 工具 | 路径 |
 |---|---|
-| Python（venv，GUI 测试必须用它） | `C:\Users\Administrator\.workbuddy\binaries\python\envs\default\Scripts\python.exe` |
-| Node（内核单测 / 语法检查） | `C:/Users/Administrator/.workbuddy/binaries/node/versions/22.22.2-3/node.exe` |
+| Python（venv，GUI 测试必须用它） | `建议使用 Python 3.13.x（venv 或系统 Python）\Scripts\python.exe` |
+| Node（内核单测 / 语法检查） | `Node 22 的 node 解释器` |
 | Git | 仓库已初始化，branch `main` |
 
 **Bash 每次都要先重置 PATH**（本机 shim 会污染 `PATH`，否则 `dirname` / `cd` 不可用）：

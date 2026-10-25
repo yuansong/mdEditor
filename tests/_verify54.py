@@ -1,8 +1,9 @@
+import os
 # -*- coding: utf-8 -*-
 """dist54 三重校验（第一重：SHA256 + 特征串 + 资产）"""
 import hashlib, os, io
 
-root = r"E:\WorkBuddy\md-editor"
+root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 src = os.path.join(root, "src", "editor.html")
 dst = os.path.join(root, "dist54", "mdEditor", "_internal", "editor.html")
 out = []

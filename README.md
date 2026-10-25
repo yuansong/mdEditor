@@ -15,7 +15,7 @@ Python + PySide6 (QtWebEngine) 外壳 + 单文件 JS 编辑内核 `src/editor.ht
 
 ```
 dist144\mdEditor\mdEditor.exe                # 双击运行
-dist144\mdEditor\mdEditor.exe D:\docs\note.md # 命令行带文件打开
+dist144\mdEditor\mdEditor.exe path/to/note.md # 命令行带文件打开
 ```
 
 - 采用 PyInstaller **onedir** 模式：整个 `mdEditor` 文件夹缺一不可，只拷 exe 无法运行。
@@ -28,7 +28,7 @@ dist144\mdEditor\mdEditor.exe D:\docs\note.md # 命令行带文件打开
 
 | 组件 | 版本 | 说明 |
 |---|---|---|
-| Python | 3.13.x | 项目使用 venv：`C:\Users\Administrator\.workbuddy\binaries\python\envs\default` |
+| Python | 3.13.x | 项目使用 venv：`建议使用 Python 3.13.x（venv 或系统 Python）` |
 | PySide6 | 6.11.2 | 必须含 `QtWebEngineWidgets` |
 | python-docx | — | 导出 Word，缺失时该菜单项降级提示 |
 | pypdf | — | PDF 书签，缺失时 PDF 仍可导出但无书签 |
@@ -40,7 +40,7 @@ pip install PySide6 python-docx pypdf
 
 # 运行
 python src/main.py                 # 空文档启动
-python src/main.py D:\docs\note.md # 打开指定文件
+python src/main.py path/to/note.md # 打开指定文件
 ```
 
 启动后：单实例互斥（二次启动会把文件参数转发给已运行实例）；命令行只取第一个存在的 `.md/.markdown/.mdown/.txt` 参数。

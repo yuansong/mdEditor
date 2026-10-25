@@ -13,7 +13,7 @@ import os
 import sys
 import tempfile
 
-sys.path.insert(0, "E:/WorkBuddy/md-editor/src")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 
 from PySide6.QtCore import QEvent, QEventLoop, QTimer, Qt
 from PySide6.QtGui import QMouseEvent

@@ -5,7 +5,7 @@ import json
 import sys
 import time
 
-sys.path.insert(0, r"E:\WorkBuddy\md-editor\src")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 import os
 LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_smoke15.txt")
 

@@ -10,6 +10,9 @@
 import json
 import os
 import sys
+import tempfile
+
+MDED29_FAKEDOC = os.path.join(tempfile.gettempdir(), "mded29_fakedoc")
 
 os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu"
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
@@ -150,7 +153,8 @@ check("高亮动作写回 ==世界==", len(rw) > 0 and "==世界==" in rw[0], rw
 # ==================== 3) 图片右键菜单（v3.30.17：操作收进右键，悬浮按钮条移除） ====================
 # v3.29c：存储类菜单项依赖 __docDir（文档已保存）。此前靠 QSettings 会话残留，
 # 环境相关不可靠 → 显式 setDocDir，本节结束再清空
-js("window.setDocDir('C:/Users/Administrator/AppData/Local/Temp/mded29_fakedoc')")
+os.makedirs(MDED29_FAKEDOC, exist_ok=True)
+js("window.setDocDir(" + json.dumps(MDED29_FAKEDOC) + ")")
 IMG = "![图](测试.assets/00001_图.png)\n\n尾段"
 js(f"window.setMarkdown({json.dumps(IMG)})")
 wait(700)

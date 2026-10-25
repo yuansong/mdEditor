@@ -1,6 +1,10 @@
 ﻿# mdEditor 一键打包脚本（v3.44.32 批次：修复 Office 固定/收拢按钮重复 connect → dist129）
 $ErrorActionPreference = "Stop"
-$pyi = "C:\Users\Administrator\.workbuddy\binaries\python\envs\default\Scripts\pyinstaller.exe"
+# PyInstaller / PySide6 路径从当前 Python 环境动态解析（不再硬编码），
+# 以便在任何机器（venv 或系统 Python）上构建。
+$pyi = if ($env:VIRTUAL_ENV) { Join-Path $env:VIRTUAL_ENV "Scripts/pyinstaller.exe" } else { "pyinstaller" }
+$pyside6 = & python -c "import PySide6, os; print(os.path.dirname(PySide6.__file__))"
+
 $root = $PSScriptRoot
 Set-Location $root
 # 注意：--add-data 必须用绝对路径（--specpath 自定义时相对路径会解析错误）
@@ -17,8 +21,8 @@ $ErrorActionPreference = "Continue"
     --add-data "$root\src\katex;katex" `
     --add-data "$root\src\mermaid;mermaid" `
     --add-data "$root\src\uistyles;uistyles" `
-    --add-data "C:\Users\Administrator\.workbuddy\binaries\python\envs\default\Lib\site-packages\PySide6\translations\qt_zh_CN.qm;translations" `
-    --add-data "C:\Users\Administrator\.workbuddy\binaries\python\envs\default\Lib\site-packages\PySide6\translations\qtbase_zh_CN.qm;translations" `
+    --add-data "$pyside6\translations\qt_zh_CN.qm;translations" `
+    --add-data "$pyside6\translations\qtbase_zh_CN.qm;translations" `
     src\main.py *>&1 | Out-String | Out-File "$root\_build_log129.txt" -Encoding utf8
 Write-Output "exit=$LASTEXITCODE"
 

@@ -1,7 +1,8 @@
+import os
 # -*- coding: utf-8 -*-
 import hashlib, os, io
 
-root = r"E:\WorkBuddy\md-editor"
+root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 src = os.path.join(root, "src", "editor.html")
 dst = os.path.join(root, "dist53", "mdEditor", "_internal", "editor.html")
 out = []

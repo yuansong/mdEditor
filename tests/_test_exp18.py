@@ -1,8 +1,9 @@
+import os
 # -*- coding: utf-8 -*-
 """v3.30.18e：导出批次快速单测（FN-2 / DL-5 / IMG-2 嵌入逻辑）。"""
 import io, os, sys, tempfile
 
-sys.path.insert(0, r"E:\WorkBuddy\md-editor\src")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 import exporters as ex
 
 out = []
@@ -51,6 +52,6 @@ if ok2:
     check("epub dl/dt/dd", "<dl>" in body and "<dt>" in body and "<dd>定义A</dd>" in body, None)
     check("epub 无字面 [^", "[^" not in body, None)
 
-with io.open(r"E:\WorkBuddy\md-editor\tests\_exp18.txt", "w", encoding="utf-8") as f:
+with io.open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "_exp18.txt"), "w", encoding="utf-8") as f:
     f.write("\n".join(out))
 print("done")

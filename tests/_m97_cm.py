@@ -1,3 +1,4 @@
+import os
 import io, sys
 from markdown_it import MarkdownIt
 md = MarkdownIt("default")
@@ -12,6 +13,6 @@ lines = []
 for name, src in cases:
     html = md.render(src)
     lines.append("%s => %s" % (name, html.strip()))
-with open(r"E:\WorkBuddy\md-editor\tests\_m97_cm2.txt", "w", encoding="utf-8") as f:
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "_m97_cm2.txt"), "w", encoding="utf-8") as f:
     f.write("\n".join(lines))
 print("OK")

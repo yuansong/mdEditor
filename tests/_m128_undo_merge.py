@@ -14,7 +14,7 @@ view = QWebEngineView()
 view.resize(1280, 900)
 loop = QEventLoop()
 view.loadFinished.connect(lambda ok: QTimer.singleShot(2800, loop.quit) if ok else None)
-view.load(QUrl("file:///E:/WorkBuddy/md-editor/src/editor.html"))
+view.load(QUrl(("file:///" + os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "editor.html"))))
 loop.exec()
 
 _results = []

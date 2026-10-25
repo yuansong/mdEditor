@@ -1,6 +1,0 @@
-PASS | TPL-0 斜杠菜单可打开
-PASS | TPL-1 模板一级项 __slashPick('tpl',0) 成功 | OK
-PASS | TPL-2 技术笔记模板整组插入（多块 + 标题） | blocks=9
-PASS | TPL-3 模板 6 子项全部可插入（项目文档/周报/评审/论文/纪要）
-PASS | DRAFT-1 草稿落盘 drafts/ 目录 | C:\Users\Administrator\AppData\Roaming\mdEditor\drafts\draft-20260930-011942-45440.md
-PASS | DRAFT-2 10 秒节流（draft_ts 已设置且文件未变）

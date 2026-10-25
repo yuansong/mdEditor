@@ -1,3 +1,4 @@
+import os
 # -*- coding: utf-8 -*-
 """m124：v3.38 CODE-12b —— 代码块全屏的关闭 / 还原入口验收
 
@@ -8,7 +9,7 @@ import json, os, sys
 
 os.environ.setdefault("QT_OPENGL", "software")
 os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
-sys.path.insert(0, "E:/WorkBuddy/md-editor/src")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QEventLoop, QTimer
 
