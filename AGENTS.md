@@ -183,7 +183,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File build_exe.ps1
 
 - 分支：`main`。提交粒度按**需求 / 缺陷批次**，不要把几十个无关改动塞进一个 commit。
 - 提交信息格式：`vX.YY: <主题>（<编号列表>）`，例：`v3.38: 引用模块对齐规范 QUO-8/9/10/11 + 图表黑白主题 MMD-12`。
-- 仓库当前身份：`yyuansong <yyuansong@126.com>`。用户另提到过 `ysyuan136****@163.com` —— **如需变更提交身份，先与用户确认**再改 config。
+- 仓库当前身份：`yuansong <yyuansong@126.com>`（git 提交显示名，与 GitHub 账户一致）。LICENSE 版权署名使用真实姓名 `yuanyuansong`（袁远松），与 git 提交身份区分，二者均正确。**如需变更提交身份，先与用户确认**再改 config。
 - 提交前必跑：语法检查 + 内核单测；涉及 GUI 的附探针结果。
 - `tests/_*.txt`、`dist*/`、`build*/`、`spec*/`、`.workbuddy/` 已在 `.gitignore` 中，不要强行入库。
 
