@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import uuid
 import zipfile
+import mdutil   # v3.45（BOOKLINK-E）：锚点 slug 与编辑器同源
 
 _log = logging.getLogger("mdEditor.export")
 
@@ -43,6 +44,7 @@ _INLINE = re.compile(
     r"|(\*[^*]+\*|_[^_]+_)"
     r"|(~~[^~]+~~)"
     r"|(\[[^\]]+\]\([^)]*\))"
+    r"|(\[\[[^\]]+\]\])"          # v3.45（BOOKLINK-E）：双链 / 本书链接 [[Target#anchor|alias]]
     r"|(\$(?!\s)[^$\n]+?(?<!\s)\$(?![\w$]))"
 )
 _IMG_ONLY = re.compile(r"^!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+\"[^\"]*\")?\s*\)$")
@@ -202,7 +204,18 @@ def parse_inline(text):
             lb = re.match(r"\[([^\]]+)\]\(([^)]*)\)", tok)
             out.append({"text": lb.group(1) if lb else tok,
                         "link": (lb.group(2) if lb else "")})
-        elif m.group(8):                    # 行内公式 $...$ → 标记 math（导出优先位图化，回落纯文本）
+        elif m.group(8):                    # v3.45（BOOKLINK-E）：双链 / 本书链接 [[Target#anchor|alias]]
+            inner = tok[2:-2].strip()
+            target, _, alias = inner.partition("|")
+            target = target.strip()
+            anchor = ""
+            if "#" in target:
+                target, _, anchor = target.partition("#")
+                target = target.strip()
+                anchor = anchor.strip()
+            out.append({"wikilink": True, "target": target,
+                        "anchor": anchor, "alias": alias.strip()})
+        elif m.group(9):                    # 行内公式 $...$ → 标记 math（导出优先位图化，回落纯文本）
             out.append({"math": tok[1:-1]})
         pos = m.end()
     if pos < len(text or ""):
@@ -503,12 +516,27 @@ def _xesc(s):
     return "".join(_ESC.get(c, c) for c in str(s or ""))
 
 
-def _xinline(text, math_png=None, images=None):
+def _xinline(text, base_dir="", math_png=None, images=None, link_map=None,
+             file_map=None):
     out = []
     for t in parse_inline(text):
         if t.get("image"):
             out.append(f'<img src="images/{_xesc(_img_name(t["image"]))}" '
                        f'alt="{_xesc(t.get("alt") or "")}"/>')
+            continue
+        if t.get("wikilink"):
+            # v3.45（BOOKLINK-E）：[[Target#anchor|alias]] → <a href="page.html#slug">
+            target, anchor, alias = t["target"], t["anchor"], t.get("alias") or ""
+            href = None
+            if link_map and target:
+                href = link_map.get(target) or link_map.get(target.lower())
+                if href and anchor:
+                    href = href + "#" + anchor
+            if href:
+                out.append('<a href="%s">%s</a>' % (_xesc(href), _xesc(alias or target)))
+            else:
+                # 无法解析（非书籍 / 目标缺失）：回落纯文本，避免导出死链
+                out.append(_xesc(alias or target))
             continue
         if t.get("fnref"):
             # v3.30.18（FN-2）：脚注引用 → 上标锚链接（跳到文末定义）
@@ -541,62 +569,115 @@ def _xinline(text, math_png=None, images=None):
         if t.get("strike"):
             s = f"<del>{s}</del>"
         if t.get("link"):
-            s = f'<a href="{_xesc(t["link"])}">{s}</a>'
+            # v3.45.3（EXPORT-LINK）：本地 .md 链接改写为 .html 目标
+            # （命中章节映射走页面文件，否则换后缀）
+            href = _rewrite_export_link(t["link"], base_dir, file_map) \
+                if base_dir else t["link"]
+            s = f'<a href="{_xesc(href)}">{s}</a>'
         out.append(s)
     return "".join(out)
-
 
 def _img_name(rel):
     return os.path.basename(str(rel).replace("\\", "/"))
 
 
-def _blocks_to_xhtml(blocks, base_dir, images, mmd_png=None, math_png=None):
+# v3.45.3（EXPORT-LINK）：站点 / 导出物内的本地 .md 链接改写
+_LINK_ABS_PREFIX = ("http://", "https://", "mailto:", "data:", "blob:",
+                    "file:", "#", "/", "//")
+_MD_EXT_RE = re.compile(r"\.(md|markdown|mdown)$", re.I)
+
+
+def _rewrite_export_link(url, base_dir, file_map=None):
+    """把导出物里的本地 .md 链接改写为 .html 目标。
+
+    - 外部 / 锚点 / data / 绝对路径等原样返回；
+    - 命中本书章节（file_map: {abs_path_lower: 页面文件}）→ 对应页面
+      （NN-xxx.html），保留 #fragment；
+    - 其它本地 .md → 后缀换为 .html（页面未生成时也指向正确类型）。
+    返回改写后的 href（无需改写时原样返回）。"""
+    u = str(url or "").strip()
+    if not u:
+        return url
+    low = u.lower()
+    for p in _LINK_ABS_PREFIX:
+        if low.startswith(p):
+            return url
+    path, sep, frag = u.partition("#")
+    if not _MD_EXT_RE.search(path):
+        return url
+    tail = (sep + frag) if sep else ""
+    ap = os.path.normpath(os.path.join(base_dir or ".",
+                                       path.replace("\\", "/")))
+    key = os.path.normcase(ap).lower()
+    if file_map and key in file_map:
+        return file_map[key] + tail
+    root, _ext = os.path.splitext(path)
+    return root + ".html" + tail
+
+
+def _blocks_to_xhtml(blocks, base_dir, images, mmd_png=None, math_png=None,
+                     link_map=None, file_map=None):
     """块列表 → XHTML 片段；顺带收集需要打包进 EPUB 的图片。
 
     v3.30.19（MMD-2）：mmd_png 命中的图表直接以 PNG 内嵌（随 EPUB 打包）。
     v3.44.31（MATH-EXP）：math_png 命中的公式（块级 B: 前缀）同样以 PNG 内嵌；
     行内公式经 _xinline 内嵌。未命中回落源码降级。
+    v3.45（BOOKLINK-E）：link_map 为 {标题: 页面文件} 时，[[双链]] 转为跨页
+    <a href="page.html#slug">；标题（h1-h4）按章内去重写入 id（与编辑器同源）。
+    v3.45.3（EXPORT-LINK）：file_map 为 {章节abs路径: 页面文件} 时，正文本地
+    .md 链接改写为对应 .html 页面（保留 #fragment）；非章节 .md 统一换后缀。
     """
     out = []
+    _hseen = {}   # v3.45：章内标题锚点去重（仅 h1-h4，与选择器/编辑器一致）
     for blk in blocks:
         k = blk["kind"]
         if k == "heading":
             lvl = max(1, min(6, blk["level"]))
-            out.append(f"<h{lvl}>{_xinline(blk['text'], math_png=math_png, images=images)}</h{lvl}>")
+            _id = ""
+            if lvl <= 4:
+                _base = mdutil.slugify(blk["text"]) or "section"
+                if _base in _hseen:
+                    _hseen[_base] += 1
+                    _slug = "%s-%d" % (_base, _hseen[_base])
+                else:
+                    _hseen[_base] = 1
+                    _slug = _base
+                _id = ' id="%s"' % _xesc(_slug)
+            out.append(f"<h{lvl}{_id}>{_xinline(blk['text'], math_png=math_png, images=images, link_map=link_map, base_dir=base_dir, file_map=file_map)}</h{lvl}>")
         elif k == "para":
-            out.append(f"<p>{_xinline(blk['text'], math_png=math_png, images=images)}</p>")
+            out.append(f"<p>{_xinline(blk['text'], math_png=math_png, images=images, link_map=link_map, base_dir=base_dir, file_map=file_map)}</p>")
         elif k == "list":
             tag = "ol" if blk["ordered"] else "ul"
             out.append(f"<{tag}>")
             for it in blk["items"]:
-                out.append(f"<li>{_xinline(it['text'], math_png=math_png, images=images)}</li>")
+                out.append(f"<li>{_xinline(it['text'], math_png=math_png, images=images, link_map=link_map, base_dir=base_dir, file_map=file_map)}</li>")
             out.append(f"</{tag}>")
         elif k == "quote":
-            out.append(f"<blockquote>{_xinline(blk['text'], math_png=math_png, images=images)}</blockquote>")
+            out.append(f"<blockquote>{_xinline(blk['text'], math_png=math_png, images=images, link_map=link_map, base_dir=base_dir, file_map=file_map)}</blockquote>")
         elif k == "hr":
             out.append("<hr/>")
         elif k == "table":
             out.append("<table><thead><tr>")
             for c in blk["header"]:
-                out.append(f"<th>{_xinline(c, math_png=math_png, images=images)}</th>")
+                out.append(f"<th>{_xinline(c, math_png=math_png, images=images, link_map=link_map, base_dir=base_dir, file_map=file_map)}</th>")
             out.append("</tr></thead><tbody>")
             for row in blk["rows"]:
                 out.append("<tr>")
                 for c in range(len(blk["header"])):
-                    out.append(f"<td>{_xinline(row[c] if c < len(row) else '', math_png=math_png, images=images)}</td>")
+                    out.append(f"<td>{_xinline(row[c] if c < len(row) else '', math_png=math_png, images=images, link_map=link_map, base_dir=base_dir, file_map=file_map)}</td>")
                 out.append("</tr>")
             out.append("</tbody></table>")
         elif k == "fndef":
             # v3.30.18（FN-2）：脚注定义 → 带锚点的定义段
             fid = _xesc(blk["id"])
             out.append(f'<p class="fndef" id="fn-{fid}">'
-                       f'<strong>[{fid}]</strong> {_xinline(blk.get("text") or "", math_png=math_png, images=images)}</p>')
+                       f'<strong>[{fid}]</strong> {_xinline(blk.get("text") or "", math_png=math_png, images=images, link_map=link_map, base_dir=base_dir, file_map=file_map)}</p>')
         elif k == "deflist":
             # v3.30.18（DL-5）：定义列表 → 原生 <dl>（阅读器保留语义）
             out.append("<dl>")
-            out.append(f"<dt>{_xinline(blk.get('term') or '', math_png=math_png, images=images)}</dt>")
+            out.append(f"<dt>{_xinline(blk.get('term') or '', math_png=math_png, images=images, link_map=link_map, base_dir=base_dir, file_map=file_map)}</dt>")
             for d in blk.get("defs") or []:
-                out.append(f"<dd>{_xinline(d, math_png=math_png, images=images)}</dd>")
+                out.append(f"<dd>{_xinline(d, math_png=math_png, images=images, link_map=link_map, base_dir=base_dir, file_map=file_map)}</dd>")
             out.append("</dl>")
         elif k == "fence":
             lang, code = blk["lang"], blk["text"] or ""
@@ -793,6 +874,253 @@ def add_pdf_bookmarks(pdf_path, headings):
         return added, f"已写入 {added} 条书签"
     except Exception as e:
         return 0, f"PDF 书签写入失败：{e}"
+
+
+def merge_book_pdfs(chapter_pdfs, out_path, bookmarks=None):
+    """合并若干章节 PDF（有序），并在指定页偏移写入层级书签。
+
+    chapter_pdfs: [(pdf_path, page_count), ...]（文档顺序）。
+    bookmarks: [(title, level, page_offset), ...]，page_offset 为 0 基页号。
+    返回 (写入书签数, 说明)。
+    """
+    from pypdf import PdfReader, PdfWriter
+    writer = PdfWriter()
+    offsets = []
+    cur = 0
+    total_pages = 0
+    for (p, _c) in chapter_pdfs:
+        try:
+            reader = PdfReader(p)
+        except Exception as e:
+            _log.warning("章节 PDF 读取失败，跳过 %s: %s", p, e)
+            continue
+        offsets.append(cur)
+        for pg in reader.pages:
+            writer.add_page(pg)
+        cur += len(reader.pages)
+        total_pages += len(reader.pages)
+    added = 0
+    if bookmarks:
+        parents = {}
+        for (title, level, off) in bookmarks:
+            if off < 0 or off >= total_pages:
+                continue
+            parent = None
+            for pl in range(level - 1, 0, -1):
+                if pl in parents:
+                    parent = parents[pl]
+                    break
+            try:
+                item = writer.add_outline_item(title, off, parent=parent)
+            except Exception as e:
+                _log.debug("书签添加失败（%s）: %s", title, e)
+                continue
+            parents[level] = item
+            for k in [k for k in parents if k > level]:
+                del parents[k]
+            added += 1
+    with open(out_path, "wb") as f:
+        writer.write(f)
+    return added, "已合并 %d 章 / %d 页，写入 %d 条书签" % (
+        len(chapter_pdfs), total_pages, added)
+
+
+def stamp_page_numbers(pdf_path, start=1, size=9, color=(120, 120, 120)):
+    """给每页底部居中盖静音灰页码（依赖 fpdf2，缺失则静默跳过）。
+
+    v3.45.4（EXPORT-LINK）：改用 clone_from 克隆整册（**含书签 /Outlines**）后
+    逐页 merge_page 盖印。旧实现用全新 PdfWriter 逐页 add_page，整书 PDF 的
+    层级书签会被全部丢掉（合并时写入 3 条、盖印后 outline 变空）——
+    这正是「转化为 PDF 缺少书签」的根因。
+
+    返回是否成功盖印。"""
+    try:
+        from fpdf import FPDF
+        from pypdf import PdfReader, PdfWriter
+        import io
+    except ImportError:
+        _log.warning("缺少 fpdf2，跳过页码盖印")
+        return False
+    try:
+        reader = PdfReader(pdf_path)
+        n = len(reader.pages)
+        if n == 0:
+            return False
+        mb = reader.pages[0].mediabox
+        w = float(mb.width)
+        h = float(mb.height)
+        pdf = FPDF(unit="pt", format=(w, h))
+        pdf.set_auto_page_break(False)
+        for i in range(start, start + n):
+            pdf.add_page()
+            pdf.set_font("Helvetica", size=size)
+            pdf.set_text_color(*color)
+            pdf.set_xy(0, h - 20)
+            pdf.cell(w, 0, str(i), align="C")
+        buf = io.BytesIO()
+        pdf.output(buf)
+        overlay = PdfReader(io.BytesIO(buf.getvalue()))
+        writer = PdfWriter(clone_from=pdf_path)
+        for i, page in enumerate(writer.pages):
+            page.merge_page(overlay.pages[i])
+        with open(pdf_path, "wb") as f:
+            writer.write(f)
+        return True
+    except Exception as e:
+        _log.warning("页码盖印失败（已忽略）: %s", e)
+        return False
+
+
+def _uri_to_local_path(uri):
+    """file:// URI → 本地路径（非 file scheme / 解析失败返回 None）。"""
+    try:
+        from urllib.parse import urlparse, unquote
+        u = urlparse(str(uri))
+        if u.scheme.lower() != "file":
+            return None
+        p = unquote(u.path or "")
+        if re.match(r"^/[A-Za-z]:", p):     # Windows：/C:/x → C:/x
+            p = p[1:]
+        return p
+    except Exception:
+        return None
+
+
+def _page_lookup(path_to_page, local):
+    """按本地路径查章节页号；.md/.markdown/.mdown/.html/.htm 扩展名互换后再查一次。
+
+    v3.45.6（PDF-LINK-3）：导出 HTML 的 href 既可能是 .md（getExportHTML 的
+    relFromDocDir）也可能是 .html（某些改写路径），Chromium 注解 URI 原样
+    带出；旧实现只按原样 key 查，.html 形态命中不了 .md 的 page_map →
+    落入相对 .html 死链分支（书籍 PDF 并不产出 .html 文件 → 点了没反应）。
+    """
+    if not path_to_page or not local:
+        return None
+    key = os.path.normcase(os.path.normpath(local)).lower()
+    pg = path_to_page.get(key)
+    if pg is not None:
+        return pg
+    root, ext = os.path.splitext(local)
+    el = ext.lower()
+    if el in (".md", ".markdown", ".mdown", ".html", ".htm"):
+        for alt_ext in (".md", ".html", ".markdown", ".mdown", ".htm"):
+            if alt_ext == el:
+                continue
+            alt = os.path.normcase(os.path.normpath(root + alt_ext)).lower()
+            pg = path_to_page.get(alt)
+            if pg is not None:
+                return pg
+    return None
+
+
+def linkify_pdf_links(pdf_path, path_to_page=None, out_dir=None, base_dir=None):
+    """把 PDF 里的本地文件链接注解改写为可点击目标。
+
+    v3.45.3（EXPORT-LINK）：命中本书章节（path_to_page）→ PDF 内部页跳转。
+    v3.45.6（PDF-LINK-3）：GoTo 目标由 add_named_destination 的「目标字典」
+    间接引用改为**显式目标数组** `[page_ref /FitH 页高]`（ISO 32000 只认
+    名字/字符串/数组，字典形态严格阅读器不跳转）；页查找兼容 .md↔.html
+    扩展名互换（见 _page_lookup）。
+    v3.45.5（PDF-LINK-2）：未命中章节时（单文档导出 / 章外链接），参考 HTML
+    导出口径把本地 .md 目标改写为「相对 .html 路径」—— 多数 PDF 阅读器禁用
+    file:// 协议，绝对路径链接点击无响应（「转化为 PDF 后链接打不开」的
+    主因）；相对 .html 与 HTML 导出物配套（导出 HTML 时同步把 .md 链接
+    改写为 .html，见 _rewrite_export_link）。
+
+    path_to_page: {abs_path（normcase+lower 归一）: 0 基页号}，可为 None/{}。
+    out_dir: 相对路径基准（PDF 所在目录）；缺省且无 path_to_page 时直接返回。
+    base_dir: 解析「无协议相对 URI」注解时的基准（默认取 out_dir）。
+    返回改写条数。"""
+    path_to_page = path_to_page or {}
+    if not path_to_page and not out_dir:
+        return 0
+    if base_dir is None:
+        base_dir = out_dir
+    try:
+        from pypdf import PdfWriter
+        from pypdf.generic import (NameObject, DictionaryObject,
+                                   TextStringObject, ArrayObject, FloatObject)
+    except ImportError:
+        return 0
+    n = 0
+    try:
+        writer = PdfWriter(clone_from=pdf_path)
+        total = len(writer.pages)
+        for page in writer.pages:
+            annots = page.get("/Annots")
+            if not annots:
+                continue
+            for ref in annots:
+                try:
+                    annot = ref.get_object()
+                    act = annot.get("/A")
+                    if not act:
+                        continue
+                    uri = act.get("/URI")
+                    if not uri:
+                        continue
+                    uri = str(uri)
+                    base_uri, sep, frag = uri.partition("#")   # 去 fragment 再匹配
+                    local = _uri_to_local_path(base_uri)
+                    if not local and base_dir and "://" not in base_uri \
+                            and not base_uri.startswith("/"):
+                        # 无协议相对 URI：按 base_dir 解析后再统一处理
+                        local = os.path.normpath(
+                            os.path.join(base_dir, base_uri.replace("/", os.sep)))
+                    if not local:
+                        continue
+                    pg = _page_lookup(path_to_page, local)
+                    if pg is not None and 0 <= pg < total:
+                        # v3.45.6（PDF-LINK-3）：GoTo 目标改「显式目标数组」
+                        # [page_ref /FitH 页高] —— 旧实现用
+                        # add_named_destination 返回的「目标字典」间接引用塞进
+                        # /A /D，而 ISO 32000 规定动作的 /D 只接受 名字/字符串/
+                        # 数组；字典形态仅部分阅读器容忍（严格解析器含部分
+                        # pdf.js 版本直接不跳转 —— 「整书 PDF 链接点了没反应」）。
+                        # 显式数组是所有阅读器都支持的基础形态，且 /FitH 置
+                        # 目标页页顶（页高取自该页 mediabox，退化时 826）。
+                        try:
+                            top = float(writer.pages[pg].mediabox.height)
+                        except Exception:
+                            top = 826.0
+                        # 注意：pypdf 的 NumberObject 继承 int，传 float 会被
+                        # 截断（840.96→840）；页高必须用 FloatObject。
+                        annot[NameObject("/A")] = DictionaryObject({
+                            NameObject("/S"): NameObject("/GoTo"),
+                            NameObject("/D"): ArrayObject([
+                                writer.pages[pg].indirect_reference,
+                                NameObject("/FitH"), FloatObject(top)]),
+                        })
+                        n += 1
+                        continue
+                    if not out_dir:
+                        continue
+                    # v3.45.5（PDF-LINK-2）：本地 .md → 相对 .html（保留 #fragment）
+                    root, ext = os.path.splitext(local)
+                    if ext.lower() in (".md", ".markdown", ".mdown"):
+                        local = root + ".html"
+                    try:
+                        rel = os.path.relpath(local, out_dir)
+                    except ValueError:
+                        continue   # 跨盘符等：保持原样
+                    from urllib.parse import quote
+                    new_uri = quote(rel.replace(os.sep, "/"), safe="/") \
+                        + (sep + frag if sep else "")
+                    annot[NameObject("/A")] = DictionaryObject({
+                        NameObject("/S"): NameObject("/URI"),
+                        NameObject("/URI"): TextStringObject(new_uri),
+                    })
+                    n += 1
+                except Exception as e:   # noqa: BLE001  单条失败不影响其余
+                    _log.debug("链接注解改写跳过：%s", e)
+                    continue
+        if n:
+            with open(pdf_path, "wb") as f:
+                writer.write(f)
+        return n
+    except Exception as e:
+        _log.warning("PDF 内链改写失败（已忽略）: %s", e)
+        return 0
 
 
 # ---------------------------------------------------------------- pandoc 通道

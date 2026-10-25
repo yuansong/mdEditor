@@ -8,12 +8,12 @@ import re
 from datetime import datetime
 
 from PySide6.QtCore import QEvent, Qt, QTimer
-from PySide6.QtGui import QKeySequence
+from PySide6.QtGui import QColor, QKeySequence, QTextCursor, QTextCharFormat
 from PySide6.QtWidgets import (
-    QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QGroupBox,
+    QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QGroupBox, QScrollArea, QHeaderView, QSizePolicy,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu, QMessageBox,
     QPlainTextEdit, QPushButton, QKeySequenceEdit, QRadioButton, QSlider, QSplitter, QSpinBox,
-    QStackedWidget, QTabWidget, QTextBrowser, QToolButton, QTreeWidget, QTreeWidgetItem,
+    QStackedWidget, QTabWidget, QTextBrowser, QTextEdit, QToolButton, QTreeWidget, QTreeWidgetItem,
     QVBoxLayout, QWidget,
 )
 
@@ -21,6 +21,7 @@ from config import BUILTIN_TEMPLATES, CODE_STYLES, FMTLOG_DIR, MMD_LEGACY, MMD_T
 from sidebar import GlobalSearchPanel
 from styles import THEMES, palette
 import uistyles
+from ai_connection import AIConnectionForm
 
 
 # 斜杠（/）菜单可配置项（与 editor.html 中 SLASH_DEFS 对应）
@@ -84,7 +85,10 @@ class FindDialog(_ThemedDialog):
         self.setObjectName("findDlg")
         self.setWindowTitle("查找 / 替换")
         self.setModal(False)
-        self.setMinimumWidth(560)
+        # v3.48.18（FIND-UI）：560 宽时行 1 只剩 151px 给输入框 → 文字被裁剪。
+        # 提升到 680x460 起步，并允许用户拉大（结果树随之变宽）。
+        self.setMinimumSize(680, 460)
+        self.resize(760, 540)
         self._apply_theme_qss(getattr(win, "_theme", "light"))
         self._replace_mode = False
         self._history = []          # 搜索词历史（会话内）
@@ -102,11 +106,18 @@ class FindDialog(_ThemedDialog):
         self.find_edit.setPlaceholderText("搜索内容（支持正则，如 \\d+、https?://…）")
         self.find_edit.setClearButtonEnabled(True)
         self.find_edit.installEventFilter(self)
+        # v3.48.18（FIND-UI）：输入框保底宽度，保证长关键词 / 长占位提示可读；
+        # 单行 QLineEdit 超长时内部水平滚动，不再挤压其它控件。
+        self.find_edit.setMinimumWidth(240)
 
         self.count_lbl = QLabel("")
         self.count_lbl.setObjectName("countLbl")
         # v3.29b：提示行独立于搜索框行（初始隐藏），位于搜索框之下、结果列表之上
         self.count_lbl.setVisible(False)
+        # v3.48.18（FIND-UI）：胶囊尺寸贴合文字 —— 旧版默认 Expanding，
+        # 空文本时 QSS 背景仍铺满整行，形成一条无意义蓝色色带。
+        self.count_lbl.setSizePolicy(QSizePolicy.Maximum,
+                                     QSizePolicy.Preferred)
 
         self.help_btn = QToolButton(self)
         self.help_btn.setObjectName("helpBtn")
@@ -155,23 +166,50 @@ class FindDialog(_ThemedDialog):
         self.search_panel = GlobalSearchPanel(win, self)
         self.search_panel.search_edit.setVisible(False)
         self.search_panel.search_btn.setVisible(False)
+        # v3.48.18（FIND-UI）：「语义搜索」移出主行 —— 主行 6 个控件会把输入框
+        # 压到 151px。改由下方「选项行」承载（见 opt_row）。
+        if not getattr(win, "_sem_enabled", False):
+            self.search_panel.search_sem.setChecked(False)
+            self.search_panel.search_sem.setEnabled(False)
+            self.search_panel.search_sem.setToolTip(
+                "本地语义搜索未启用：系统设置 → 通用 → 本地语义搜索")
 
         # ---- 状态行：范围在左、统计在右（v3.29：与当前文件查找同页常显）----
         status_row = QHBoxLayout()
         status_row.setContentsMargins(2, 0, 2, 0)
         status_row.setSpacing(8)
         status_row.addWidget(self.search_panel.search_scope, 1)
+        # v3.48.18（FIND-UI）：信息标签给足宽度并按内容需要换行，
+        # 旧版 120px 下「输入关键词后回车开始搜索」被折成两行且下沿被裁。
+        self.search_panel.search_info.setMinimumWidth(200)
         status_row.addWidget(self.search_panel.search_info, 0)
+
+        # ---- v3.48.18（FIND-UI）选项行：扩展名筛选 + 仅文件名 + 语义搜索 ----
+        opt_row = QHBoxLayout()
+        opt_row.setContentsMargins(0, 0, 0, 0)
+        opt_row.setSpacing(8)
+        opt_row.addWidget(QLabel("范围"))
+        opt_row.addWidget(self.search_panel.search_ext, 0)
+        opt_row.addWidget(self.search_panel.search_nameonly, 0)
+        opt_row.addWidget(self.search_panel.search_sem, 0)
+        opt_row.addStretch(1)
+
+        # 计数胶囊左对齐 + 右侧留白（不再整行铺色）
+        count_row = QHBoxLayout()
+        count_row.setContentsMargins(0, 0, 0, 0)
+        count_row.setSpacing(0)
+        count_row.addWidget(self.count_lbl, 0)
+        count_row.addStretch(1)
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(14, 12, 14, 12)
         lay.setSpacing(8)
         lay.addLayout(row1)
         lay.addWidget(self.replace_row)
+        lay.addLayout(opt_row)
         # v3.29b：「未找到匹配内容 / 共 N 处匹配」提示行 —— 搜索框之下、结果列表之上
-        lay.addWidget(self.count_lbl)
+        lay.addLayout(count_row)
         lay.addLayout(status_row)
-        lay.addWidget(self.search_panel.search_ext)
         lay.addWidget(self.search_panel.search_tree, 1)
 
         # v3.31（#19）：当前文件命中列表点击跳转
@@ -198,7 +236,8 @@ class FindDialog(_ThemedDialog):
         glob = self.scope_box.currentData() == "global"
         # v3.29：当前文件查找与全局搜索同页常显 —— 不再互斥隐藏
         self.replace_row.setVisible(self._replace_mode)
-        self.count_lbl.setVisible(True)
+        # v3.48.18（FIND-UI）：无文本不显示 —— 空胶囊会被 QSS 画成一条色带
+        self.count_lbl.setVisible(bool(str(self.count_lbl.text()).strip()))
         self.search_panel.search_scope.setVisible(True)
         self.search_panel.search_info.setVisible(True)
         self.search_panel.search_ext.setVisible(True)
@@ -206,7 +245,10 @@ class FindDialog(_ThemedDialog):
         self.setWindowTitle("查找 / 替换" if self._replace_mode else "查找")
         if not glob:
             self.find_edit.setFocus()
-        self.adjustSize()
+        # v3.48.18（FIND-UI）：不再 adjustSize() —— 它会把窗口压到 sizeHint，
+        # 首行被推到窗口上边缘之外（实测顶部文字被裁）。尺寸由 minimumSize 保证。
+        if not self.isVisible():
+            self.resize(max(self.width(), 760), max(self.height(), 540))
 
     # ---- 搜索词历史（↑ / ↓ 回溯）----
     def _remember(self, q):
@@ -247,7 +289,6 @@ class FindDialog(_ThemedDialog):
             # 替换仅作用于当前文件 → Ctrl+H 入口自动切到「当前文件」
             self.scope_box.setCurrentIndex(self.SCOPE_FILE)
         self._on_scope()
-        self.adjustSize()
 
     def show_global(self):
         """切到「全局搜索」范围并聚焦输入框（Ctrl+Shift+F 入口）。"""
@@ -315,6 +356,7 @@ class FindDialog(_ThemedDialog):
             ch.setData(0, Qt.UserRole, ("cfile", int(m.get("i", 0)), int(m.get("off", 0))))
             top.addChild(ch)
         tree.expandAll()
+        self.search_panel.fit_tree_width()   # v3.48.18（FIND-UI）
 
     def _on_cfile_click(self, item, _col=0):
         data = item.data(0, Qt.UserRole)
@@ -332,6 +374,7 @@ class FindDialog(_ThemedDialog):
     def closeEvent(self, ev):
         """v3.31（#18）：关闭 / 隐藏查找面板时撤下编辑器内全部命中高亮。"""
         self._clear_hits()
+        self.search_panel.stop_sem_worker()
         super().closeEvent(ev)
 
     def hideEvent(self, ev):
@@ -354,7 +397,7 @@ class FindDialog(_ThemedDialog):
             self.count_lbl.setText(f"共 {n} 处匹配")
             self.count_lbl.setProperty("warn", False)
             self._win._status.setText(f"共 {n} 处匹配")
-        self.count_lbl.setVisible(True)
+        self.count_lbl.setVisible(bool(str(n).strip()) and n >= 0)
         st = self.count_lbl.style()
         st.unpolish(self.count_lbl)
         st.polish(self.count_lbl)
@@ -517,7 +560,8 @@ class SettingsDialog(_ThemedDialog):
         # v3.36（TPL-E）：模板管理提升为一级页「模板」
         # v3.43.0（LOOK-1）：「外观」页迁出至顶栏「外观(&A)」菜单，此处不再保留
         # v3.43.1（SET-3P）：导航顺序 = 通用 / 编辑器 / 写作与输入 / 模板
-        for name in ("通用", "编辑器", "写作与输入", "模板"):
+        # v3.47.2（SoloMD 对标）：新增「AI 连接」页（默认连接参数配置入口）
+        for name in ("通用", "编辑器", "写作与输入", "模板", "AI 连接"):
             QListWidgetItem(name, self.nav)
         self.nav.setCurrentRow(0)
 
@@ -527,6 +571,7 @@ class SettingsDialog(_ThemedDialog):
         self.pages.addWidget(self._page_editor_fmt())
         self.pages.addWidget(self._page_writing())
         self.pages.addWidget(TemplatePage(win, self))
+        self.pages.addWidget(self._page_ai_connection())
         self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
 
         b_close = QPushButton("关闭")
@@ -845,6 +890,27 @@ class SettingsDialog(_ThemedDialog):
     def _on_pandoc_path(self):
         self._win.set_pandoc_path(self.pandoc_edit.text())
 
+    # ---- v3.48.12（SEM-4）：本地语义搜索 ----
+    def _sync_sem_info(self):
+        """同步索引状态文案（建页 / showEvent 刷新）。"""
+        try:
+            st = self._win.sem_index_stats()
+        except Exception:
+            st = {}
+        if not st or not st.get("db"):
+            self.sem_info.setText("索引尚未建立（首次语义搜索时自动创建）")
+            return
+        size_mb = st.get("size", 0) / 1048576.0
+        txt = (f"索引：{st.get('files', 0)} 个文件 · {st.get('chunks', 0)} 个段落块"
+               f" · {size_mb:.1f} MB")
+        if st.get("updated"):
+            txt += f" · 更新于 {st['updated']}"
+        self.sem_info.setText(txt + f"\n位置：{st.get('db', '')}")
+
+    def _on_sem_rebuild(self):
+        self._win.sem_rebuild_index()
+        self._sync_sem_info()
+
     def _on_external_editor(self):
         self._win.set_external_editor(self.extedit_edit.text())
 
@@ -956,6 +1022,32 @@ class SettingsDialog(_ThemedDialog):
         rm_hint.setWordWrap(True)
         gfl.addWidget(rm_hint)
         lay.addWidget(gb_fl)
+
+        # ================= 本地语义搜索（v3.48.12 SEM-4） =================
+        gb_sem, gsem = self._group("本地语义搜索")
+        self.sem_box = QCheckBox("启用本地语义搜索（查找 → 全局搜索 → 语义搜索）", page)
+        self.sem_box.setChecked(bool(getattr(self._win, "_sem_enabled", False)))
+        self.sem_box.toggled.connect(self._win.set_semantic_search)
+        gsem.addWidget(self.sem_box)
+        self.sem_info = QLabel(page)
+        self.sem_info.setObjectName("pageHint")
+        self.sem_info.setWordWrap(True)
+        gsem.addWidget(self.sem_info)
+        self._sync_sem_info()
+        srow_sem = QHBoxLayout()
+        self.sem_rebuild_btn = QPushButton("重建索引", page)
+        self.sem_rebuild_btn.setToolTip("清空当前索引；下次语义搜索时按目录内容自动重建")
+        self.sem_rebuild_btn.clicked.connect(self._on_sem_rebuild)
+        srow_sem.addWidget(self.sem_rebuild_btn)
+        srow_sem.addStretch(1)
+        gsem.addLayout(srow_sem)
+        sem_hint = QLabel("· 纯本地计算（TF-IDF 向量 + 同义词扩展），文档内容不外传\n"
+                          "· 索引位于 %APPDATA%\\mdEditor\\semindex，不在项目目录、不入 Git\n"
+                          "· 索引随文档改动自动增量更新；关闭后全局搜索按普通全文检索")
+        sem_hint.setObjectName("pageHint")
+        sem_hint.setWordWrap(True)
+        gsem.addWidget(sem_hint)
+        lay.addWidget(gb_sem)
 
         # ---- v3.43.0（LOOK-1）：大纲（原散落在「文件与启动」组里，按语义独立成组） ----
         gb_ol, gol = self._group("大纲")
@@ -1156,6 +1248,20 @@ class SettingsDialog(_ThemedDialog):
         lay.addStretch(1)
         return page
 
+    # v3.47.2（SoloMD 对标）：「AI 连接」页 —— 默认连接参数配置入口
+    def _page_ai_connection(self):
+        """复用 ai_connection.AIConnectionForm：与独立连接面板共享同一份
+        QSettings + 凭据存储，因此「设置里填的默认连接」即「主面板连接设置
+        按钮打开的面板」所用数据。connection_changed 触发主面板状态条刷新。"""
+        page = QWidget(self)
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(12)
+        form = AIConnectionForm(self._win._settings, self)
+        form.connection_changed.connect(self._win._refresh_ai_status)
+        lay.addWidget(form, 1)
+        return page
+
     def showEvent(self, ev):
         super().showEvent(ev)
         # 打开时同步主窗口当前状态
@@ -1222,6 +1328,11 @@ class SettingsDialog(_ThemedDialog):
         self.pandoc_edit.blockSignals(True)
         self.pandoc_edit.setText(str(getattr(self._win, "_pandoc_path", "") or ""))
         self.pandoc_edit.blockSignals(False)
+        # v3.48.12（SEM-4）：语义搜索开关与索引状态同步
+        self.sem_box.blockSignals(True)
+        self.sem_box.setChecked(bool(getattr(self._win, "_sem_enabled", False)))
+        self.sem_box.blockSignals(False)
+        self._sync_sem_info()
         # P1-6 / P1-7：历史保留份数、外部编辑器路径同步
         self.history_keep_box.blockSignals(True)
         self.history_keep_box.setValue(int(getattr(self._win, "_history_keep", 5) or 5))
@@ -2217,6 +2328,10 @@ class HistoryDialog(_ThemedDialog):
         self.b_diff_two = QPushButton("对比所选两项", self)
         self.b_diff_two.setEnabled(False)
         self.b_diff_two.clicked.connect(self._diff_two)
+        # v3.47.4（REQ3）：任选两快照合并（git/SVN 风格冲突标记）
+        self.b_merge = QPushButton("合并所选两项", self)
+        self.b_merge.setEnabled(False)
+        self.b_merge.clicked.connect(self._merge_two)
         self.b_diff_prev = QPushButton("与上一版本对比", self)
         self.b_diff_prev.clicked.connect(self._diff_prev)
         self.b_diff_cur = QPushButton("与当前文档对比", self)
@@ -2228,6 +2343,7 @@ class HistoryDialog(_ThemedDialog):
         b_close = QPushButton("关闭", self)
         b_close.clicked.connect(self.close)
         brow.addWidget(self.b_diff_two)
+        brow.addWidget(self.b_merge)
         brow.addWidget(self.b_diff_prev)
         brow.addWidget(self.b_diff_cur)
         brow.addWidget(self.b_restore)
@@ -2258,6 +2374,7 @@ class HistoryDialog(_ThemedDialog):
             self.b_diff_cur.setEnabled(False)
             self.b_diff_prev.setEnabled(False)
             self.b_diff_two.setEnabled(False)
+            self.b_merge.setEnabled(False)
         else:
             for fp, mt in self._items:
                 try:
@@ -2321,6 +2438,30 @@ class HistoryDialog(_ThemedDialog):
         self._diff_dlg._apply_theme_qss(getattr(self._win, "_theme", "light"))
         return self._diff_dlg
 
+    def _ensure_merge_dlg(self):
+        if not hasattr(self, "_merge_dlg"):
+            self._merge_dlg = MergeDialog(self._win)
+        self._merge_dlg._apply_theme_qss(getattr(self._win, "_theme", "light"))
+        return self._merge_dlg
+
+    def _merge_two(self):
+        """v3.47.4（REQ3）：任选两个快照合并 —— 按 mtime 旧→新作为 A/B，
+        复用 MergeDialog（自动生成 git/SVN 风格冲突标记 + 可编辑合并结果）。"""
+        sel = self.listw.selectedItems()
+        if len(sel) != 2:
+            return
+        rows = sorted([self.listw.row(it) for it in sel],
+                      key=lambda r: self._items[r][1])
+        a = self._snap_text(rows[0])
+        b = self._snap_text(rows[1])
+        if a is None or b is None:
+            return   # 快照在合并期间被清理：沿用现有静默返回模式
+        name = os.path.basename(self._cur_file) if self._cur_file else "（未保存文档）"
+        self._ensure_merge_dlg().show_merge(
+            f"合并版本 · {name}", a, b,
+            f"快照 {self._fmt_when(self._items[rows[0]][1])}",
+            f"快照 {self._fmt_when(self._items[rows[1]][1])}")
+
     def _diff_current(self):
         """v3.31（#27）：所选快照 vs 当前编辑区内容。"""
         row = self.listw.currentRow()
@@ -2379,6 +2520,7 @@ class HistoryDialog(_ThemedDialog):
             sel = self.listw.selectedItems()
         n = len(sel)
         self.b_diff_two.setEnabled(n == 2)
+        self.b_merge.setEnabled(n == 2)   # v3.47.4（REQ3）：恰选两项才可合并
         single = (n == 1)
         row = self.listw.currentRow()
         self.b_diff_cur.setEnabled(single)
@@ -2427,6 +2569,442 @@ class HistoryDialog(_ThemedDialog):
     def _open_folder(self):
         if self._cur_file:
             self._win.show_in_explorer(self._cur_file)
+
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        self._apply_theme_qss(getattr(self._win, "_theme", "light"))
+
+
+class MergeDialog(_ThemedDialog):
+    """v3.48.2（F1 重构）：Beyond Compare 式三区域版本合并。
+
+    上方左右两个对比框为行级比较视图（每差异段独占一个文档块，定位可靠）：
+    左（A=旧）差异行红底、右（B=新）差异行绿底、空白侧灰底占位、相同段无底色；
+    当前采用的侧打 ✓。交互（作用于差异段）：
+      · **双击**某差异行 → 采用该侧该行（选中多行后双击则整组采纳）；
+      · 选中若干行 → **右键「采用所选」**（按所选覆盖的差异段整组采纳）；
+      · 右键「恢复默认」→ 该段回到默认取舍（最新版本）。
+    下方合并框**默认即最新版本全文**：未裁决差异段黄底（默认取最新 B）、
+    采用左侧红底、采用右侧绿底；可直接手动编辑，采纳操作按段原位替换、
+    不影响其余手工修改。点「应用到当前文档」以合并框当前文本整段替换目标段落。
+    仅保留按钮：全部采用左/右、应用到当前文档、另存为、关闭。"""
+
+    def __init__(self, win):
+        super().__init__(win)
+        self._win = win
+        self.setObjectName("mergeDlg")
+        self.setWindowTitle("合并版本")
+        self.setModal(False)
+        self.resize(980, 680)
+        self._apply_theme_qss(getattr(win, "_theme", "light"))
+        self._a_text = ""
+        self._b_text = ""
+        self._a_label = ""
+        self._b_label = ""
+        self._segs = []
+        self._same = 0            # 相同行数（状态栏展示用）
+        self._seg_cur = []        # 各段起点游标（末位=文档尾哨兵），采纳时原位替换
+        self._press_seg = None    # 鼠标按下时所在差异段
+        self._press_sel = None    # 鼠标按下时的选区范围（多行选择）
+        self._build_ui()
+
+    def _build_ui(self):
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(14, 14, 14, 12)
+        lay.setSpacing(8)
+        self.title_lbl = QLabel("", self)
+        self.title_lbl.setObjectName("pageTitle")
+        lay.addWidget(self.title_lbl)
+        self.stat_lbl = QLabel("", self)
+        self.stat_lbl.setObjectName("pageHint")
+        self.stat_lbl.setWordWrap(True)
+        lay.addWidget(self.stat_lbl)
+
+        # ---- 上方：左右两个对比框（A=旧红底 / B=新绿底），行级比较视图 ----
+        self.pane_a = QTextBrowser(self)
+        self.pane_a.setObjectName("mergePaneA")
+        self.pane_a.setReadOnly(True)
+        self.pane_a.setOpenLinks(False)
+        self.pane_b = QTextBrowser(self)
+        self.pane_b.setObjectName("mergePaneB")
+        self.pane_b.setReadOnly(True)
+        self.pane_b.setOpenLinks(False)
+        # v3.48.2（F1）：事件过滤器 —— 双击采用该侧 / 右键「采用所选」
+        # v3.48.3（F1 修）：QTextBrowser 是 QAbstractScrollArea，鼠标/右键事件
+        # 实际投递给 viewport()（装在 pane 本体上收不到，表现为「双击/右键无反应」）
+        self.pane_a.viewport().installEventFilter(self)
+        self.pane_b.viewport().installEventFilter(self)
+        top = QSplitter(Qt.Horizontal, self)
+        top.setHandleWidth(6)
+        top.setChildrenCollapsible(False)
+        top.addWidget(self.pane_a)
+        top.addWidget(self.pane_b)
+        top.setStretchFactor(0, 1)
+        top.setStretchFactor(1, 1)
+        lay.addWidget(top, 3)
+
+        # ---- 下方：合并结果（默认最新版本，可编辑，差异按背景色标记）----
+        self.merge_hint = QLabel(
+            "合并结果（默认最新版本 · 可编辑）：黄底=未裁决差异（默认取最新），"
+            "红底=采用左侧，绿底=采用右侧。上方双击差异行或右键「采用所选」即可合并。",
+            self)
+        self.merge_hint.setObjectName("pageHint")
+        self.merge_hint.setWordWrap(True)
+        lay.addWidget(self.merge_hint)
+        self.pane_merge = QTextEdit(self)
+        self.pane_merge.setObjectName("mergePaneMerge")
+        self.pane_merge.setAcceptRichText(False)
+        lay.addWidget(self.pane_merge, 2)
+
+        # ---- 按钮行（v3.48.2：去掉「合并所选差异」按钮，交互收敛到双击/右键）----
+        brow = QHBoxLayout()
+        brow.addStretch(1)
+        self.b_all_left = QPushButton("全部采用左(A)", self)
+        self.b_all_right = QPushButton("全部采用右(B)", self)
+        self.b_apply = QPushButton("应用到当前文档", self)
+        self.b_save = QPushButton("另存为…", self)
+        b_close = QPushButton("关闭", self)
+        self.b_all_left.clicked.connect(lambda _=False: self._adopt("A", range(len(self._segs))))
+        self.b_all_right.clicked.connect(lambda _=False: self._adopt("B", range(len(self._segs))))
+        self.b_apply.clicked.connect(self._apply)
+        self.b_save.clicked.connect(self._save)
+        b_close.clicked.connect(self.close)
+        for b in (self.b_all_left, self.b_all_right, self.b_apply, self.b_save, b_close):
+            brow.addWidget(b)
+        lay.addLayout(brow)
+
+    # ---------- 段拆分（2-way）----------
+    @staticmethod
+    def _build_segs(a_lines, b_lines):
+        """返回 (段列表, 相同行数, 差异块数)。段：
+        · kind=equal：两版一致文本（text）。
+        · kind=diff：a / b 两侧文本与当前取舍 choice —— v3.48.2 起初始一律
+          None（未裁决）：结果框默认取最新(B)内容，B 无内容（仅旧版有的行）则排除。"""
+        sm = difflib.SequenceMatcher(a=a_lines, b=b_lines, autojunk=False)
+        segs, same, conflicts = [], 0, 0
+        for tag, i1, i2, j1, j2 in sm.get_opcodes():
+            if tag == "equal":
+                segs.append({"kind": "equal", "text": "\n".join(a_lines[i1:i2])})
+                same += i2 - i1
+            else:
+                a_txt = "\n".join(a_lines[i1:i2])
+                b_txt = "\n".join(b_lines[j1:j2])
+                segs.append({"kind": "diff", "a": a_txt, "b": b_txt,
+                             "choice": None})
+                conflicts += 1
+        return segs, same, conflicts
+
+    def _result_text(self):
+        """合并框以可编辑文本框为唯一来源；apply / save 直接读取其内容。"""
+        return self.pane_merge.toPlainText().rstrip("\n")
+
+    @staticmethod
+    def _esc_block(s):
+        return (str(s).replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;"))
+
+    def _seg_at(self, obj, pos):
+        """把文档内位置映射到段索引（按块号收敛；v3.48.5 起仅作 anchorAt
+        失效时的回退 —— 块号与段索引在空 equal 段 / 多行段下不保证对齐）。"""
+        blk = obj.document().findBlock(pos)
+        i = blk.blockNumber() if blk.isValid() else 0
+        if i < 0:
+            i = 0
+        if i >= len(self._segs):
+            i = len(self._segs) - 1
+        return i
+
+    def _seg_from_pos(self, pane, pos):
+        """v3.48.5（SEGMAP）：viewport 坐标 → 段索引。优先 anchorAt 反查
+        该段渲染时埋下的 cmd://seg/{idx}/{side} href（与块结构无关，绝对
+        可靠）；无锚点（点在 padding 等垫底区域）时回退块号映射。"""
+        try:
+            href = pane.anchorAt(pos)
+        except Exception:
+            href = ""
+        if href and href.startswith("cmd://seg/"):
+            try:
+                return int(href[len("cmd://seg/"):].split("/")[0])
+            except (ValueError, IndexError):
+                pass
+        try:
+            return self._seg_at(pane, pane.cursorForPosition(pos).position())
+        except Exception:
+            return 0
+
+    def _render_panes(self):
+        """v3.48.2（F1 重构）：Beyond Compare 式行级比较视图 ——
+        左（A=旧）差异行红底、右（B=新）差异行绿底、空白侧灰底占位；
+        当前采用的侧打 ✓。段内换行用 <br> 折行。
+        v3.48.5（SEGMAP）：每段内容包进 <a href="cmd://seg/{idx}/{side}">，
+        点击/右键经 anchorAt 反查段索引 —— 旧的「块号=段索引」映射在
+        「空 equal 段不产块」「<br> 产块数≠段数」时必然漂移（用户实测
+        《我的中国.md》：点第三段却合并了第二段）。空 equal 段渲染
+        &nbsp; 占位，保留空行视觉。"""
+        for side, pane in (("A", self.pane_a), ("B", self.pane_b)):
+            parts = ['<div style="font-family:Microsoft YaHei,sans-serif;'
+                     'font-size:13px;line-height:1.55;">']
+            for idx, s in enumerate(self._segs):
+                href = "cmd://seg/%d/%s" % (idx, side)
+                if s["kind"] == "equal":
+                    body = (self._esc_block(s["text"]).replace("\n", "<br>")
+                            if s["text"] else "&nbsp;")
+                    parts.append(
+                        '<div style="padding:1px 8px;margin:0;'
+                        'white-space:pre-wrap;">'
+                        '<a href="%s" style="text-decoration:none;'
+                        'color:#1f2328;">%s</a></div>' % (href, body))
+                    continue
+                txt = s["a"] if side == "A" else s["b"]
+                chosen = (s["choice"] == side)
+                if txt:
+                    bg = "#ffe5e5" if side == "A" else "#e6ffec"
+                    bd = "#cf222e" if side == "A" else "#1a7f37"
+                    color = "#1f2328"
+                    style = ""
+                else:
+                    bg, bd = "#f2f4f7", "#d0d7de"
+                    txt = "（此侧无内容）"
+                    color, style = "#8c959f", "font-style:italic;"
+                mark = (' <span style="color:#1a7f37;font-weight:bold;">✓</span>'
+                        if chosen else "")
+                parts.append(
+                    '<div style="padding:2px 8px;margin:1px 0;'
+                    'border-left:3px solid %s;background:%s;'
+                    'white-space:pre-wrap;%s">'
+                    '<a href="%s" style="text-decoration:none;color:%s;">%s%s</a></div>'
+                    % (bd, bg, style, href, color,
+                       self._esc_block(txt).replace("\n", "<br>"), mark))
+            parts.append("</div>")
+            pane.setHtml("".join(parts))
+
+    def _adopt(self, side, segs):
+        """v3.48.2：把 segs 中各差异段的取舍置为 side，并按段原位替换结果框内容
+        （QTextCursor 锚点随编辑自动平移，其余段的手工修改不受影响）。"""
+        changed = []
+        for k in segs:
+            if not (0 <= k < len(self._segs)):
+                continue
+            s = self._segs[k]
+            if s["kind"] != "diff":
+                continue
+            if s["choice"] != side:
+                s["choice"] = side
+                changed.append(k)
+        if changed:
+            self._render_panes()
+            for k in changed:
+                self._replace_result_seg(k)
+            self._update_stat()
+
+    def _reset_seg(self, k):
+        """右键「恢复默认」：该段回到默认取舍（最新版本）。"""
+        if not (0 <= k < len(self._segs)):
+            return
+        s = self._segs[k]
+        if s["kind"] != "diff" or s["choice"] is None:
+            return
+        s["choice"] = None
+        self._render_panes()
+        self._replace_result_seg(k)
+        self._update_stat()
+
+    def _segs_from_selection(self, obj):
+        """当前选区覆盖到的段索引列表；无选区返回 None。
+        v3.48.5（SEGMAP）：选区两端经 cursorRect 定位后走 anchorAt 反查，
+        不再依赖块号。"""
+        cur = obj.textCursor()
+        if not cur.hasSelection():
+            return None
+        c1 = QTextCursor(cur)
+        c1.setPosition(cur.selectionStart())
+        c2 = QTextCursor(cur)
+        c2.setPosition(cur.selectionEnd())
+        lo = self._seg_from_pos(obj, obj.cursorRect(c1).center())
+        hi = self._seg_from_pos(obj, obj.cursorRect(c2).center())
+        if lo > hi:
+            lo, hi = hi, lo
+        return list(range(lo, hi + 1))
+
+    def _segs_from_event(self, obj):
+        """右键/双击目标段：有选区取选区覆盖段，否则取按下位置所在段。"""
+        sel = self._segs_from_selection(obj)
+        if sel:
+            return sel
+        return [self._press_seg] if self._press_seg is not None else []
+
+    def _ctx_menu(self, obj, side, ev):
+        """v3.48.2（F1）：对比框右键菜单 ——「采用所选」/「恢复默认」。"""
+        gpos = (ev.globalPos() if hasattr(ev, "globalPos")
+                else ev.globalPosition().toPoint())
+        menu = QMenu(self)
+        act_adopt = menu.addAction("采用所选（%s）" % ("左侧" if side == "A" else "右侧"))
+        act_reset = menu.addAction("恢复默认（采用最新）")
+        chosen = menu.exec(gpos)
+        if chosen is act_adopt:
+            self._adopt(side, self._segs_from_event(obj))
+        elif chosen is act_reset:
+            for k in self._segs_from_event(obj):
+                self._reset_seg(k)
+
+    def _update_stat(self):
+        diffs = [s for s in self._segs if s["kind"] == "diff"]
+        n = len(diffs)
+        resolved = sum(1 for s in diffs if s["choice"] is not None)
+        if n == 0:
+            self.stat_lbl.setText("两个版本内容完全一致，无需合并。")
+        else:
+            self.stat_lbl.setText(
+                f"相同 {self._same} 行 · 差异 {n} 处（已裁决 {resolved}）　—　"
+                f"双击左/右差异行采用该侧；或选中多行右键「采用所选」。")
+
+    def _replace_result_seg(self, k):
+        """按段原位替换结果框内容：红底=采用左、绿底=采用右、黄底=未裁决（默认最新）。
+        段外手工内容不受影响。QTextCursor 在插入点会被推着走（且被删区间内的
+        游标会收敛到区间起点），故编辑后按旧位置显式复位所有段游标。"""
+        if not (0 <= k < len(self._segs)) or not self._seg_cur:
+            return
+        s = self._segs[k]
+        if s["kind"] != "diff":
+            return
+        if s["choice"] == "A":
+            txt, bg = s["a"], "#ffe5e5"
+        elif s["choice"] == "B":
+            txt, bg = s["b"], "#e6ffec"
+        else:
+            txt, bg = s["b"], "#fff3cd"   # 未裁决：默认取最新(B)
+        doc = self.pane_merge.document()
+        old_pos = [c.position() for c in self._seg_cur]
+        start = old_pos[k]
+        end = old_pos[k + 1] if k + 1 < len(self._seg_cur) else doc.characterCount()
+        cur = QTextCursor(doc)
+        cur.setPosition(start)
+        cur.setPosition(end, QTextCursor.KeepAnchor)
+        if txt:
+            fmt = QTextCharFormat()
+            fmt.setBackground(QColor(bg))
+            cur.insertText(txt + "\n", fmt)
+        else:
+            cur.removeSelectedText()
+        # 复位段游标：k → start；k 之后各段 → start + 新长度 + (旧位置 - end)
+        newlen = (len(txt) + 1) if txt else 0
+        for j in range(k, len(self._seg_cur)):
+            if j == k:
+                self._seg_cur[j].setPosition(start)
+            else:
+                self._seg_cur[j].setPosition(
+                    start + newlen + max(0, old_pos[j] - end))
+
+    # ---------- 合并结果框（默认最新版本 + 按段背景色标记）----------
+    def _refresh_result(self):
+        """v3.48.2（F1 重构）：结果框初始即最新版本全文 ——
+        相同段原样（无底色）；差异段按取舍写入并标色（黄=未裁决/默认最新，
+        红=采用左，绿=采用右）。
+        v3.48.3（修「相同部分也被染色」）：不再边插边着色 —— QTextEdit 的
+        insertText 无格式参数时会**继承游标处字符格式**，彩色段之后的相同段
+        会连带染上底色。改为先用 setPlainText 写入纯文本全文，再按段区间
+        setCharFormat 精确着色，杜绝格式继承。每段记录起点游标（末位=文档尾
+        哨兵），供采纳时按段原位替换。"""
+        doc = self.pane_merge.document()
+        starts = []      # 各段起点（纯字符位置；"\n" 记 1 字符，与块结构一致）
+        colors = []      # 与 starts 对齐的底色（None=相同段不着色）
+        pos = 0
+        parts = []
+        for s in self._segs:
+            starts.append(pos)
+            if s["kind"] == "equal":
+                txt, bg = s["text"], None
+            elif s["choice"] == "A":
+                txt, bg = s["a"], "#ffe5e5"
+            elif s["choice"] == "B":
+                txt, bg = s["b"], "#e6ffec"
+            else:
+                txt, bg = s["b"], "#fff3cd"   # 未裁决：默认取最新(B)
+            colors.append(bg)
+            if txt:
+                parts.append(txt + "\n")
+                pos += len(txt) + 1
+        doc.setPlainText("".join(parts))   # 全文纯文本写入（零格式继承）
+        cur = QTextCursor(doc)
+        for i, bg in enumerate(colors):
+            if not bg:
+                continue
+            # 该段写入长度 = 下一非空段起点 - 本段起点（空段与下段同起点）
+            j = i + 1
+            while j < len(starts) and starts[j] == starts[i]:
+                j += 1
+            end = starts[j] if j < len(starts) else doc.characterCount()
+            cur.setPosition(starts[i])
+            cur.setPosition(end, QTextCursor.KeepAnchor)
+            fmt = QTextCharFormat()
+            fmt.setBackground(QColor(bg))
+            cur.setCharFormat(fmt)
+        # 段起点游标（末位哨兵 = 文档尾），随后续编辑自动平移
+        self._seg_cur = []
+        for p in starts:
+            c = QTextCursor(doc)
+            c.setPosition(min(p, doc.characterCount()))
+            self._seg_cur.append(c)
+        c = QTextCursor(doc)
+        c.movePosition(QTextCursor.End)
+        self._seg_cur.append(c)
+
+    # ---------- 事件过滤：双击采纳 / 单击空白侧清除 ----------
+    def eventFilter(self, obj, ev):
+        """v3.48.2（F1）：左键双击差异行=采用该侧；右键弹「采用所选 / 恢复默认」。
+        v3.48.3：事件经 viewport() 投递（QAbstractScrollArea），obj 比对 viewport。"""
+        pa, pb = self.pane_a.viewport(), self.pane_b.viewport()
+        if obj is pa or obj is pb:
+            side = "A" if obj is pa else "B"
+            pane = self.pane_a if obj is pa else self.pane_b
+            if ev.type() == QEvent.MouseButtonPress and ev.button() == Qt.LeftButton:
+                # v3.48.5（SEGMAP）：按压位置 anchorAt 反查段索引（块号映射不可靠）
+                self._press_seg = self._seg_from_pos(pane, ev.position().toPoint())
+                sel = pane.textCursor()
+                self._press_sel = ((sel.selectionStart(), sel.selectionEnd())
+                                   if sel.hasSelection() else None)
+                return False
+            if ev.type() == QEvent.MouseButtonDblClick and ev.button() == Qt.LeftButton:
+                self._adopt(side, self._segs_from_event(pane))
+                self._press_sel = None
+                return True
+            if ev.type() == QEvent.ContextMenu:
+                self._ctx_menu(pane, side, ev)
+                return True
+        return super().eventFilter(obj, ev)
+
+    def show_merge(self, title, a_text, b_text, a_label, b_label):
+        self.title_lbl.setText(title)
+        self._a_text, self._b_text = str(a_text or ""), str(b_text or "")
+        self._a_label, self._b_label = a_label, b_label
+        a_lines = self._a_text.split("\n")
+        b_lines = self._b_text.split("\n")
+        self._segs, self._same, conflicts = self._build_segs(a_lines, b_lines)
+        self._render_panes()
+        self._refresh_result()
+        self._update_stat()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    # ---------- 行为 ----------
+    def _apply(self):
+        text = self._result_text()
+        if self._win.apply_merged_text(text):
+            self.close()
+
+    def _save(self):
+        text = self._result_text()
+        path, _ = QFileDialog.getSaveFileName(
+            self, "另存为合并结果", "", "Markdown 文件 (*.md);;文本文件 (*.txt);;所有文件 (*)")
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text if text.endswith("\n") else text + "\n")
+            self.stat_lbl.setText(f"已另存为：{os.path.basename(path)}")
+        except OSError as e:
+            QMessageBox.critical(self, "保存失败", str(e))
 
     def showEvent(self, ev):
         super().showEvent(ev)

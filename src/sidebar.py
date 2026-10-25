@@ -8,19 +8,21 @@ import os
 import re
 import tempfile
 
-from PySide6.QtCore import QEvent, QSize, QStandardPaths, Qt, QPointF
+from PySide6.QtCore import QEvent, QPoint, QSize, QStandardPaths, Qt, QPointF, Signal
 from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
-    QApplication, QAbstractItemView, QButtonGroup, QCheckBox, QComboBox,
-    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMenu, QMessageBox, QPushButton, QSizePolicy,
-    QStackedWidget, QToolButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
-    QWidget,
+    QApplication, QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QHeaderView,
+    QDialog, QDialogButtonBox, QFormLayout, QFrame, QHBoxLayout, QInputDialog, QLabel,
+    QLineEdit, QListWidget, QListWidgetItem, QMenu, QMessageBox, QPushButton,
+    QSizePolicy, QStackedWidget, QToolButton, QTreeWidget, QTreeWidgetItem,
+    QVBoxLayout, QWidget,
 )
 
 from config import DRAFT_DIR, FILE_LIST_DEFAULT_DIR, HERE
 from styles import SIDEBAR_QSS
-from icons import icon_file, icon_folder, icon_up
+from icons import icon_file, icon_folder, icon_up, book_state_icon, \
+    BOOK_COLOR_OK, BOOK_COLOR_BAD, BOOK_COLOR_CAT
+import semsearch  # v3.48.12（SEM-3）：本地语义搜索（离线 TF-IDF + sqlite 倒排索引）
 
 # 跨文件搜索上限（避免在超大目录上卡死界面）
 SEARCH_MAX_FILES = 1500
@@ -53,6 +55,12 @@ class GlobalSearchPanel(QWidget):
         # v3.29d（UX #20）：「仅文件名」复选框 —— 只按文件名匹配，不搜正文
         self.search_nameonly = QCheckBox("仅文件名", self)
         self.search_nameonly.setToolTip("只按文件名搜索（不改文档内容检索）")
+        # v3.48.12（SEM-3）：语义搜索开关（本地 TF-IDF + 同义词，首次使用自动建索引）
+        self.search_sem = QCheckBox("语义搜索", self)
+        self.search_sem.setToolTip(
+            "本地语义搜索：按含义关联查找（离线计算，内容不外传）；\n"
+            "首次使用自动建立索引，之后随文档改动增量更新")
+        self.search_sem.setChecked(True)
         self.search_scope = QLabel("", self)
         self.search_scope.setObjectName("searchScope")
         self.search_scope.setWordWrap(True)
@@ -64,6 +72,17 @@ class GlobalSearchPanel(QWidget):
         self.search_tree.setIndentation(12)
         self.search_tree.setVerticalScrollMode(QTreeWidget.ScrollPerPixel)
         self.search_tree.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        # v3.48.18（FIND-UI）：单列表头默认「最后一列铺满视口」，列宽恒等于视口宽
+        # → 长路径 / 长命中行被硬裁剪且水平滚动条永不出现（用户反馈「文字被遮挡」）。
+        # 改为可交互列宽，填充数据后按内容自适应（见 fit_tree_width）。
+        try:
+            self.search_tree.header().setStretchLastSection(False)
+            self.search_tree.header().setSectionResizeMode(
+                0, QHeaderView.ResizeMode.Interactive)
+        except Exception:      # noqa: BLE001
+            pass
+        self.search_tree.setHorizontalScrollMode(QTreeWidget.ScrollPerPixel)
+        self.search_tree.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.search_tree.itemClicked.connect(self._on_search_click)
         self.search_tree.itemActivated.connect(self._on_search_click)
 
@@ -72,6 +91,7 @@ class GlobalSearchPanel(QWidget):
         srow.setSpacing(4)
         srow.addWidget(self.search_ext, 1)
         srow.addWidget(self.search_nameonly)
+        srow.addWidget(self.search_sem)
         srow.addWidget(self.search_btn)
         # v3.26：区分大小写 / 正则复选框移除 —— 搜索默认支持正则（无效时回退普通文本）
 
@@ -86,6 +106,28 @@ class GlobalSearchPanel(QWidget):
 
         self.search_edit.returnPressed.connect(self.run_search)
         self.search_btn.clicked.connect(self.run_search)
+        self.search_sem.toggled.connect(self._on_sem_toggled)
+        self._sem_worker = None
+        self._sem_retired = []   # 已被替换的语义 worker（等线程结束后回收）
+        self._on_sem_toggled(self.search_sem.isChecked())
+
+    def fit_tree_width(self):
+        """v3.48.18（FIND-UI）：按内容宽度调整结果树列宽。
+
+        内容宽于视口 → 出现水平滚动条（长文本可完整查看，不再被硬裁剪）；
+        内容窄于视口 → 铺满视口（不留空白，点击区域完整）。
+        """
+        t = self.search_tree
+        try:
+            if t.columnCount() < 1 or t.topLevelItemCount() == 0:
+                return
+            t.resizeColumnToContents(0)
+            vw = t.viewport().width()
+            # +2 抵消滚动条与边框，避免出现「1px 溢出」的假滚动条
+            if t.columnWidth(0) < vw - 2:
+                t.setColumnWidth(0, max(vw - 2, 120))
+        except Exception:      # noqa: BLE001
+            pass
 
     def focus_input(self):
         """切到本页签时聚焦输入框并全选，便于直接输入关键词。"""
@@ -150,6 +192,10 @@ class GlobalSearchPanel(QWidget):
             self.search_info.setText("请输入关键词")
             return
         root = self._win.search_root()
+        # v3.48.12（SEM-3）：勾选语义搜索且功能启用 → 走本地语义检索（后台建索引）
+        if self.search_sem.isChecked() and getattr(self._win, "_sem_enabled", False):
+            self._run_semantic(query, root)
+            return
         flags = re.IGNORECASE
         pattern = query
         try:
@@ -220,10 +266,122 @@ class GlobalSearchPanel(QWidget):
                 top.addChild(more)
             self.search_tree.addTopLevelItem(top)
         self.search_tree.expandAll()
+        self.fit_tree_width()
         msg = f"{len(groups)} 个文件 · {hits} 处匹配"
         if truncated:
             msg += f"（已达上限 {SEARCH_MAX_HITS}，请缩小范围或细化关键词）"
         self.search_info.setText(msg)
+
+    # ================= v3.48.12（SEM-3）：本地语义搜索 =================
+    def _on_sem_toggled(self, on):
+        """语义 / 仅文件名 互斥；功能未启用时不允许勾选。"""
+        if on and not getattr(self._win, "_sem_enabled", False):
+            self.search_sem.blockSignals(True)
+            self.search_sem.setChecked(False)
+            self.search_sem.blockSignals(False)
+            self.search_sem.setToolTip(
+                "本地语义搜索未启用：系统设置 → 通用 → 本地语义搜索")
+            self.search_nameonly.setEnabled(True)
+            return
+        self.search_nameonly.setEnabled(not on)
+        if on:
+            self.search_sem.setToolTip(
+                "本地语义搜索：按含义关联查找（离线计算，内容不外传）；\n"
+                "首次使用自动建立索引，之后随文档改动增量更新")
+
+    def _run_semantic(self, query, root):
+        """后台建 / 更新索引并语义检索（QThread，UI 不卡死）。
+
+        v3.48.16（SEM-FIX）：新查询到达时不再因旧 worker 忙而吞掉请求——
+        中断旧 worker 并断开其回调，保证结果树只反映最后一次查询
+        （修连续搜索时旧结果与新结果叠加、以及忙态下新查询被静默丢弃）。"""
+        # 惰性回收已结束的退役 worker（无线程回调，防收尾竞态）
+        if self._sem_retired:
+            self._sem_retired = [w for w in self._sem_retired if w.isRunning()]
+        old = self._sem_worker
+        if old is not None:
+            if old.isRunning():
+                old.requestInterruption()
+                old.wait(150)
+            try:
+                old.finished.disconnect(self._on_sem_done)
+                old.failed.disconnect(self._on_sem_fail)
+            except (TypeError, RuntimeError):
+                pass
+            self._sem_retired.append(old)
+        self._sem_worker = None
+        self.search_tree.clear()
+        ext = self.search_ext.currentData() or ""
+        self.search_scope.setText(f"范围：{root}（语义搜索）")
+        self.search_info.setText("正在准备语义索引…")
+        w = semsearch.SemIndexWorker(root, ext, query, limit=60)
+        w.progress.connect(self._on_sem_progress)
+        w.finished.connect(self._on_sem_done)
+        w.failed.connect(self._on_sem_fail)
+        self._sem_worker = w
+        w.start()
+
+    def _on_sem_progress(self, msg):
+        self.search_info.setText(msg)
+
+    def _on_sem_done(self, results, stats):
+        self.search_tree.clear()   # 连续搜索防旧结果叠加（旧 worker 完成回调竞态）
+        groups = {}
+        for r in results:
+            groups.setdefault(r["path"], []).append(r)
+        if not groups:
+            self.search_info.setText("未找到语义相关的内容（可换个说法，或改用普通搜索）")
+            return
+        for path, rows in groups.items():
+            top = QTreeWidgetItem([f"{os.path.basename(path)}  ({len(rows)})"])
+            top.setToolTip(0, path)
+            top.setData(0, Qt.UserRole, ("file", path))
+            f = top.font(0)
+            f.setBold(True)
+            top.setFont(0, f)
+            top.setForeground(0, QBrush(QColor("#8a6d1f")))
+            for r in rows[:60]:
+                snippet = re.sub(r"\s+", " ", r["text"]).strip()[:110]
+                child = QTreeWidgetItem([f"{r['pct']}% · {r['line']}: {snippet}"])
+                child.setToolTip(0, f"{path}:{r['line']}（相关度 {r['pct']}%）")
+                child.setData(0, Qt.UserRole, ("hit", path, r["line"]))
+                top.addChild(child)
+            self.search_tree.addTopLevelItem(top)
+        self.search_tree.expandAll()
+        self.fit_tree_width()
+        msg = (f"{len(groups)} 个文件 · {len(results)} 个相关段落（语义）"
+               f" · 索引 {stats.get('files', 0)} 文件 / {stats.get('chunks', 0)} 块")
+        if stats.get("truncated"):
+            msg += "（索引已达上限，仅覆盖部分文件）"
+        if stats.get("updated"):
+            msg += f" · 更新于 {stats['updated']}"
+        self.search_info.setText(msg)
+
+    def _on_sem_fail(self, msg):
+        """语义链路异常 → 自动回退普通搜索（不阻塞用户）。"""
+        try:
+            self._win.show_status(f"语义搜索失败（{msg}），已回退普通搜索")
+        except Exception:
+            self.search_info.setText(f"语义搜索失败（{msg}），已回退普通搜索")
+        self.search_sem.blockSignals(True)
+        self.search_sem.setChecked(False)
+        self.search_sem.blockSignals(False)
+        self.search_nameonly.setEnabled(True)
+        self.run_search()
+
+    def stop_sem_worker(self):
+        """对话框关闭时停掉后台索引（请求中断并等待）。
+
+        v3.48.16：wait 超时后不得丢失运行中 QThread 的引用——
+        GC 销毁运行中线程会 abort（0xC0000409）；超时的移交 _sem_retired，
+        已结束的 retired 条目安全释放。"""
+        w = self._sem_worker
+        if w is not None and w.isRunning():
+            w.requestInterruption()
+            if not w.wait(3000):
+                self._sem_retired.append(w)
+        self._sem_worker = None
+        self._sem_retired = [x for x in self._sem_retired if x.isRunning()]
 
     def _on_search_click(self, item, _col=0):
         data = item.data(0, Qt.UserRole)
@@ -259,14 +417,118 @@ class OutlineTree(QTreeWidget):
         self._owner._on_outline_dropped()
 
 
+class BookTree(QTreeWidget):
+    """书籍目录树（mdBook SUMMARY.md 驱动）。
+
+    - 顶层：Part 分区（加粗、不可点击）/ 章节（只显示子章节名）/ 分隔符。
+    - 章节节点双击 / 单击 → 发射 bookEntryOpen(abs_path) 由主窗口在编辑器内打开；
+      同时发射 bookEntrySelected(rel_path) 由主窗口在状态栏显示对应文件名
+      （v3.45.3（BOOK-6）：树内不再双行显示文件名，挪到状态栏）。
+    - 支持同级 InternalMove 拖拽重排；落下后回调 _owner._on_book_dropped
+      由主窗口把新结构写回 SUMMARY.md。
+    - 节点 UserRole 直接挂原始 bookmode 节点 dict（含 abs_path），便于高亮与回写。"""
+
+    def __init__(self, owner, parent=None):
+        super().__init__(parent)
+        self._owner = owner
+        self.setHeaderHidden(True)
+        self.setIndentation(18)
+        self.setExpandsOnDoubleClick(True)
+        self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setDragDropMode(QAbstractItemView.InternalMove)
+        self.itemClicked.connect(self._on_click)
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._on_menu)
+
+    def dropEvent(self, e):
+        src = self.currentItem()
+        tgt = self.itemAt(e.position().toPoint())
+        if src is None or tgt is None or src is tgt:
+            e.ignore()
+            return
+        # v3.45.7（REQ3）：禁止把节点拖入自身的后代（避免目录成环）
+        p = tgt
+        while p is not None:
+            if p is src:
+                e.ignore()
+                return
+            p = p.parent()
+        pos = self.dropIndicatorPosition()
+        # v3.45.7（REQ3）：允许同级 / 跨级重排（Above/Below）+ 成为子节点（OnItem）
+        if pos not in (QAbstractItemView.AboveItem, QAbstractItemView.BelowItem,
+                       QAbstractItemView.OnItem):
+            e.ignore()
+            return
+        super().dropEvent(e)
+        self._owner._on_book_dropped()
+
+    def _on_click(self, item, col):
+        node = item.data(0, Qt.UserRole)
+        if not node:
+            return
+        path = node.get("abs_path") or None
+        if path:
+            self._owner.bookEntryOpen.emit(path)
+        # v3.45.3（BOOK-6）：树内只显示子章节名，选中时把对应文件名送到状态栏
+        # （Part / 整书容器节点无对应文件，不发信号，避免状态栏被无意义覆写）
+        if node.get("kind") == "chapter":
+            self._owner.bookEntrySelected.emit(node.get("path") or "")
+
+    def _on_menu(self, pos):
+        self._owner._on_book_menu(self, self.itemAt(pos), pos)
+
+    def _tree_to_root(self, book_title):
+        """把当前控件顺序反向序列化为 bookmode 根节点（供写回 SUMMARY）。
+
+        顶层书籍名节点（kind=book）仅作 UI 容器，不进入目录树——
+        从其子节点重建目录，保证写回的 SUMMARY 不含该节点。
+        """
+        root = {"kind": "root", "title": book_title, "children": []}
+
+        def build(parent_item, container, top=False):
+            for i in range(parent_item.childCount()):
+                it = parent_item.child(i)
+                node = it.data(0, Qt.UserRole)
+                if node is None:
+                    continue
+                if top and node.get("kind") == "book":   # 跳过整书容器节点
+                    build(it, container)
+                    continue
+                new_node = dict(node)
+                new_node["children"] = []
+                build(it, new_node)
+                container["children"].append(new_node)
+
+        build(self.invisibleRootItem(), root, top=True)
+        return root
+
+
 class Sidebar(QWidget):
     """Typora 风格左侧边栏：文件列表（一级目录）/ 大纲 两个标签页。
 
     v3.31.2（需求变更）：原「目录」树形页与「文件」页职责重合，整体移除；
     新建 / 新建文件夹 / 重命名 / 回收站删除等管理操作迁入「文件」页右键菜单。"""
 
-    TAB_FILES, TAB_OUTLINE = 0, 1
+    TAB_FILES, TAB_OUTLINE, TAB_BOOK, TAB_BACKLINKS = 0, 1, 2, 3
     MD_EXTS = (".md", ".markdown", ".mdown", ".txt")
+
+    # v3.44.34（BOOK-1）：书籍页签对外信号
+    bookEntryOpen = Signal(str)        # 章节节点被点击/双击 → 章节绝对路径
+    bookStructureChanged = Signal(object)  # 拖拽重排后 → 新的 bookmode 根节点
+    # v3.45.3（BOOK-6）：章节被点击 → 对应文件路径（书籍内相对路径；无文件为空串）
+    # （树内不再显示文件名，改由主窗口显示在状态栏）
+    bookEntrySelected = Signal(str)
+    # v3.44.35（BOOK-2）：整本书级操作
+    bookExportRequested = Signal(str, str)  # (fmt, summary_path) → 整书导出
+    bookRevealRequested = Signal(str)        # (book_dir) → 在资源管理器打开书籍目录
+    bookCloseRequested = Signal()            # 关闭当前书籍
+    # v3.45.7（BOOK-TOC）：书籍节点右键「编辑目录」→ summary.md 绝对路径
+    bookSummaryEditRequested = Signal(str)
+    # v3.46（TOC-SEL）：书籍节点右键「插入目录」→ summary.md 绝对路径
+    bookTocInsertRequested = Signal(str)
+    # v3.47.1（BOOK-TOC）：书籍节点右键「删除目录」→ summary.md 绝对路径
+    bookTocRemoveRequested = Signal(str)
     # v3.39（FL-4）：非 md 灰显时隐藏的系统噪音文件（大小写不敏感）
     IGNORE_NAMES = {"desktop.ini", "thumbs.db", "$recycle.bin", "autorun.inf"}
     # v3.39（FL-6）：固定目录上限
@@ -308,9 +570,12 @@ class Sidebar(QWidget):
         tab_row = QHBoxLayout(tabcap)
         tab_row.setContentsMargins(0, 0, 0, 0)
         tab_row.setSpacing(2)
-        self.btn_files = QToolButton(tabcap, text="文件列表")   # v3.44.3（DESIGN01）：设计稿页签名
-        self.btn_outline = QToolButton(tabcap, text="大纲")
-        for b in (self.btn_files, self.btn_outline):
+        self.btn_files = QToolButton(tabcap, text="文件")   # v3.44.3（DESIGN01）：设计稿页签名
+        self.btn_book = QToolButton(tabcap, text="书籍")     # v3.44.34（BOOK-1）+ 书籍目录页签
+        self.btn_outline = QToolButton(tabcap, text="大纲")      # v3.43.0
+        # v3.48.13（BACKLINK-4）：反向链接页签
+        self.btn_backlinks = QToolButton(tabcap, text="反链")
+        for b in (self.btn_files, self.btn_book, self.btn_outline, self.btn_backlinks):
             b.setCheckable(True)
             b.setCursor(Qt.PointingHandCursor)
             b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -318,10 +583,14 @@ class Sidebar(QWidget):
         self._tabs = QButtonGroup(self)
         self._tabs.setExclusive(True)
         self._tabs.addButton(self.btn_files)
+        self._tabs.addButton(self.btn_book)
         self._tabs.addButton(self.btn_outline)
+        self._tabs.addButton(self.btn_backlinks)
         self.btn_files.setChecked(True)
         self.btn_files.clicked.connect(lambda: self.select_tab(self.TAB_FILES))
+        self.btn_book.clicked.connect(lambda: self.select_tab(self.TAB_BOOK))
         self.btn_outline.clicked.connect(lambda: self.select_tab(self.TAB_OUTLINE))
+        self.btn_backlinks.clicked.connect(lambda: self.select_tab(self.TAB_BACKLINKS))
         cap_row = QHBoxLayout()
         # HEAD-1：左右 10px 与文件列表/大纲面板基准线一致；HEAD-2 行高 40 同步
         cap_row.setContentsMargins(10, 3, 10, 3)
@@ -378,8 +647,21 @@ class Sidebar(QWidget):
         self._crumb_lay = QHBoxLayout(self.crumbs)
         self._crumb_lay.setContentsMargins(10, 2, 10, 2)
         self._crumb_lay.setSpacing(1)
-        self.crumbs.setToolTip("双击返回上一级目录")
+        self.crumbs.setToolTip("双击返回上一级目录；悬停查看完整路径")
         self.crumbs.installEventFilter(self)
+        self._crumb_full = ""      # 完整路径（悬停浮层展示用）
+        # v3.45.7（CRUMB-2）：悬停/靠近时浮出完整路径浮层，随鼠标向右逐步展开
+        self._crumb_hover = QFrame(self)
+        self._crumb_hover.setObjectName("crumbHover")
+        self._crumb_hover.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
+        self._crumb_hover.setAttribute(Qt.WA_ShowWithoutActivating)
+        self._crumb_hover.setFrameShape(QFrame.NoFrame)
+        self._crumb_hover_lbl = QLabel(self._crumb_hover)
+        self._crumb_hover_lbl.setWordWrap(False)
+        hb = QHBoxLayout(self._crumb_hover)
+        hb.setContentsMargins(8, 5, 8, 5)
+        hb.addWidget(self._crumb_hover_lbl)
+        self._crumb_hover.hide()
         # v3.44.5（DESIGN01）：面包屑首部「↑ 上级目录」按钮（设计稿 .crumb .up）
         self._crumb_up = QPushButton(self)
         self._crumb_up.setObjectName("crumbUp")
@@ -396,6 +678,15 @@ class Sidebar(QWidget):
         fp_lay.setSpacing(2)
         fp_lay.addWidget(self.file_header)
         fp_lay.addWidget(self.crumbs)
+        # v3.44.33（FILE-FILTER）：文件列表实时筛选框（位于路径选择区下方）。
+        # 输入即过滤、不区分大小写、模糊（子串）匹配文件名；隐藏非匹配项，
+        # 保留列表原有排序与选中态。交互参考 Source Insight 文件查找。
+        self.file_filter = QLineEdit(self)
+        self.file_filter.setObjectName("fileFilter")
+        self.file_filter.setPlaceholderText("筛选文件（实时，不区分大小写）")
+        self.file_filter.setClearButtonEnabled(True)   # 行内清除钮（×）
+        self.file_filter.textChanged.connect(self._apply_file_filter)
+        fp_lay.addWidget(self.file_filter)
         fp_lay.addWidget(self.file_list, 1)
 
         # 大纲：树形结构，默认展开到 3 级，更深层级默认折叠（可手动展开）
@@ -423,12 +714,75 @@ class Sidebar(QWidget):
         op.setSpacing(0)
         op.addWidget(self.outline, 1)
 
+        # ---- v3.45（BOOKLINK）：书籍目录页（直接显示章节目录树；移除内部「目录 / 链接」子视图） ----
+        self.book_panel = QWidget(self)
+        bp_lay = QVBoxLayout(self.book_panel)
+        bp_lay.setContentsMargins(0, 0, 0, 0)
+        bp_lay.setSpacing(0)
+        self.book_tree = BookTree(self, self)
+        bp_lay.addWidget(self.book_tree, 1)
+        # 空态引导（未打开书籍时显示）
+        self.book_empty = QLabel(self)
+        self.book_empty.setObjectName("bookEmpty")
+        self.book_empty.setWordWrap(True)
+        self.book_empty.setAlignment(Qt.AlignTop)
+        self.book_empty.setText(
+            "未打开书籍\n\n通过菜单「文件 → 打开书籍…」选择 mdBook 项目"
+            "（book.toml 或含 SUMMARY.md 的目录），即可在此浏览章节目录、"
+            "点击跳转，并支持拖拽重排。")
+        self.book_empty.setContentsMargins(12, 12, 12, 12)
+        bp_lay.addWidget(self.book_empty, 1)
+        self.book_tree.setVisible(False)
+        self._book_title = None
+
+        # ---- v3.48.13（BACKLINK-4）：反向链接页 ----
+        # 数据源 = MainWindow.refresh_backlinks()（增量缓存扫描笔记库），
+        # 口径与 on_wikilink 导航一致：[[X]] / [[X#锚]] / [[X#锚|别名]] 的
+        # 头部 X 命中当前文档标题或文件名（去扩展名）即计入，自链除外。
+        self.backlinks_panel = QWidget(self)
+        bl_lay = QVBoxLayout(self.backlinks_panel)
+        bl_lay.setContentsMargins(0, 0, 0, 0)
+        bl_lay.setSpacing(2)
+        self.bl_info = QLabel(self)
+        self.bl_info.setWordWrap(True)
+        self.bl_info.setContentsMargins(10, 6, 10, 2)
+        bl_lay.addWidget(self.bl_info)
+        self.bl_list = QListWidget(self)
+        self.bl_list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
+        self.bl_list.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.bl_list.itemDoubleClicked.connect(self._on_bl_open)
+        self.bl_list.itemActivated.connect(self._on_bl_open)
+        bl_lay.addWidget(self.bl_list, 1)
+        self.bl_empty = QLabel(self)
+        self.bl_empty.setWordWrap(True)
+        self.bl_empty.setAlignment(Qt.AlignTop)
+        self.bl_empty.setContentsMargins(12, 12, 12, 12)
+        self.bl_empty.setText(
+            "没有被其他文档链接\n\n在其它文档里写 [[本文档标题]] 或 [[文件名]]，\n"
+            "这里会列出全部来源（点击跳转到引用所在行）。")
+        bl_lay.addWidget(self.bl_empty, 1)
+        self.bl_list.setVisible(False)
+        bl_tools = QHBoxLayout()
+        bl_tools.setContentsMargins(10, 2, 10, 4)
+        self.btn_bl_refresh = QToolButton(self)
+        self.btn_bl_refresh.setText("⟳")
+        self.btn_bl_refresh.setObjectName("olTool")
+        self.btn_bl_refresh.setToolTip("重建反向链接（重新扫描笔记库）")
+        self.btn_bl_refresh.setCursor(Qt.PointingHandCursor)
+        self.btn_bl_refresh.setFixedSize(22, 22)
+        self.btn_bl_refresh.clicked.connect(self._on_bl_refresh)
+        bl_tools.addWidget(self.btn_bl_refresh)
+        bl_tools.addStretch(1)
+        bl_lay.addLayout(bl_tools)
+
         # v3.31.2：树形「目录」页已移除（与文件页重合，管理操作迁文件页右键）
         # 全局搜索面板（v3.24 起移入「查找」对话框的「全局搜索」页签）：
-        # 面板构造与检索逻辑见 GlobalSearchPanel，侧栏只保留文件 / 大纲两个标签页。
+        # 侧栏只保留 文件列表 / 书籍列表 / 大纲 三个标签页；本书链接整合在书籍页内。
         self.stack = QStackedWidget(self)
         self.stack.addWidget(self.file_panel)
-        self.stack.addWidget(self.outline_panel)   # v3.43.0：大纲页 = 过滤条 + 树
+        self.stack.addWidget(self.outline_panel)   # v3.43.0：大纲页 = 标题树
+        self.stack.addWidget(self.book_panel)      # v3.44.34（BOOK-1）：书籍页（直接显示章节目录树）
+        self.stack.addWidget(self.backlinks_panel)  # v3.48.13（BACKLINK-4）：反向链接页
         lay.addWidget(self.stack, 1)
 
         # 初始进入「此电脑」层
@@ -524,7 +878,7 @@ class Sidebar(QWidget):
             "QToolButton#olTool:hover {{ background:{hov}; }}"
         ).format(hov=g("hover_bg", "#eef2f7"),
                  muted=g("text_muted", "#6b7280"))
-        for b in (self.btn_ol_refresh, self.btn_ol_fold):
+        for b in (self.btn_ol_refresh, self.btn_ol_fold, self.btn_bl_refresh):
             b.setStyleSheet(qss)
 
     # ---- 行为 ----
@@ -535,6 +889,19 @@ class Sidebar(QWidget):
         if obj is self.crumbs and ev.type() == QEvent.MouseButtonDblClick:
             self.go_up()          # v3.39（FL-1）：双击面包屑返回上一级
             return True
+        # v3.45.7（CRUMB-2）：悬停/靠近面包屑即浮出完整路径，随鼠标向右展开
+        if obj in (self.crumbs, self.file_header):
+            if ev.type() == QEvent.Enter:
+                gpos = obj.mapToGlobal(obj.rect().center())
+                self._show_crumb_hover(gpos.x(), gpos.y())
+                return False
+            if ev.type() == QEvent.MouseMove:
+                gpos = ev.globalPosition().toPoint()
+                self._show_crumb_hover(gpos.x(), gpos.y())
+                return False
+            if ev.type() == QEvent.Leave:
+                self._hide_crumb_hover()
+                return False
         if obj is self.file_list and ev.type() == QEvent.KeyPress:
             if self._file_list_key(ev):   # v3.39（FL-3）
                 return True
@@ -573,6 +940,7 @@ class Sidebar(QWidget):
         kind, p = data
         if kind == "dir":
             self._cur_dir = p
+            self._reset_file_filter()
             self._refresh_files()
             self._update_file_header()
         elif kind == "ext":                    # v3.39（FL-4）：非 md → 外部程序
@@ -629,6 +997,9 @@ class Sidebar(QWidget):
             menu.addAction("用外部程序打开", lambda: self._win.open_external(p))
             # v3.35（TPL-D）：把该文档收编为自定义模板（追加到 / 菜单与悬浮模板菜单）
             menu.addAction("设为模板…", lambda: self._win.make_template_from_file(p))
+            # v3.46（TOC-SEL）：从文件列表选择单个文件 → 仅对该文件插入/删除标题大纲目录
+            menu.addAction("插入目录", lambda: self._win.insert_toc_for_file(p))
+            menu.addAction("删除目录", lambda: self._win.remove_toc_for_file(p))
         menu.addSeparator()
         menu.addAction("重命名", lambda: self._file_rename(p))
         menu.addAction("删除（移入回收站）", lambda: self._file_delete(p))
@@ -644,20 +1015,56 @@ class Sidebar(QWidget):
         else:
             self._cur_dir = None  # 盘符根目录 -> 此电脑
         self._cur_file = None
+        self._reset_file_filter()
         self._refresh_files()
         self._update_file_header()
 
     @staticmethod
     def _drives():
-        """Windows API 直接取盘符列表（瞬时返回）。
+        """返回「此电脑」层的盘符 / 挂载点列表（跨平台）。
 
-        之前用 os.path.exists 逐个探测 A~Z：在不存在 / 断开的盘符上
-        每次探测可能阻塞数秒（网络驱动器超时），26 次累计拖慢启动约 1 分钟。"""
-        import ctypes
-        buf = ctypes.create_unicode_buffer(1024)
-        n = ctypes.windll.kernel32.GetLogicalDriveStringsW(1024, buf)
-        raw = ctypes.wstring_at(ctypes.addressof(buf), n)
-        return [s for s in raw.split("\x00") if s]
+        - Windows：Win32 GetLogicalDriveStringsW（瞬时，避免逐个探测网络盘超时）
+        - macOS  ：/ 与 /Volumes 下各挂载点
+        - Linux  ：/ 与 /media、/mnt 下各挂载点
+        - 兜底    ：仅当前文件系统根
+        任何异常都收敛为空列表，绝不让启动因盘符枚举而崩溃。"""
+        import platform
+        sysname = platform.system()
+        if sysname == "Windows":
+            import ctypes
+            try:
+                buf = ctypes.create_unicode_buffer(1024)
+                n = ctypes.windll.kernel32.GetLogicalDriveStringsW(1024, buf)
+                raw = ctypes.wstring_at(ctypes.addressof(buf), n)
+                return [s for s in raw.split("\x00") if s]
+            except Exception:
+                return []
+        if sysname == "Darwin":
+            vols = ["/"]
+            try:
+                for name in sorted(os.listdir("/Volumes")):
+                    p = os.path.join("/Volumes", name)
+                    if os.path.isdir(p) and not os.path.islink(p):
+                        vols.append(p)
+            except Exception:
+                pass
+            return vols
+        if sysname == "Linux":
+            mounts = ["/"]
+            for base in ("/media", "/mnt"):
+                try:
+                    for name in sorted(os.listdir(base)):
+                        p = os.path.join(base, name)
+                        if os.path.isdir(p) and not os.path.islink(p):
+                            mounts.append(p)
+                except Exception:
+                    pass
+            return mounts
+        # 其它平台兜底
+        try:
+            return [os.path.abspath(os.sep)]
+        except Exception:
+            return []
 
     def _refresh_files(self):
         self.file_list.clear()
@@ -740,6 +1147,39 @@ class Sidebar(QWidget):
                 if d and d[1] == self._cur_file:
                     self.file_list.setCurrentRow(row)
                     break
+        # v3.44.33（FILE-FILTER）：刷新后按当前筛选框即时过滤
+        self._apply_file_filter()
+
+    # ============ v3.44.33（FILE-FILTER）：文件列表实时筛选 ============
+    def _apply_file_filter(self):
+        """按筛选框文本即时过滤文件列表（不区分大小写，子串模糊匹配文件名）。
+
+        仅隐藏非匹配项（setHidden），**不重建**列表 —— 因此原有排序与各项选中态
+        完全保留；筛选激活时一并隐藏分隔线（避免悬空），清空时全部显示。
+        匹配基于项的显示文本（含文件名 / 盘符 / 固定目录名），大小写不敏感。"""
+        if not hasattr(self, "file_filter"):
+            return
+        text = (self.file_filter.text() or "").strip().lower()
+        for row in range(self.file_list.count()):
+            it = self.file_list.item(row)
+            if it is None:
+                continue
+            d = it.data(Qt.UserRole)
+            if d is None:
+                # 分隔线：筛选激活时隐藏，清空时恢复
+                it.setHidden(bool(text))
+                continue
+            visible = (not text) or (text in it.text().lower())
+            it.setHidden(not visible)
+
+    def _reset_file_filter(self):
+        """目录切换时清空筛选框（筛选针对当前目录陈列，跨目录无意义）。
+
+        直接 setText("") 会触发 textChanged → _apply_file_filter 即时复位为全显示，
+        随后 _refresh_files 重建列表并再次应用（空筛选 = 全显），无副作用。"""
+        f = getattr(self, "file_filter", None)
+        if f is not None and f.text():
+            f.setText("")
 
     # ============ v3.39（FL-5）：排序方式 ============
     def _sort_mode(self):
@@ -793,6 +1233,14 @@ class Sidebar(QWidget):
         except Exception:      # noqa: BLE001 —— 主题键缺失时兜底
             return QColor("#6b7280")
 
+    def _crumb_theme(self):
+        """v3.45.7（CRUMB-2）：面包屑配色取自主题 palette，缺省兜底。"""
+        from styles import palette
+        try:
+            return palette(getattr(self._win, "_theme", "light"))
+        except Exception:      # noqa: BLE001
+            return {}
+
     def _update_file_header(self):
         # v3.44.3（DESIGN01）：对齐设计稿侧栏结构 —— 不再显示「当前选中目录名」行
         # （设计稿只有 页签行 + 面包屑路径 + 列表），路径统一由面包屑承担；
@@ -812,16 +1260,24 @@ class Sidebar(QWidget):
 
     # ============ v3.39（FL-1）：面包屑路径条 ============
     def _rebuild_crumbs(self):
-        """路径段按钮（此电脑 › 盘 › 目录…），点击段一键直达；中间溢出折叠为
-        「…」（点击 = 返回上一级）。blank 模式整条隐藏。"""
+        """路径段按钮（此电脑 › 盘 › 目录…），点击段一键直达。
+
+        v3.45.7（CRUMB-2）：路径过长时「保持开头部分正常显示，仅将末尾超出部分
+        用 … 省略隐藏」——保留前几段（此电脑 / 盘 / 前两级目录），其余（含当前目录）
+        折叠进 … 按钮（点击弹出被省略目录，可一键直达）。鼠标悬停/靠近时由
+        _crumb_hover 浮层展示完整路径。分隔符 › 加大间距并高亮，段按钮增大内边距
+        扩大可点击热区。blank 模式整条隐藏。"""
         lay = self._crumb_lay
         while lay.count():
             it = lay.takeAt(0)
             w = it.widget()
             if w is not None and w is not self._crumb_up:
                 w.deleteLater()
+        self._hide_crumb_hover()     # v3.45.7（CRUMB-2）：路径变化即收起浮层
         if self._file_mode == "blank":
             self.crumbs.setVisible(False)
+            self._crumb_full = ""
+            self._hide_crumb_hover()
             return
         self.crumbs.setVisible(True)
         # v3.44.6：顶层（此电脑层）无父级可回退，隐藏「↑上级」按钮，
@@ -829,23 +1285,40 @@ class Sidebar(QWidget):
         if self._cur_dir is not None:
             lay.addWidget(self._crumb_up)
 
+        th = self._crumb_theme()
+        ac = th.get("accent", "#0052d9")
+        hov = th.get("hover_bg", "#eef2f7")
+        fg = th.get("text", "#1f2329")
+
         def seg(text, tip, cb, cur=False):
             b = QToolButton(self.crumbs)
             b.setText(text)
             b.setToolTip(tip)
             b.setCursor(Qt.PointingHandCursor)
             b.setAutoRaise(True)
-            b.setStyleSheet("QToolButton{border:none;padding:1px 3px;}"
-                            + ("font-weight:600;" if cur else ""))
+            # v3.45.7（CRUMB-2）：增大内边距，扩大可点击热区；当前段加粗高亮
+            css = (
+                "QToolButton{{ border:none; background:transparent;"
+                " padding:4px 9px; border-radius:5px; color:{fg}; }}"
+                "QToolButton:hover{{ background:{hov}; }}"
+            ).format(fg=fg, hov=hov)
+            if cur:
+                css += "QToolButton{{ font-weight:600; color:{ac}; }}".format(ac=ac)
+            b.setStyleSheet(css)
             b.clicked.connect(cb)
             lay.addWidget(b)
-            arrow = QLabel("›", self.crumbs)
-            arrow.setStyleSheet("padding:0 1px;")
-            lay.addWidget(arrow)
+
+        def sep():
+            # v3.45.7（CRUMB-2）：分隔符加大间距 + 高亮，提升辨识度
+            s = QLabel("›", self.crumbs)
+            s.setStyleSheet("QLabel{{ color:{ac}; font-weight:700;"
+                            " font-size:13px; padding:0 6px; }}".format(ac=ac))
+            lay.addWidget(s)
 
         if self._cur_dir is None:
             seg("此电脑", "我的电脑（顶层）", lambda: None, cur=True)
             lay.addStretch(1)
+            self._crumb_full = "此电脑"
             return
         norm = self._cur_dir.rstrip("/\\")
         # 拆段：盘符段 + 逐级目录
@@ -862,15 +1335,95 @@ class Sidebar(QWidget):
                         parts.append((segn, acc))
         else:
             parts.append((norm or self._cur_dir, self._cur_dir))
+
+        # v3.45.7（CRUMB-2）：保开头、末尾超出部分用 … 省略
+        HEAD_KEEP = 3                      # 保留开头段数（不含「此电脑」）
+        if len(parts) > HEAD_KEEP + 1:     # 超过 4 段才折叠，避免浅路径误截
+            head = parts[:HEAD_KEEP]
+            hidden = parts[HEAD_KEEP:]
+        else:
+            head = parts
+            hidden = []
+
         seg("此电脑", "我的电脑（顶层）", self._enter_this_pc)
-        if len(parts) > 4:                       # 中间溢出折叠
-            seg("…", "返回上一级", self.go_up)
-            parts = parts[-3:]
-        for i, (name, pth) in enumerate(parts):
-            cur = i == len(parts) - 1
-            seg(name, pth if not cur else pth + "\n（当前目录）",
-                lambda pp=pth: self._enter_dir(pp), cur=cur)
+        sep()
+        for i, (name, pth) in enumerate(head):
+            seg(name, pth, lambda pp=pth: self._enter_dir(pp))
+            sep()
+        if hidden:
+            # … 按钮：点击弹出被省略的目录，可一键直达（含当前目录）
+            b = QToolButton(self.crumbs)
+            b.setText("…")
+            b.setToolTip("（路径过长，已省略 %d 级目录）点击展开" % len(hidden))
+            b.setCursor(Qt.PointingHandCursor)
+            b.setAutoRaise(True)
+            b_css = (
+                "QToolButton{{ border:none; background:transparent;"
+                " padding:4px 9px; border-radius:5px; color:{ac};"
+                " font-weight:700; }}"
+                "QToolButton:hover{{ background:{hov}; }}"
+            ).format(ac=ac, hov=hov)
+            b.setStyleSheet(b_css)
+            b.clicked.connect(self._popup_hidden_dirs)
+            b.setProperty("_hidden", hidden)
+            lay.addWidget(b)
+            sep()
         lay.addStretch(1)
+        self._crumb_full = "此电脑 › " + " › ".join(p for p, _ in parts)
+
+    def _popup_hidden_dirs(self):
+        """v3.45.7（CRUMB-2）：… 按钮弹出被省略目录，点击直达。"""
+        s = self.sender()
+        if not isinstance(s, QToolButton):
+            return
+        hidden = s.property("_hidden") or []
+        if not hidden:
+            return
+        m = QMenu(self)
+        for name, pth in hidden:
+            m.addAction(name, lambda pp=pth: self._enter_dir(pp))
+        gp = s.mapToGlobal(s.rect().bottomLeft())
+        m.exec(gp)
+
+    # ---- v3.45.7（CRUMB-2）：悬停浮层（完整路径，随鼠标向右逐步展开） ----
+    def _show_crumb_hover(self, gx, gy):
+        if not self._crumb_full or self._file_mode == "blank":
+            return
+        th = self._crumb_theme()
+        bg = th.get("tooltip_bg", "#1f2329")
+        fgc = th.get("tooltip_fg", "#ffffff")
+        ac = th.get("accent", "#0052d9")
+        self._crumb_hover.setStyleSheet(
+            "QFrame#crumbHover{{ background:{bg}; border:1px solid {ac};"
+            " border-radius:6px; }}"
+            "QLabel{{ color:{fgc}; font-size:12px; font-family:'Microsoft YaHei';"
+            " padding:0; }}".format(bg=bg, ac=ac, fgc=fgc))
+        # 当前段高亮：把完整路径按 › 拆开，段名着主色
+        segs = self._crumb_full.split(" › ")
+        html = " <span style='color:{ac};'>›</span> ".format(ac=ac).join(
+            "<span style='color:{ac};font-weight:600;'>{}</span>".format(
+                self._esc_html(s)) if i == len(segs) - 1
+            else self._esc_html(s) for i, s in enumerate(segs))
+        self._crumb_hover_lbl.setText(html)
+        self._crumb_hover_lbl.setTextFormat(Qt.RichText)
+        self._crumb_hover.adjustSize()
+        # 浮层锚定在面包屑下方，并随鼠标 X 跟随（向右逐步展开）
+        cr = self.crumbs.mapToGlobal(QPoint(0, 0))
+        x = max(cr.x(), gx - 24)
+        y = cr.y() + self.crumbs.height() + 2
+        # 防止超出右边界
+        if x + self._crumb_hover.width() > cr.x() + self.crumbs.width() + 40:
+            x = cr.x() + max(0, self.crumbs.width() - self._crumb_hover.width())
+        self._crumb_hover.move(x, y)
+        self._crumb_hover.show()
+
+    def _hide_crumb_hover(self):
+        if self._crumb_hover.isVisible():
+            self._crumb_hover.hide()
+
+    @staticmethod
+    def _esc_html(s):
+        return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
 
     def _enter_this_pc(self):
         self._cur_dir = None
@@ -906,6 +1459,9 @@ class Sidebar(QWidget):
         menu.addSeparator()
         act_top = menu.addAction("移到开头")
         act_end = menu.addAction("移到末尾")
+        menu.addSeparator()
+        # v3.47.1（TOC-FIX）：大纲右键可直接删除文档已插入的目录块
+        act_del = menu.addAction("删除文档目录")
         act = menu.exec(self.outline.viewport().mapToGlobal(pos))
         if act is act_jump:
             self._on_outline_clicked(item)
@@ -923,6 +1479,10 @@ class Sidebar(QWidget):
             self._outline_move(item, True)
         elif act is act_end:
             self._outline_move(item, False)
+        elif act is act_del:
+            win = getattr(self, "_win", None)
+            if win is not None and hasattr(win, "remove_toc_for_current"):
+                win.remove_toc_for_current()
 
     def _outline_move(self, item, to_start):
         """把节点移到同级开头 / 末尾，随后复用拖拽调序通道把整段写回文档。"""
@@ -960,14 +1520,469 @@ class Sidebar(QWidget):
                 self._set_children_expanded(ch, expanded)
 
     def select_tab(self, tab):
-        """切换侧栏标签页（文件 / 大纲）。"""
+        """切换侧栏标签页（文件 / 书籍 / 大纲 / 反链）。"""
         self.btn_files.setChecked(tab == self.TAB_FILES)
+        self.btn_book.setChecked(tab == self.TAB_BOOK)
         self.btn_outline.setChecked(tab == self.TAB_OUTLINE)
+        self.btn_backlinks.setChecked(tab == self.TAB_BACKLINKS)
         self.stack.setCurrentIndex(tab)
+        if tab == self.TAB_BACKLINKS:
+            # v3.48.13（BACKLINK-4）：进入反链页签即时刷新（冷扫描可能耗时，WaitCursor 兜底）
+            try:
+                QApplication.setOverrideCursor(Qt.WaitCursor)
+                try:
+                    self._win.refresh_backlinks()
+                finally:
+                    QApplication.restoreOverrideCursor()
+            except Exception:
+                pass
+
+    # ================= v3.48.13（BACKLINK-4）：反向链接 =================
+    def set_backlinks(self, title, items):
+        """刷新反链列表。items = [(src_path, line, snippet), ...]（已按文件聚合）。"""
+        self.bl_list.clear()
+        self.bl_info.setText(f"「{title}」被 {len(items)} 处引用" if items
+                             else f"「{title}」暂未被引用")
+        if not items:
+            self.bl_list.setVisible(False)
+            self.bl_empty.setVisible(True)
+            return
+        self.bl_empty.setVisible(False)
+        self.bl_list.setVisible(True)
+        for path, line, snip in items[:300]:
+            it = QListWidgetItem(f"{os.path.basename(path)} · {line}: {snip}")
+            it.setToolTip(f"{path}:{line}")
+            it.setData(Qt.UserRole, (path, int(line)))
+            self.bl_list.addItem(it)
+
+    def _on_bl_open(self, item):
+        d = item.data(Qt.UserRole) if item is not None else None
+        if d:
+            self._win.open_file_at(d[0], d[1])
+
+    def _on_bl_refresh(self):
+        try:
+            self._win.refresh_backlinks(force=True)
+        except Exception:
+            pass
 
     def show_outline(self):
         self.select_tab(self.TAB_OUTLINE)
         self.setVisible(True)
+
+    # ================= v3.44.34（BOOK-1）：书籍目录 =================
+    def set_book(self, book_info):
+        """载入 / 清空书籍目录树。book_info 为 bookmode.read_book 返回字典；
+        None 表示关闭书籍（回到空态引导）。"""
+        self.book_tree.clear()
+        if not book_info:
+            self._book_root = None
+            self._book_title = None
+            self._book_summary_dir = None
+            self.book_tree.setVisible(False)
+            self.book_empty.setVisible(True)
+            return
+        self._book_root = book_info["root"]
+        self._book_title = book_info.get("title")
+        self._book_summary_dir = book_info.get("summary_dir")
+        self._book_dir = book_info.get("book_dir")
+        self._book_summary_path = book_info.get("summary_path")
+        # v3.44.35（BOOK-2）：顶层书籍名节点（带书图标）
+        book_node = {
+            "kind": "book",
+            "title": self._book_title or os.path.basename(self._book_dir or ""),
+            "book_dir": self._book_dir,
+            "summary_path": self._book_summary_path,
+            "summary_dir": self._book_summary_dir,
+        }
+        book_item = QTreeWidgetItem(self.book_tree.invisibleRootItem())
+        book_item.setData(0, Qt.UserRole, book_node)
+        book_item.setIcon(0, book_state_icon(BOOK_COLOR_CAT, 18))   # v3.45.8（REQ2）：蓝色 📚
+        book_item.setText(0, book_node["title"])
+        bf = book_item.font(0)
+        bf.setBold(True)
+        book_item.setFont(0, bf)
+        book_item.setFlags(book_item.flags() & ~Qt.ItemIsDragEnabled)  # 整书节点不可拖
+        # 章节挂在书籍名节点之下
+        for child in book_info["root"].get("children", []):
+            self._build_book_item(child, book_item)
+        self.book_tree.expandAll()
+        self.book_empty.setVisible(False)
+        self.book_tree.setVisible(True)
+
+    def _book_node_icon(self, node):
+        """v3.45.8（REQ2）：按节点类别/状态返回彩色 📚 状态图标。
+        - 分区(part) / 整书(book)：蓝色（结构性类别）
+        - 章节(chapter)：对应 .md 文件存在 → 绿色（完好）；缺失/无效 → 红色（异常）
+        """
+        kind = node.get("kind")
+        if kind == "part":
+            return book_state_icon(BOOK_COLOR_CAT, 16)
+        if kind == "chapter":
+            ap = node.get("abs_path")
+            if not ap and node.get("path"):
+                ap = self._book_resolve_path(node.get("path"))
+            ok = bool(ap and os.path.exists(ap))
+            return book_state_icon(BOOK_COLOR_OK if ok else BOOK_COLOR_BAD, 16)
+        return book_state_icon(BOOK_COLOR_CAT, 16)
+
+    def _build_book_item(self, node, parent_item):
+        item = QTreeWidgetItem(parent_item)
+        item.setData(0, Qt.UserRole, node)
+        if node["kind"] == "separator":
+            item.setText(0, "—")
+            item.setFlags(Qt.NoItemFlags)   # 分隔符不可选 / 不可拖
+            item.setForeground(0, QColor(150, 150, 150))
+            return item
+        if node["kind"] == "part":
+            item.setText(0, node["title"])
+            item.setIcon(0, self._book_node_icon(node))   # v3.45.8（REQ2）：蓝色 📚
+            f = item.font(0)
+            f.setBold(True)
+            item.setFont(0, f)
+            item.setFlags(item.flags() & ~Qt.ItemIsDragEnabled)  # Part 不可拖（含子章节整体）
+        elif node["kind"] == "chapter":
+            # v3.45.3（BOOK-6）：只显示子章节名（文件名移到状态栏，见
+            # bookEntrySelected）；无对应文件的章节标题静音灰。
+            # 只 setText 不挂单元控件 —— 否则委托与单元各画一次出现「重影」。
+            item.setText(0, node["title"] or "（未命名）")
+            item.setIcon(0, self._book_node_icon(node))   # v3.45.8（REQ2）：绿/红 📚
+            if not node.get("path"):
+                item.setForeground(0, QColor(150, 150, 150))
+        for ch in node.get("children", []):
+            self._build_book_item(ch, item)
+        return item
+
+    def highlight_book_path(self, path):
+        """高亮当前打开的章节（按绝对路径匹配）；未打开书籍或不在书中则忽略。"""
+        if not path or not self.book_tree.isVisible():
+            return
+        target = os.path.normpath(os.path.abspath(path)).lower()
+        found = None
+
+        def walk(parent):
+            nonlocal found
+            for i in range(parent.childCount()):
+                it = parent.child(i)
+                node = it.data(0, Qt.UserRole)
+                if node and node.get("abs_path") \
+                        and os.path.normpath(os.path.abspath(node["abs_path"])).lower() == target:
+                    found = it
+                    return
+                walk(it)
+
+        walk(self.book_tree.invisibleRootItem())
+        if found is None:
+            return
+        self.book_tree.blockSignals(True)
+        self.book_tree.clearSelection()
+        self.book_tree.setCurrentItem(found)
+        self.book_tree.scrollToItem(found)
+        # 展开全部祖先
+        p = found.parent()
+        while p is not None:
+            p.setExpanded(True)
+            p = p.parent()
+        self.book_tree.blockSignals(False)
+
+    def _on_book_dropped(self):
+        """拖拽重排落下后：从控件顺序重建 root 并通知主窗口写回 SUMMARY。"""
+        if self._book_root is None:
+            return
+        new_root = self.book_tree._tree_to_root(self._book_title)
+        self._book_root = new_root
+        self.bookStructureChanged.emit(new_root)
+
+    def _slugify(self, title):
+        """把章节标题转成安全的相对文件名（保留中英文与数字，其余转连字符）。"""
+        s = re.sub(r"[^\w一-鿿]+", "-", title).strip("-")
+        if not s:
+            s = "chapter"
+        return s + ".md"
+
+    def _book_resolve_path(self, rel):
+        """把相对路径解析为书籍 summary_dir 下的绝对路径（用于新建文件）。"""
+        if not self._book_summary_dir:
+            return None
+        return os.path.normpath(os.path.join(self._book_summary_dir, rel))
+
+    def _on_book_menu(self, tree, item, pos):
+        """书籍树右键菜单。
+
+        - 整书节点（kind=book）：打开所在文件 / 导出整本书（PDF·EPUB·HTML·Word）/ 新增章节 / 关闭书籍。
+        - 章节节点：打开 / 编辑（目录名 + 文件名）/ 删除 / 新增子章节 / 新增同级章节。
+        """
+        if item is None:
+            return
+        node = item.data(0, Qt.UserRole)
+        if node is None:
+            return
+
+        # ---- 整书节点 ----
+        if node["kind"] == "book":
+            menu = QMenu(self)
+            act_open_dir = menu.addAction("打开所在文件")
+            menu.addSeparator()
+            m_export = menu.addMenu("导出整本书")
+            act_pdf = m_export.addAction("导出 PDF（含书签 / 页码）")
+            act_epub = m_export.addAction("导出 EPUB")
+            act_html = m_export.addAction("导出 HTML 站点（多页）")
+            act_docx = m_export.addAction("导出 Word (docx)")
+            menu.addSeparator()
+            act_new = menu.addAction("新增章节")
+            act_edit_summary = menu.addAction("编辑目录")
+            act_insert_toc = menu.addAction("插入目录")
+            has_toc = bool(getattr(getattr(self, "_win", None),
+                                  "_book_toc_page", None))
+            act_remove_toc = menu.addAction("删除目录")
+            if not has_toc:
+                act_remove_toc.setEnabled(False)
+            act_close = menu.addAction("关闭书籍")
+            choice = menu.exec(tree.mapToGlobal(pos))
+            if choice is None:
+                return
+            if choice == act_open_dir and node.get("book_dir"):
+                self.bookRevealRequested.emit(node["book_dir"])
+            elif choice in (act_pdf, act_epub, act_html, act_docx):
+                fmt = {act_pdf: "pdf", act_epub: "epub",
+                       act_html: "html", act_docx: "docx"}[choice]
+                if node.get("summary_path"):
+                    self.bookExportRequested.emit(fmt, node["summary_path"])
+            elif choice == act_new:
+                self._book_add(item, node, as_child=True)
+            elif choice == act_edit_summary and node.get("summary_path"):
+                self.bookSummaryEditRequested.emit(node["summary_path"])
+            elif choice == act_insert_toc and node.get("summary_path"):
+                # v3.46（TOC-SEL）：为整本书生成并插入完整目录
+                self.bookTocInsertRequested.emit(node["summary_path"])
+            elif choice == act_remove_toc and node.get("summary_path"):
+                # v3.47.1（BOOK-TOC）：删除整本书目录（summary 项 + 目录页文件）
+                self.bookTocRemoveRequested.emit(node["summary_path"])
+            elif choice == act_close:
+                self.bookCloseRequested.emit()
+            return
+
+        # ---- 章节节点 ----
+        menu = QMenu(self)
+        is_chapter = (node["kind"] == "chapter")
+        if is_chapter and node.get("path"):
+            act_open = menu.addAction("打开")
+        act_edit = menu.addAction("编辑")
+        act_del = menu.addAction("删除")
+        menu.addSeparator()
+        act_child = menu.addAction("新增子章节")
+        act_sib = menu.addAction("新增同级章节")
+        menu.addSeparator()
+        act_out = menu.addAction("上移一层")
+        act_in = menu.addAction("下移一层")
+        # 层级升降可用性（顶层章节不可再上移；无前驱同级不可下移）
+        _p = item.parent()
+        _can_out = bool(_p is not None and _p.parent() is not None)
+        _can_in = False
+        if _p is not None:
+            _i = _p.indexOfChild(item)
+            if _i > 0:
+                _prev = _p.child(_i - 1)
+                _pn = _prev.data(0, Qt.UserRole) if _prev else None
+                _can_in = bool(_pn and _pn.get("kind") != "separator")
+        act_out.setEnabled(_can_out)
+        act_in.setEnabled(_can_in)
+        choice = menu.exec(tree.mapToGlobal(pos))
+        if choice is None:
+            return
+        if is_chapter and node.get("path") and choice == act_open:
+            self.bookEntryOpen.emit(node["abs_path"])
+        elif choice == act_edit:
+            self._book_edit(item, node)
+        elif choice == act_del:
+            self._book_delete(item, node)
+        elif choice == act_child:
+            self._book_add(item, node, as_child=True)
+        elif choice == act_sib:
+            self._book_add(item, node, as_child=False)
+        elif choice == act_out:
+            self._book_outdent(item)
+        elif choice == act_in:
+            self._book_indent(item)
+
+    def _book_edit(self, item, node):
+        """编辑章节：同时编辑目录名与对应 markdown 文件名。
+
+        文件名变更会重命名磁盘上的 .md 文件（移动 / 改名），并更新节点与 SUMMARY；
+        其它章节对该文件的相对链接不会自动重写（已知限制）。
+        """
+        dlg = QDialog(self)
+        dlg.setWindowTitle("编辑章节")
+        form = QFormLayout(dlg)
+        e_title = QLineEdit(node["title"] or "")
+        e_file = QLineEdit(node.get("path") or "")
+        e_file.setPlaceholderText("相对路径，如 guide/intro.md")
+        form.addRow("目录名", e_title)
+        form.addRow("Markdown 文件", e_file)
+        hint = QLabel("修改文件名将重命名磁盘上的 .md 文件；其它章节对该文件的相对链接不会自动更新。")
+        hint.setStyleSheet("color:#9aa0a6;font-size:11px")
+        hint.setWordWrap(True)
+        form.addRow(hint)
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dlg)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        form.addRow(btns)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        new_title = e_title.text().strip()
+        new_file = e_file.text().strip()
+        if not new_title:
+            QMessageBox.warning(self, "编辑章节", "目录名不能为空。")
+            return
+        if new_file and not re.search(r"\.(md|markdown|mdown)$", new_file, re.I):
+            QMessageBox.warning(self, "编辑章节",
+                                "Markdown 文件名须以 .md / .markdown / .mdown 结尾。")
+            return
+        # 文件名变更 → 重命名磁盘文件
+        if node.get("path") and new_file and new_file != node["path"]:
+            old_abs = node.get("abs_path") or self._book_resolve_path(node["path"])
+            new_abs = self._book_resolve_path(new_file)
+            if old_abs and new_abs and os.path.exists(old_abs) and old_abs != new_abs:
+                if os.path.exists(new_abs):
+                    QMessageBox.warning(self, "编辑章节",
+                                        "目标文件已存在，未重命名：" + new_file)
+                    return
+                try:
+                    os.makedirs(os.path.dirname(new_abs) or ".", exist_ok=True)
+                    os.rename(old_abs, new_abs)
+                except OSError as e:
+                    QMessageBox.warning(self, "重命名失败", str(e))
+                    return
+            node["path"] = new_file
+            node["abs_path"] = new_abs
+        node["title"] = new_title
+        # v3.45.3（BOOK-6）：章节项只显示目录名（纯文本，无单元控件），
+        # 重命名后同步刷新文本即可。
+        item.setText(0, new_title or "（未命名）")
+        # v3.45.8：从控件树重建 root 再写回 SUMMARY（修复旧版 emit 陈旧 root 导致新增/编辑/删除重启丢失）
+        self._on_book_dropped()
+
+    def _book_delete(self, item, node):
+        # 仅从目录树移除并写回 SUMMARY（不删除磁盘文件，避免误删内容）
+        parent = item.parent()
+        if parent is None:
+            parent = self.book_tree.invisibleRootItem()
+        parent.removeChild(item)
+        # v3.45.8：从控件树重建 root 再写回 SUMMARY（删除后持久化）
+        self._on_book_dropped()
+
+    def _book_add_dialog(self, title0="未命名章节"):
+        """新增章节对话框：同时输入章节名称与文件名（默认 章节名.md）。
+
+        v3.45.7（REQ2）：标题输入时自动联动文件名（除非用户手动改过文件名）。"""
+        dlg = QDialog(self)
+        dlg.setWindowTitle("新增章节")
+        form = QFormLayout(dlg)
+        e_title = QLineEdit(title0)
+        e_file = QLineEdit(self._slugify(title0))
+        e_file.setPlaceholderText("相对路径，如 chapter/intro.md")
+        form.addRow("章节名称", e_title)
+        form.addRow("Markdown 文件", e_file)
+        file_manual = {"v": False}
+
+        def on_title(t):
+            if not file_manual["v"]:
+                e_file.setText(self._slugify(t))
+
+        def on_file(_t):
+            file_manual["v"] = True
+
+        e_title.textChanged.connect(on_title)
+        e_file.textChanged.connect(on_file)
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dlg)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        form.addRow(btns)
+        if dlg.exec() != QDialog.Accepted:
+            return None
+        title = e_title.text().strip()
+        fname = e_file.text().strip()
+        if not title:
+            QMessageBox.warning(self, "新增章节", "章节名称不能为空。")
+            return None
+        if not re.search(r"\.(md|markdown|mdown)$", fname, re.I):
+            QMessageBox.warning(self, "新增章节",
+                                "Markdown 文件名须以 .md / .markdown / .mdown 结尾。")
+            return None
+        return title, fname
+
+    def _book_add(self, item, node, as_child):
+        res = self._book_add_dialog("未命名章节")
+        if res is None:
+            return
+        title, rel = res
+        # 同名文件自增序号
+        base, ext = os.path.splitext(rel)
+        cand = rel
+        n = 1
+        while True:
+            ap = self._book_resolve_path(cand)
+            if ap is None or not os.path.exists(ap):
+                break
+            n += 1
+            cand = "%s-%d%s" % (base, n, ext)
+        new_node = {"kind": "chapter", "title": title, "path": cand,
+                    "abs_path": self._book_resolve_path(cand), "children": []}
+        # 立即在磁盘创建空文件（安全：仅空文件）
+        ap = self._book_resolve_path(cand)
+        if ap and not os.path.exists(ap):
+            try:
+                os.makedirs(os.path.dirname(ap) or ".", exist_ok=True)
+                with open(ap, "w", encoding="utf-8") as f:
+                    f.write("# " + title + "\n\n")
+            except OSError:
+                pass
+        if as_child:
+            item.addChild(self._build_book_item(new_node, item))
+            item.setExpanded(True)
+        else:
+            parent = item.parent() or self.book_tree.invisibleRootItem()
+            idx = parent.indexOfChild(item)
+            new_item = self._build_book_item(new_node, parent)
+            parent.insertChild(idx + 1, new_item)
+        self.book_tree.expandAll()
+        # v3.45.8：从控件树重建 root 再写回 SUMMARY（新增后持久化，重启有效）
+        self._on_book_dropped()
+
+    def _book_outdent(self, item):
+        """v3.45.7（REQ3）：上移一层 —— 把章节变为其父级的同级（插到父级之后）。
+        已处于书籍顶层则不操作。"""
+        parent = item.parent()
+        if parent is None:
+            return
+        gp = parent.parent()          # None 表示父级即书籍根（顶层章节）
+        if gp is None:
+            return
+        idx = parent.indexOfChild(item)
+        taken = parent.takeChild(idx)
+        gp_idx = gp.indexOfChild(parent)
+        gp.insertChild(gp_idx + 1, taken)
+        self.book_tree.expandAll()
+        self._on_book_dropped()
+
+    def _book_indent(self, item):
+        """v3.45.7（REQ3）：下移一层 —— 把章节变为前一个同级章节的子节点（末尾）。
+        无前驱同级或前驱为分隔符则不操作。"""
+        parent = item.parent()
+        if parent is None:
+            return
+        idx = parent.indexOfChild(item)
+        if idx <= 0:
+            return
+        prev = parent.child(idx - 1)
+        prev_node = prev.data(0, Qt.UserRole) if prev else None
+        if prev_node is None or prev_node.get("kind") == "separator":
+            return
+        taken = parent.takeChild(idx)
+        prev.addChild(taken)
+        prev.setExpanded(True)
+        self.book_tree.expandAll()
+        self._on_book_dropped()
 
     # ================= 跨文件搜索 =================
     # v3.24 起检索逻辑整体移入 GlobalSearchPanel（查找对话框「全局搜索」页签）。
@@ -985,6 +2000,7 @@ class Sidebar(QWidget):
         elif path and os.path.isdir(path):
             self._cur_dir = path
             self._cur_file = None
+        self._reset_file_filter()
         self._refresh_files()
         self._update_file_header()
 

@@ -1,0 +1,72 @@
+name: Build macOS (mdEditor)
+
+# 在 GitHub 托管的 macOS 真机（Apple 硬件）上编译 mdEditor 的 macOS 版本。
+# 这完全符合 Apple macOS 许可（CI 跑在 Apple 硬件上），不依赖你本地是否有 Mac。
+#
+# 触发：
+#   - 推送到 main 分支自动触发
+#   - 也可在 Actions 页面手动「Run workflow」触发（workflow_dispatch）
+#
+# 产物（Artifacts，构建完成后可下载，保留 7 天）：
+#   - mdEditor-macOS-app   : mdEditor.app（拖到 /Applications 即可用，ad-hoc 签名，本机可运行）
+#   - mdEditor-macOS-dmg   : mdEditor-macOS.dmg（分发镜像）
+#   - mdEditor-macOS-build-logs : PyInstaller 构建日志（诊断用）
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-mac:
+    # macos-13 = Intel x86_64  runner，PySide6 官方 wheel 兼容性最佳。
+    # 若要原生 Apple Silicon 包，可改为 macos-14 / macos-latest（arm64），
+    # 但需确认 PySide6 在该架构下的 wheel 支持情况。
+    runs-on: macos-13
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        id: setup-python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Build .app + .dmg (ad-hoc 签名)
+        env:
+          PYTHON_BIN: ${{ steps.setup-python.outputs.python-path }}
+        run: bash build_mac.sh
+
+      - name: List dist / installer (诊断)
+        if: always()
+        run: |
+          echo "== dist =="; ls -la dist 2>/dev/null || true
+          echo "== installer =="; ls -la installer 2>/dev/null || true
+
+      - name: Upload .app
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mdEditor-macOS-app
+          path: dist/mdEditor.app
+          if-no-files-found: warn
+
+      - name: Upload .dmg
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mdEditor-macOS-dmg
+          path: installer/mdEditor-macOS.dmg
+          if-no-files-found: warn
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mdEditor-macOS-build-logs
+          path: |
+            build/
+            _build*.log
+          if-no-files-found: ignore

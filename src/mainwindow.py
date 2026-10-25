@@ -5,6 +5,7 @@ import binascii
 import json
 import logging
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -13,14 +14,19 @@ import time
 import zipfile
 import sys
 
-from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QTimer, QUrl, QSize, Qt, QSettings, QMimeData
+import openutil  # 跨平台打开文件 / 文件夹（封装 os.startfile / open / xdg-open）
+
+from PySide6.QtCore import (QBuffer, QByteArray, QEvent, QIODevice, QTimer, QUrl,
+                            QSize, Qt, QSettings, QMimeData, QObject, QMarginsF)
 from PySide6.QtGui import (QAction, QActionGroup, QBrush, QColor, QGuiApplication,
-                           QIcon, QImage, QKeySequence, QPainter, QPen, QPixmap)
+                           QIcon, QImage, QKeySequence, QPainter, QPen, QPixmap,
+                           QPageLayout, QPageSize)
 from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QDialog, QFileDialog, QFrame, QHBoxLayout,
     QInputDialog, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
-    QProxyStyle, QSplitter, QStackedWidget, QStyle, QTabBar, QToolBar,
-    QToolButton, QVBoxLayout, QWidget,
+    QProxyStyle, QPushButton, QDockWidget, QSplitter, QStackedWidget, QStyle, QTabBar,
+    QToolBar, QToolButton, QVBoxLayout, QWidget, QComboBox, QDoubleSpinBox,
+    QFormLayout, QCheckBox, QDialogButtonBox,
 )
 from PySide6.QtWebEngineCore import (
     QWebEnginePage, QWebEngineSettings,
@@ -28,6 +34,47 @@ from PySide6.QtWebEngineCore import (
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
 import exporters
+import bookmode   # v3.44.34（BOOK-1）：mdBook 书籍模式（纯函数解析 / 序列化）
+import mdutil     # v3.45（BOOKLINK）：锚点派生 / 标题抽取（与导出同源）
+import ai_pane    # v3.46（SoloMD P1）：AI 助手停靠面板（密钥经 secretstore 跨平台存储）
+import ai_connection  # v3.47.2（SoloMD 对标）：独立 AI 连接面板 / 设置页「AI 连接」
+import semsearch     # v3.48.12（SEM-2）：本地语义搜索（离线 TF-IDF + sqlite 索引）
+
+
+def table_file_to_markdown(path):
+    """读取 xlsx(首个工作表) 或 csv，返回 Markdown 表格字符串；无数据返回 ''。"""
+    ext = os.path.splitext(path)[1].lower()
+    rows = []
+    if ext == ".csv":
+        import csv
+        with open(path, "r", encoding="utf-8-sig", newline="") as f:
+            for r in csv.reader(f):
+                rows.append(list(r))
+    else:
+        import openpyxl
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        ws = wb.active
+        for r in ws.iter_rows(values_only=True):
+            rows.append(list(r))
+        wb.close()
+    rows = [[("" if c is None else str(c)) for c in row] for row in rows]
+    rows = [row for row in rows if any(cell.strip() for cell in row)]
+    if not rows:
+        return ""
+    ncol = max(len(row) for row in rows)
+
+    def cell(v):
+        return v.replace("|", "\\|").replace("\n", " ").replace("\r", " ")
+
+    lines = []
+    lines.append("| " + " | ".join(cell(c) for c in rows[0]) + " |")
+    lines.append("| " + " | ".join("---" for _ in range(ncol)) + " |")
+    for row in rows[1:]:
+        if len(row) < ncol:
+            row = row + [""] * (ncol - len(row))
+        lines.append("| " + " | ".join(cell(c) for c in row[:ncol]) + " |")
+    return "\n".join(lines)
+
 
 # v3.44.5（DESIGN01）：标签栏选中指示条 —— 设计稿 .tab.on::after 为 inset 10px 的
 # 2px accent 短线；QSS 的 border-bottom 无法 inset，故在 paintEvent 中自绘。
@@ -126,8 +173,8 @@ from dialogs import (
     SettingsDialog, ShortcutDialog, StyleManagerDialog,
 )
 from icons import (
-    icon_find, icon_history, icon_new, icon_open, icon_redo,
-    icon_save, icon_settings, icon_sidepanel, icon_toolbar_expand, icon_undo,
+    icon_ai, icon_find, icon_history, icon_nav_back, icon_nav_forward, icon_new, icon_open,
+    icon_redo, icon_save, icon_settings, icon_sidepanel, icon_toolbar_expand, icon_undo,
 )
 from sidebar import Sidebar
 import styles
@@ -181,7 +228,13 @@ def unique_template_name(name, existing, max_len=None):
 
 
 class EditorPage(QWebEnginePage):
-    """自定义页面：把 JS alert / confirm / prompt 换成中文原生对话框。"""
+    """自定义页面：把 JS alert / confirm / prompt 换成中文原生对话框；
+    v3.45.3（LINK-NAV）：链接点击由内核 JS 拦截后经 __navQ 队列交主窗口，
+    这里只保留「主帧误导航到外部目标」的灾难性兜底（拒跳转 + 转浏览器）。"""
+
+    def __init__(self, parent=None, mw=None):
+        super().__init__(parent)
+        self._mw = mw
 
     def javaScriptPrompt(self, origin, msg, default):
         from PySide6.QtWidgets import QInputDialog
@@ -199,6 +252,81 @@ class EditorPage(QWebEnginePage):
                                    QMessageBox.Ok | QMessageBox.Cancel)
         return btn == QMessageBox.Ok
 
+    def acceptNavigationRequest(self, url, navType, isMainFrame):
+        # v3.45.3（LINK-NAV）：链接点击已全部由内核 JS 拦截（preventDefault）
+        # 并经 __navQ 队列交主窗口处理，正常不会走到这里。旧 mdeditor://
+        # 自定义协议桥接已废弃（Chromium 会静默丢弃该 scheme 的导航，
+        # acceptNavigationRequest 根本不被调用，实测 PySide6 6.11）。
+        # 兜底：主帧链接点击若导航到非本地目标，会整个替换编辑器页面
+        # （灾难性），一律拒绝并改交系统浏览器打开。
+        if (isMainFrame and url.scheme() not in ("file", "about", "data", "blob")
+                and self._mw is not None):
+            self._mw._open_external(url.toString())
+            return False
+        return super().acceptNavigationRequest(url, navType, isMainFrame)
+
+
+# v3.47.1（PDF-SET）：PDF 导出设置对话框（页边距 / 字体 / 字号，可保存为默认）
+class PdfExportDialog(QDialog):
+    # 可选字体（含「跟随界面字体」占位）；中文环境优先常用字体
+    FONTS = ["", "Microsoft YaHei", "SimSun", "SimHei", "KaiTi",
+             "Arial", "Times New Roman", "Consolas", "Courier New"]
+
+    def __init__(self, parent, settings):
+        super().__init__(parent)
+        self.setWindowTitle("PDF 导出设置")
+        self._settings = settings
+        try:
+            margin = float(settings.value("pdf/margin", 20.0) or 20.0)
+        except (TypeError, ValueError):
+            margin = 20.0
+        try:
+            size = float(settings.value("pdf/fontSize", 11.0) or 11.0)
+        except (TypeError, ValueError):
+            size = 11.0
+        fam = str(settings.value("pdf/fontFamily", "") or "")
+
+        lay = QVBoxLayout(self)
+        form = QFormLayout()
+        self._margin = QDoubleSpinBox()
+        self._margin.setRange(0, 50)
+        self._margin.setDecimals(1)
+        self._margin.setSuffix(" mm")
+        self._margin.setValue(margin)
+        form.addRow("页边距", self._margin)
+
+        self._font = QComboBox()
+        self._font.addItem("（跟随界面字体）", "")
+        for f in self.FONTS[1:]:
+            self._font.addItem(f, f)
+        idx = self._font.findData(fam)
+        self._font.setCurrentIndex(idx if idx >= 0 else 0)
+        form.addRow("字体", self._font)
+
+        self._size = QDoubleSpinBox()
+        self._size.setRange(8, 24)
+        self._size.setDecimals(1)
+        self._size.setSuffix(" pt")
+        self._size.setValue(size)
+        form.addRow("字号", self._size)
+
+        lay.addLayout(form)
+        self._save = QCheckBox("保存为默认")
+        lay.addWidget(self._save)
+
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+        lay.addWidget(btns)
+
+    def result_opts(self):
+        return {
+            "margin_mm": self._margin.value(),
+            "font_family": self._font.currentData() or "",
+            "font_size_pt": self._size.value(),
+            "save_default": self._save.isChecked(),
+        }
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -210,6 +338,10 @@ class MainWindow(QMainWindow):
         self._pdf_view = None
         self._pdf_path = None
         self._quitting = False
+        self._book = None     # v3.44.34（BOOK-1）：当前打开的书籍信息（bookmode.read_book 返回）
+        # v3.45.7（BOOK-READ-1）：书籍阅读进度恢复
+        self._pending_book_scroll = None   # 启动后待恢复的滚动比例
+        self._book_scroll_ts = 0.0         # 上次记录滚动位置的时间戳（节流）
 
         self._settings = QSettings("WorkBuddy", "WorkBuddyMarkdown")
         # ---- 主题 / 外观（启动即恢复上次选择）----
@@ -293,6 +425,10 @@ class MainWindow(QMainWindow):
         self._fmt_log = self._settings.value("fmtLog", True, type=bool)
         # 外部 pandoc 路径（导出 docx / EPUB 时优先使用；留空则自动探测 PATH）
         self._pandoc_path = str(self._settings.value("pandocPath", "") or "")
+        # v3.48.12（SEM-2）：本地语义搜索总开关（默认开；查找 → 全局搜索 → 语义搜索）
+        self._sem_enabled = self._settings.value("semSearchEnabled", True, type=bool)
+        # v3.48.13（BACKLINK-4）：反链扫描缓存 {abspath: (mtime, size, [(line, snippet)])}
+        self._bl_cache = {}
         # P1-7 外部编辑器可执行文件（留空 = 用系统默认关联程序打开）
         self._external_editor = str(self._settings.value("externalEditor", "") or "")
         # 统计详情缓存（状态栏点击查看）与搜索结果跳转等待状态
@@ -303,6 +439,12 @@ class MainWindow(QMainWindow):
         self._pending_toc = None
         self._pending_goto = None
         self._pending_tries = 0
+        # v3.46（TOC-SEL）：目录改为「侧栏选择入口」触发 —— 记录待插入目录的目标与类型
+        self._toc_insert_kind = None      # None | "file" | "book"
+        self._toc_insert_path = None      # 待插入目录的目标文档绝对路径
+        self._toc_remove_path = None      # 待删除目录的目标文档绝对路径
+        self._book_toc_page = None        # 已插入书籍目录页的绝对路径（None=无）
+        self._book_toc_rel = None         # 目录页相对 summary 的路径（如 "目录.md"）
 
         # ---- 多文档 ----
         self._docs = []          # [{"path": str|None, "content": str|None, "dirty": bool}]
@@ -376,9 +518,19 @@ class MainWindow(QMainWindow):
             self._sidebar._initial_restored = True
         # session 档在 _restore_session 内部已完成侧栏定位并标记 _initial_restored
 
+        # v3.45.7（BOOK-READ-1）：启动若上次在阅读书籍，自动恢复书籍 + 阅读进度
+        if _sa != "blank":
+            self._restore_book()
+
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._poll)
         self._timer.start(700)
+
+        # v3.45.3（LINK-NAV）：链接导航队列 drain —— 独立 150ms 快轮询，
+        # 避免点击链接跳转有可感知的滞后（与双栏同步滚动同量级，开销可忽略）
+        self._nav_timer = QTimer(self)
+        self._nav_timer.timeout.connect(self._poll_nav)
+        self._nav_timer.start(150)
 
         # v3.29 双栏同步滚动：独立轻量定时器，非双栏时空转开销可忽略
         self._sync_timer = QTimer(self)
@@ -397,7 +549,7 @@ class MainWindow(QMainWindow):
         self._dual_split = None
 
         # 自定义页面：JS prompt / alert / confirm 使用中文对话框
-        self._view.setPage(EditorPage(self._view))
+        self._view.setPage(EditorPage(self._view, self))
         # file:// 页面默认禁止加载远程资源（README 徽章图等显示不出来），放开
         _v = self._view
         _v.settings().setAttribute(
@@ -463,6 +615,25 @@ class MainWindow(QMainWindow):
         self._sidebar.set_outline_level(self._outline_level)
         self._sidebar.set_outline_words(self._outline_words)
         self._sidebar.set_file_mode(self._file_list_mode)
+        # v3.44.34（BOOK-1）：书籍页签信号接线
+        self._sidebar.bookEntryOpen.connect(self.open_book_link)
+        # v3.45.3（BOOK-6）：书籍树选中章节 → 状态栏显示对应文件名
+        self._sidebar.bookEntrySelected.connect(self.on_book_entry_selected)
+        self._sidebar.bookStructureChanged.connect(self.on_book_structure_changed)
+        self._sidebar.bookExportRequested.connect(self.on_book_export_requested)
+        self._sidebar.bookRevealRequested.connect(self.on_book_reveal)
+        self._sidebar.bookCloseRequested.connect(self.close_book)
+        # v3.45.7（BOOK-TOC）：书籍右键「编辑目录」→ 以普通文档打开 summary.md
+        self._sidebar.bookSummaryEditRequested.connect(self._open_summary_for_edit)
+        # v3.46（TOC-SEL）：书籍右键「插入目录」→ 为整本书生成并插入完整目录
+        self._sidebar.bookTocInsertRequested.connect(self.insert_toc_for_book)
+        # v3.47.1（BOOK-TOC）：书籍右键「删除目录」→ 移除 summary 项 + 目录页文件
+        self._sidebar.bookTocRemoveRequested.connect(self.remove_toc_for_book)
+        # v3.45.8（REQ3#9）：导航跳转历史栈状态
+        self._nav_stack = []   # 历史条目：{"path": 绝对路径, "ratio": 0~1 滚动比例}
+        self._nav_idx = -1     # 当前位置指针
+        self._nav_lock = False  # 恢复跳转时加锁，防止重入 / 产生新历史
+        self._nav_seeded = False
         split = QSplitter(Qt.Horizontal, self)
         split.setObjectName("mainSplit")   # v3.44.4（DESIGN01 修复）：主分栏手柄着 chrome_line 分隔线
         split.setChildrenCollapsible(False)
@@ -473,6 +644,26 @@ class MainWindow(QMainWindow):
         split.setHandleWidth(1)
         self.setCentralWidget(split)
         self.setAcceptDrops(True)
+
+        # v3.46（SoloMD P1）：AI 助手停靠面板（默认隐藏，经「视图 → AI 助手」开启）
+        self._ai_bridge = AIBridge(self)
+        self._ai_dock = QDockWidget("AI 助手", self)
+        self._ai_dock.setObjectName("aiDock")
+        self._ai_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        # v3.47.4（REQ1）：利用「AI 与状态栏互斥」释放纵向空间，进一步加宽面板
+        # （360 → 460），对话区更舒展、整体布局更大气。
+        self._ai_dock.setMinimumWidth(460)
+        self._ai_pane = ai_pane.AIPane(self._ai_bridge)
+        self._ai_dock.setWidget(self._ai_pane)
+        self.addDockWidget(Qt.RightDockWidgetArea, self._ai_dock)
+        self._ai_dock.hide()
+        # v3.47.5（REQ3）：移除面板标题栏的「关闭 / 浮动」按钮（仅保留可移动），
+        # 隐藏面板改由「视图 → 显示 / 隐藏 AI 助手」菜单或顶栏图标按钮控制。
+        self._ai_dock.setFeatures(QDockWidget.DockWidgetMovable)
+        # v3.47.3：AI 面板显示时自动收起左侧栏（专注书写 / 对话），隐藏时恢复；
+        # 用 visibilityChanged 统一收口「显示 / 隐藏」两条路径（菜单、顶栏按钮、关闭钮）。
+        self._ai_collapsed_sidebar = False
+        self._ai_dock.visibilityChanged.connect(self._on_ai_dock_visibility)
 
         self._status = QLabel("就绪")
         self.statusBar().addWidget(self._status)
@@ -532,7 +723,7 @@ class MainWindow(QMainWindow):
         self._view_src = QWebEngineView(self)
         self._view_prev = QWebEngineView(self)
         for role, v in (("src", self._view_src), ("prev", self._view_prev)):
-            v.setPage(EditorPage(v))
+            v.setPage(EditorPage(v, self))
             v.settings().setAttribute(
                 QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
             v.settings().setAttribute(
@@ -642,6 +833,10 @@ class MainWindow(QMainWindow):
         # 撤销 / 重做：快捷键仍由编辑菜单注册，这里只放图标按钮
         tb_act(icon_undo(), "撤销 (Ctrl+Z)", lambda: self._js_active('window.cmd("undo")'))
         tb_act(icon_redo(), "重做 (Ctrl+Y)", lambda: self._js_active('window.cmd("redo")'))
+        # v3.45.8（REQ3#9）：导航后退 / 前进（跳转历史）
+        self._nav_back_act = tb_act(icon_nav_back(), "后退 (Alt+Left)", lambda: self._nav_go(-1))
+        self._nav_forward_act = tb_act(icon_nav_forward(), "前进 (Alt+Right)", lambda: self._nav_go(1))
+        self._nav_update_buttons()
         v_sep()
         tb_act(icon_find(), "查找 / 替换 (Ctrl+F)", lambda: self.show_find(False))
         v_sep()
@@ -661,8 +856,14 @@ class MainWindow(QMainWindow):
         # ---- 文件菜单 ----
         m_file = self.menuBar().addMenu("文件(&F)")
         self._reg_act("文件", "新建", "Ctrl+N", self.new_file, menu=m_file)
+        # v3.44.36（BOOK-4）：新建书籍紧随「新建」之后（同类新建操作相邻）
+        self._reg_act("文件", "新建书籍…", None, self.create_new_book, menu=m_file)
         self._reg_act("文件", "打开…", "Ctrl+O", lambda: self.open_file(None), menu=m_file)
         self._reg_act("文件", "打开文件夹…", None, self.open_folder, menu=m_file)
+        # v3.44.34（BOOK-1）：书籍模式入口
+        self._reg_act("文件", "打开书籍…", None, self.open_book, menu=m_file)
+        # v3.46（SoloMD P2）：Excel/CSV 表格导入（对话框选文件 → 光标处插入 Markdown 表格）
+        self._reg_act("文件", "导入表格…", None, self.import_table, menu=m_file)
         m_recent = self._recent_menu = m_file.addMenu("最近文件")
         m_recent.aboutToShow.connect(self._rebuild_recent_menu)
         m_file.addSeparator()
@@ -686,6 +887,7 @@ class MainWindow(QMainWindow):
         self._reg_act("文件", "导出 PDF…（含书签）", None, self.export_pdf, menu=m_export)
         self._reg_act("文件", "导出 Word (docx)…", None, self.export_docx, menu=m_export)
         self._reg_act("文件", "导出 EPUB…", None, self.export_epub, menu=m_export)
+        self._reg_act("文件", "导出图片 (PNG)…", None, self.export_png, menu=m_export)
         # v3.32（P1-2②）：「复制为 HTML」是中文用户最高频交付动作（随导出组收拢）
         a = QAction("复制为 HTML（公众号 / Word 富文本）", self)
         a.triggered.connect(self.copy_as_html)
@@ -717,6 +919,9 @@ class MainWindow(QMainWindow):
         self._reg_act("编辑", "块菜单", "Ctrl+/",
                       lambda: self._js_active("window.openBlockMenu ? window.openBlockMenu() : null"),
                       menu=m_edit)
+        # v3.48.15（MC-3）：多光标 —— Ctrl+D 选下一个相同词（Alt+点击增删光标 / Esc 退出）
+        self._reg_act("编辑", "选择下一个相同词", "Ctrl+D",
+                      lambda _=False: self._fmt("selnext"), menu=m_edit)
         m_edit.addSeparator()
         # P1-3 命令面板
         self._reg_act("编辑", "命令面板…", "Ctrl+Shift+P", self.show_command_palette, menu=m_edit)
@@ -759,14 +964,30 @@ class MainWindow(QMainWindow):
         self._act_toolbar = self._reg_act("视图", "显示 / 隐藏工具栏", "Ctrl+Shift+B",
                                           self.toggle_toolbar, menu=m_view, checkable=True)
         self._act_toolbar.setChecked(True)
-        # v3.40（UI-R7⑦）：UI 开关组补「状态栏」（UI-SPEC 3.1 视图=纯视觉与窗口行为）
-        self._act_statusbar = self._reg_act("视图", "显示 / 隐藏状态栏", None,
-                                            self.toggle_statusbar, menu=m_view, checkable=True)
-        self._act_statusbar.setChecked(self._settings.value("ui/statusbarVisible", True, type=bool))
+        # v3.47.5（REQ1）：状态栏 与 AI 助手 互斥（不可同时显示），与「侧边栏 / 工具栏」
+        # 平级展示于视图菜单（不再收纳进「显示 / 隐藏」子菜单）。AI 面板宽度随之加大
+        # 以利用互斥获得更大气的布局（见 _ai_dock 构造）。
+        self._act_statusbar = self._reg_act(
+            "视图", "显示 / 隐藏状态栏", None,
+            self.toggle_statusbar, menu=m_view, checkable=True)
+        self._act_statusbar.setChecked(
+            self._settings.value("ui/statusbarVisible", True, type=bool))
+        # v3.47.5（REQ1）：AI 助手入口与状态栏平级（替代原顶层「AI 助手」/ 子菜单），
+        # 二者互斥；原「AI 连接设置…」菜单项已移除 —— 连接面板仍由 AI 面板内
+        # 「连接设置」按钮唤起（bridge.open_connection → open_ai_connection）。
+        self._act_ai = self._reg_act(
+            "视图", "显示 / 隐藏 AI 助手", None,
+            self._toggle_ai_dock, menu=m_view, checkable=True)
+        self._act_ai.setChecked(False)
+        m_view.addSeparator()
+        # v3.45.8（REQ3#9）：导航后退 / 前进（跳转历史栈）
+        self._reg_act("视图", "后退", "Alt+Left", lambda: self._nav_go(-1), menu=m_view)
+        self._reg_act("视图", "前进", "Alt+Right", lambda: self._nav_go(1), menu=m_view)
         # ---- v3.43.0（VIEW-REF）：条目文案与分组对齐设计稿 02_视图菜单 ----
         m_view.addSeparator()
         self._reg_act("视图", "文件列表页签", "Ctrl+Shift+E", lambda: self._show_sidebar_tab(0), menu=m_view)
         self._reg_act("视图", "大纲页签", "Ctrl+Shift+O", lambda: self._show_sidebar_tab(1), menu=m_view)
+        self._reg_act("视图", "反向链接页签", "Ctrl+Alt+B", lambda: self._show_sidebar_tab(Sidebar.TAB_BACKLINKS), menu=m_view)
         m_view.addSeparator()
         # v3.38（TAB-4）：上一 / 下一标签页（Ctrl+PgUp / Ctrl+PgDn，N++ 与 VS Code 同款）
         self._reg_act("视图", "上一标签页", "Ctrl+PgUp", lambda: self._cycle_tab(-1), menu=m_view)
@@ -789,6 +1010,8 @@ class MainWindow(QMainWindow):
                                              self.toggle_typewriter, menu=m_view, checkable=True)
         self._act_focus = self._reg_act("视图", "专注模式", None,
                                         self.toggle_focus, menu=m_view, checkable=True)
+        # v3.47.5（REQ1）：「显示 / 隐藏 AI 助手」已上移与状态栏平级（见上方视图菜单），
+        # 此处不再重复注册。
         # 启动时恢复上次持久化的模式勾选状态（模式本身随页面加载 setMode 下发）
         self._act_typewriter.setChecked(self._typewriter)
         self._act_focus.setChecked(self._focus)
@@ -947,6 +1170,20 @@ class MainWindow(QMainWindow):
         self._seg_group_widget = seg_group
         seg_group.setFixedHeight(24)  # v3.44.28 RIBBON-14：容器仅略高于 18px 按钮
         cl.addWidget(seg_group)
+
+        # v3.47.5（REQ3）：以线性图标按钮替代文字「AI 助手」，节省顶栏空间、
+        # 与左侧扁平图标风格一致；点击展开 / 收起 AI 助手面板（默认连接本地 Ollama）。
+        self._btn_ai = QToolButton(corner)
+        self._btn_ai.setObjectName("aiCornerBtn")
+        self._btn_ai.setIcon(icon_ai(18))
+        self._btn_ai.setIconSize(QSize(18, 18))
+        self._btn_ai.setToolTip("AI 助手（点击展开 / 收起，默认连接本地 Ollama）")
+        self._btn_ai.setCursor(Qt.PointingHandCursor)
+        self._btn_ai.setAutoRaise(True)
+        self._btn_ai.setFixedSize(26, 24)
+        self._btn_ai.clicked.connect(self._toggle_ai_dock)
+        cl.addWidget(self._btn_ai)
+
         self.menuBar().setCornerWidget(corner, Qt.TopRightCorner)
         self._vsz_corner = corner
         self._qk_focus.setChecked(self._focus)
@@ -1156,6 +1393,115 @@ class MainWindow(QMainWindow):
         """把格式命令派发到当前编辑视图。"""
         self._js_active(f'window.cmd("{cmd}")')
 
+    # ================= v3.46（SoloMD P1）：AI 助手桥接 =================
+    def _toggle_ai_dock(self):
+        if self._ai_dock.isVisible():
+            self._hide_ai_dock()
+        else:
+            self._show_ai_dock()
+
+    def _show_ai_dock(self):
+        """打开 AI 助手面板（统一入口：视图菜单 / 顶栏按钮 / 选中即问）。"""
+        if not self._ai_dock.isVisible():
+            self._ai_dock.show()
+        self._ai_dock.raise_()
+
+    def _hide_ai_dock(self):
+        self._ai_dock.hide()
+
+    # v3.47.3：AI 面板显隐与左侧栏联动 —— 显示时收起侧栏、隐藏时恢复，
+    # 仅当侧栏当前可见且非专注模式时才自动收起，避免与专注模式抢管侧栏。
+    # v3.47.6（REQ1）：改为「AI 助手 与 侧边栏 互斥」—— 显示 AI 时收起侧栏，
+    # 隐藏 AI 时恢复侧栏；**取消**原先与状态栏的互斥（状态栏由用户独立控制）。
+    def _on_ai_dock_visibility(self, visible):
+        # 同步菜单勾选态（菜单 / 顶栏按钮 / 关闭钮任一途径开关都更新）
+        act_ai = getattr(self, "_act_ai", None)
+        if act_ai is not None and act_ai.isChecked() != visible:
+            act_ai.setChecked(visible)
+        if getattr(self, "_focus", False):
+            return
+        if visible:
+            # 需求1：AI 与侧边栏互斥 —— 显示 AI 时收起侧栏（不再触碰状态栏）
+            if self._sidebar.isVisible() and not self._ai_collapsed_sidebar:
+                self._ai_collapsed_sidebar = True
+                self._sidebar.setVisible(False)
+                act = getattr(self, "_act_sidebar", None)
+                if act is not None:
+                    act.setChecked(False)
+        else:
+            # 隐藏 AI 时恢复此前被收起的侧栏
+            if self._ai_collapsed_sidebar:
+                self._ai_collapsed_sidebar = False
+                self._sidebar.setVisible(True)
+                act = getattr(self, "_act_sidebar", None)
+                if act is not None:
+                    act.setChecked(True)
+
+    # v3.47.2（SoloMD 对标）：打开独立 AI 连接面板（从主面板「连接设置」按钮 / 视图菜单跳转）
+    def open_ai_connection(self):
+        if not hasattr(self, "_ai_conn_dlg") or self._ai_conn_dlg is None:
+            self._ai_conn_dlg = ai_connection.AIConnectionDialog(self._settings, self)
+            self._ai_conn_dlg.form.connection_changed.connect(self._refresh_ai_status)
+        self._ai_conn_dlg.show()
+        self._ai_conn_dlg.raise_()
+
+    # v3.47.2（SoloMD 对标）：连接参数变化后刷新主面板状态条
+    def _refresh_ai_status(self):
+        if hasattr(self, "_ai_pane") and hasattr(self._ai_pane, "refresh_status"):
+            self._ai_pane.refresh_status()
+
+    # v3.47.1（AI-BYOK）：选中即问 —— 唤起 AI 面板并带入选中文本作为上下文
+    def ask_ai_about_selection(self, text=None):
+        if not isinstance(text, str):
+            text = ""   # 菜单 / 快捷键触发会传入 bool，此时由面板自行取选中
+        self._show_ai_dock()
+        if hasattr(self._ai_pane, "ask_about_selection"):
+            self._ai_pane.ask_about_selection(text)
+
+    # v3.48.0（F3-b）：右键「AI」子菜单 —— 实时取回当前选区文本
+    def _ai_ctx_action(self, action_key, sel_text=None):
+        """右键 AI 子菜单统一入口：选中=仅带上下文提问；其余=按预设提示词改写。
+
+        sel_text 为 None 时（菜单构造期间未阻塞取选区）实时取回当前编辑器选区，
+        避免右键菜单构造时同步等待 runJavaScript 引发的嵌套事件循环死锁。"""
+        if not sel_text:
+            self._js_active(
+                "window.aiSelText()",
+                lambda v: self._ai_ctx_dispatch(action_key, v if isinstance(v, str) else ""))
+            return
+        self._ai_ctx_dispatch(action_key, sel_text)
+
+    def _ai_ctx_dispatch(self, action_key, sel_text):
+        self._show_ai_dock()
+        pane = getattr(self, "_ai_pane", None)
+        if pane is None or not hasattr(pane, "ai_action"):
+            return
+        if action_key == "select":
+            pane.ask_about_selection(sel_text)
+        else:
+            pane.ai_action(action_key, sel_text)
+
+    # ================= v3.46（SoloMD P2）：Excel/CSV 表格导入 =================
+    def import_table(self):
+        """从 Excel/CSV 文件读取数据，生成 Markdown 表格并插入光标处。"""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "从 Excel/CSV 插入表格", "",
+            "表格文件 (*.xlsx *.xlsm *.csv);;Excel (*.xlsx *.xlsm);;CSV (*.csv)")
+        if not path:
+            return
+        try:
+            md = table_file_to_markdown(path)
+        except Exception as e:
+            QMessageBox.critical(self, "导入失败", "读取表格文件出错：\n%s" % e)
+            return
+        if not md:
+            QMessageBox.information(self, "导入失败", "文件为空或无法解析出表格数据。")
+            return
+        self._js_active('window.insertMarkdown(' + js(md) + ')')
+        self.show_status("已插入表格（%s）" % os.path.basename(path))
+
+
+
     def _on_loaded(self, ok, role):
         if not ok:
             return
@@ -1175,6 +1521,16 @@ class MainWindow(QMainWindow):
             self._js_view(view, "window.setPreviewMode(true)")
             self._js_view(view, f"window.setPreviewContent({js(text)})")
         st["pending"] = ""
+        # v3.46（TOC-SEL）：目标文档经 _load_path 全新加载完成后，执行待插入的目录
+        if role == "edit" and self._toc_insert_kind:
+            kind = self._toc_insert_kind
+            self._toc_insert_kind = None
+            self._toc_insert_path = None
+            QTimer.singleShot(200, lambda k=kind: self._run_pending_toc(k))
+        # v3.47.1（TOC-FIX）：目标文档经 _load_path 全新加载完成后，执行待删除的目录
+        if role == "edit" and self._toc_remove_path:
+            self._toc_remove_path = None
+            QTimer.singleShot(200, lambda: self._remove_toc_text())
         # 主题 / 缩放 / 写作辅助随视图加载同步（含惰性创建的分屏视图）
         self._js_view(view, f"window.setTheme({js(self._theme)})")
         # v3.42.0：界面风格内容级 CSS 随视图加载注入
@@ -1246,6 +1602,192 @@ class MainWindow(QMainWindow):
         if _n - self._session_ts >= 3:
             self._session_ts = _n
             self.save_session()
+        # v3.45.7（BOOK-READ-1）：在书籍章节中时，节流记录滚动位置（每 ~5 秒）
+        if self._book and self.file_path:
+            node = bookmode.find_chapter(self._book["root"], self.file_path)
+            if node and (_n - self._book_scroll_ts) >= 5:
+                self._book_scroll_ts = _n
+                self._js_view(self._view, "window.getScrollRatio()", self._on_book_scroll)
+
+    # ---------------- v3.45.3（LINK-NAV）：链接导航通道 ----------------
+    def _poll_nav(self):
+        """drain 编辑器侧链接导航队列（__navQ）。
+
+        mdeditor:// 自定义协议会被 Chromium 静默丢弃（location.href 赋值后
+        acceptNavigationRequest 不被调用），旧桥接已失效；改为 JS 分类入队、
+        这里 150ms 消费。表达式保持极轻：队列为空时直接返回空串。"""
+        self._js_active(
+            "window.__navDrain ? JSON.stringify(window.__navDrain()) : ''",
+            self._on_nav)
+
+    def _on_nav(self, res):
+        if not res or not isinstance(res, str):
+            return
+        try:
+            items = json.loads(res)
+        except (TypeError, ValueError):
+            return
+        if not isinstance(items, list):
+            return
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            k = it.get("k")
+            u = str(it.get("u") or "")
+            if k == "ext":
+                self._open_external(u)
+            elif k == "anchor":
+                self._scroll_to_anchor(u)
+            elif k == "wiki":
+                self.on_wikilink(u)
+            elif k == "md":
+                self._open_local_link(u)
+            elif k == "ai":
+                self.ask_ai_about_selection(u)
+
+    # ================= v3.45.8（REQ3#9）：导航跳转历史（前进 / 后退） =================
+    def _nav_ensure_seed(self):
+        """首次导航前，以当前文档作为历史起点（保证后退有可回之处）。"""
+        if self._nav_stack:
+            return
+        if self.file_path:
+            self._nav_stack = [{"path": os.path.abspath(self.file_path), "ratio": 0.0}]
+            self._nav_idx = 0
+            self._nav_update_buttons()
+
+    def _nav_push(self, path, ratio=0.0):
+        """压入一条到达（landing）历史；截断指针之后的前进历史。"""
+        if self._nav_lock or not path:
+            return
+        path = os.path.abspath(path)
+        if self._nav_idx >= 0 and self._nav_idx < len(self._nav_stack):
+            cur = self._nav_stack[self._nav_idx]
+            if cur["path"] == path and abs(cur["ratio"] - ratio) < 1e-3:
+                return  # 同一位置不重复堆叠
+        self._nav_stack = self._nav_stack[:self._nav_idx + 1]
+        self._nav_stack.append({"path": path, "ratio": ratio})
+        self._nav_idx = len(self._nav_stack) - 1
+        self._nav_update_buttons()
+
+    def _nav_arrive(self, path, delay=450):
+        """导航到达后（文档加载 / 锚点定位完成）异步读取滚动比例并压入目标条目。"""
+        if self._nav_lock or not path:
+            return
+        path = os.path.abspath(path)
+
+        def on_ratio(r):
+            try:
+                ratio = float(r)
+            except Exception:
+                ratio = 0.0
+            self._nav_push(path, ratio)
+        QTimer.singleShot(delay, lambda: self._js_view(
+            self._view, "window.getScrollRatio()", on_ratio))
+
+    def _nav_update_buttons(self):
+        """根据栈指针启用 / 禁用后退、前进按钮与菜单项。"""
+        has_back = self._nav_idx > 0
+        has_fwd = 0 <= self._nav_idx < len(self._nav_stack) - 1
+        if hasattr(self, "_nav_back_act"):
+            self._nav_back_act.setEnabled(has_back)
+        if hasattr(self, "_nav_forward_act"):
+            self._nav_forward_act.setEnabled(has_fwd)
+
+    def _nav_go(self, delta):
+        """delta=-1 后退 / +1 前进；越界或加锁则忽略。"""
+        if self._nav_lock:
+            return
+        ni = self._nav_idx + delta
+        if ni < 0 or ni >= len(self._nav_stack):
+            return
+        self._nav_idx = ni
+        entry = self._nav_stack[ni]
+        self._nav_restore(entry)
+        self._nav_update_buttons()
+
+    def _nav_restore(self, entry):
+        """恢复一条历史：同文档则滚动定位，异文档则打开后滚动定位；加锁防重入。"""
+        if self._nav_lock:
+            return
+        self._nav_lock = True
+        path, ratio = entry["path"], entry["ratio"]
+        cur = os.path.abspath(self.file_path) if self.file_path else None
+        try:
+            if cur and cur == os.path.abspath(path):
+                self._js_view(self._view, "window.scrollToRatio(%s)" % json.dumps(ratio))
+            elif os.path.exists(path):
+                self._load_path(path)
+                QTimer.singleShot(500, lambda: self._js_view(
+                    self._view, "window.scrollToRatio(%s)" % json.dumps(ratio)))
+            else:
+                # 目标文件已不存在（如被删除的章节）：同文档仅滚动，异文档提示并不导航
+                self.show_status("跳转历史目标文件不存在：" + os.path.basename(path))
+                if cur:
+                    self._js_view(self._view, "window.scrollToRatio(%s)" % json.dumps(ratio))
+        finally:
+            QTimer.singleShot(650, lambda: setattr(self, "_nav_lock", False))
+
+    def _open_external(self, url):
+        """外部链接（http/https/mailto/…）交系统浏览器。"""
+        from PySide6.QtGui import QDesktopServices
+        url = (url or "").strip()
+        if not url:
+            return
+        try:
+            QDesktopServices.openUrl(QUrl(url))
+        except Exception as e:   # noqa: BLE001
+            self.show_status("无法打开链接：%s" % e)
+
+    def _scroll_to_anchor(self, slug):
+        """页内锚点跳转：先按标题 slug（scrollToAnchor），再按元素 id
+        （脚注定义 #fn-x 等）定位。"""
+        slug = (slug or "").strip()
+        if not slug:
+            return
+        # v3.45.8（REQ3#9）：页内锚点跳转记入跳转历史
+        self._nav_ensure_seed()
+        self._nav_arrive(self.file_path or "", delay=450)
+        self._js_active(
+            "(function(s){"
+            "if (window.scrollToAnchor && window.scrollToAnchor(s)) return 'ok';"
+            "var el=document.getElementById(s);"
+            "if(el){el.scrollIntoView({block:'center'});"
+            "el.classList.add('flash');"
+            "setTimeout(function(){el.classList.remove('flash');},1600);"
+            "return 'ok';}"
+            "return 'no';"
+            "})(%s)" % json.dumps(slug, ensure_ascii=False))
+
+    def _open_local_link(self, href):
+        """文档内本地文件链接 → 编辑器内打开。
+
+        href 为 markdown 原始相对路径（可带 #fragment）；按当前文档目录
+        解析为绝对路径后走 open_book_link（内含 .html→.md 回退与锚点滚动）。"""
+        from urllib.parse import unquote
+        href = (href or "").strip()
+        if not href:
+            return
+        low = href.lower()
+        if "://" in low or low.startswith(("mailto:", "data:", "blob:", "file:")):
+            self._open_external(href)
+            return
+        base = self._doc_dir()
+        if not base:
+            self.show_status("文档尚未保存，无法解析相对链接：" + href)
+            return
+        path, sep, frag = href.partition("#")
+        path = unquote(path).replace("\\", "/")
+        if not path:
+            self._scroll_to_anchor(frag)
+            return
+        ap = os.path.normpath(os.path.join(base, path))
+        # v3.45.3（LINK-EXT）：非 Markdown 文件（.html/.htm/.pdf/图片…）编辑器无法
+        # 编辑，已存在则交系统默认程序打开（.html 走浏览器），不再把源码当正文加载；
+        # 缺失的 .html 仍走 open_book_link 回退同名 .md（LINK-FB）。
+        if not ap.lower().endswith((".md", ".markdown")) and os.path.exists(ap):
+            self._open_external(QUrl.fromLocalFile(ap).toString())
+            return
+        self.open_book_link(ap + (sep + frag if sep else ""))
 
     def _on_toast(self, res):
         msg = res if isinstance(res, str) else None
@@ -1581,33 +2123,37 @@ class MainWindow(QMainWindow):
         self._update_title()
         self.show_status(f"已恢复历史版本（{when}）· 按 Ctrl+S 保存")
 
+    def apply_merged_text(self, text):
+        """v3.47.4（REQ3）：把合并结果（可能含冲突标记）写入当前编辑区。
+
+        与 restore_history 同理：处于未保存状态，需再按 Ctrl+S 落盘；不覆盖磁盘。
+        返回是否成功写入。"""
+        if not isinstance(text, str):
+            return False
+        self._push_text(text)
+        self._dirty = True
+        self._update_title()
+        self.show_status("已应用合并结果到当前编辑区 · 按 Ctrl+S 保存")
+        return True
+
     # ================= 侧栏文件管理支撑（回收站删除 / 重命名同步） =================
     def recycle_path(self, path):
-        """把文件 / 文件夹移入回收站（SHFileOperationW，FOF_ALLOWUNDO）。"""
-        import ctypes
-        path = os.path.abspath(path)
-        if not os.path.exists(path):
-            return False
-
-        class SHFILEOPSTRUCTW(ctypes.Structure):
-            _fields_ = [("hwnd", ctypes.c_void_p), ("wFunc", ctypes.c_uint),
-                        ("pFrom", ctypes.c_wchar_p), ("pTo", ctypes.c_wchar_p),
-                        ("fFlags", ctypes.c_ushort),
-                        ("fAnyOperationsAborted", ctypes.c_int),
-                        ("hNameMappings", ctypes.c_void_p),
-                        ("lpszProgressTitle", ctypes.c_wchar_p)]
-
-        op = SHFILEOPSTRUCTW()
-        op.hwnd = None
-        op.wFunc = 3                    # FO_DELETE
-        op.pFrom = path + "\0"
-        op.pTo = None
-        op.fFlags = 0x0040 | 0x0010 | 0x0004 | 0x0400  # ALLOWUNDO|NOCONFIRMATION|SILENT|NOERRORUI
+        """把文件 / 文件夹移入回收站（跨平台：Windows→回收站 / macOS→~/.Trash /
+        Linux→gio trash 或 XDG Trash / 兜底→永久删除）。返回是否成功。"""
         try:
-            rc = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op))
-        except (OSError, AttributeError):
-            return False
-        return rc == 0 and not op.fAnyOperationsAborted
+            import trash
+            return trash.send_to_trash(path)
+        except Exception:
+            # 兜底：极罕见（trash 模块异常）时直接永久删除并报失败
+            try:
+                p = os.path.abspath(path)
+                if os.path.isdir(p) and not os.path.islink(p):
+                    shutil.rmtree(p)
+                elif os.path.exists(p):
+                    os.remove(p)
+                return True
+            except Exception:
+                return False
 
     def rename_current_file(self, old, new):
         """侧栏把当前打开的文件改名后同步内部状态（保存路径 / 标签 / 标题）。"""
@@ -1667,7 +2213,7 @@ class MainWindow(QMainWindow):
             if cmd:
                 subprocess.Popen([cmd, target])
             else:
-                os.startfile(target)     # noqa: S606 — Windows 默认关联程序
+                openutil.open_path(target)     # 跨平台：Windows=startfile / mac=open / linux=xdg-open
             self.show_status(f"已用外部程序打开 · {target}")
         except OSError as e:
             QMessageBox.critical(self, "打开失败", str(e))
@@ -1833,10 +2379,16 @@ class MainWindow(QMainWindow):
     def _status_prefer_assets(self):
         self.show_status("当前文档尚未保存，图片已改为内嵌；保存后插入的图片会自动落到 assets 目录")
 
-    # ---- 落盘：<文档名>.assets/ 目录 ----
-    @staticmethod
-    def _assets_dir_for(doc_path):
-        """图片资源目录：与文档同级的「<文档名>.assets/」（Typora 风格）。"""
+    # ---- 落盘：资源目录 ----
+    def _assets_dir_for(self, doc_path):
+        """图片资源目录。
+
+        v3.45.7（REQ2）：书籍模式下统一为「<summary_dir>/assets/」（规范统一存放）；
+        非书籍为与文档同级的「<文档名>.assets/」（Typora 风格）。"""
+        if doc_path and self._book:
+            sd = self._book.get("summary_dir")
+            if sd and os.path.abspath(doc_path).startswith(os.path.abspath(sd)):
+                return os.path.join(sd, "assets")
         base = os.path.splitext(os.path.basename(doc_path))[0] or "文档"
         return os.path.join(os.path.dirname(os.path.abspath(doc_path)), base + ".assets")
 
@@ -1851,20 +2403,24 @@ class MainWindow(QMainWindow):
         return cand
 
     def _save_image_to_assets(self, src_path=None, data=None, filename=None):
-        """把图片写入「<文档名>.assets/」，返回写进 Markdown 的相对路径（正斜杠）。
+        """把图片写入资源目录，返回写进 Markdown 的相对路径（正斜杠）。
 
+        v3.45.7（REQ2）：书籍模式统一落到 <summary_dir>/assets/；相对路径按章节
+        文件所在目录推算（嵌套章节会得到 ../assets 之类），保证跨章节引用一致。
         未保存文档（无路径）时返回 None，由调用方回退为内嵌 data URL。
         """
         if not self.file_path:
             return None
         assets = self._assets_dir_for(self.file_path)
+        doc_dir = os.path.dirname(os.path.abspath(self.file_path))
+        rel_dir = os.path.relpath(assets, doc_dir).replace(os.sep, "/")
         fname = filename or os.path.basename(src_path)
         # 源文件已在目标目录内：直接复用，避免复制出 -1 副本
         if src_path:
             try:
                 if os.path.normcase(os.path.dirname(os.path.abspath(src_path))) == \
                         os.path.normcase(assets):
-                    return f"{os.path.basename(assets)}/{os.path.basename(src_path)}"
+                    return rel_dir + "/" + os.path.basename(src_path)
             except (OSError, ValueError):
                 pass
         os.makedirs(assets, exist_ok=True)
@@ -1875,7 +2431,7 @@ class MainWindow(QMainWindow):
                 f.write(data)
         else:
             shutil.copy2(src_path, dest)
-        return f"{os.path.basename(assets)}/{dest_name}"
+        return rel_dir + "/" + dest_name
 
     def _handle_pasted_image(self, info):
         """剪贴板 / 截图粘贴的图片：assets 模式落盘，否则内嵌。"""
@@ -2550,7 +3106,8 @@ class MainWindow(QMainWindow):
     # ================= 多文档标签 =================
     def _add_doc(self, path=None, text=None):
         # v3.38（TAB-1）：per-doc dirty —— 每个标签自带修改标记（切走再切回不丢）
-        self._docs.append({"path": path, "content": text, "dirty": False})
+        # v3.45.7（REQ4）：per-doc mode —— 渲染 / 源码 / 分屏 状态随文件独立保留
+        self._docs.append({"path": path, "content": text, "dirty": False, "mode": "edit"})
         idx = len(self._docs) - 1
         self._tabbar.addTab("未命名" if not path else os.path.basename(path))
         self._tabbar.setCurrentIndex(idx)  # 触发 _on_tab_clicked -> 激活
@@ -2564,6 +3121,8 @@ class MainWindow(QMainWindow):
             return
         if idx == self._cur:
             return
+        # v3.45.8（REQ3#9）：跳转历史起点播种（首次导航前以当前文档为起点）
+        self._nav_ensure_seed()
         # v3.38（TAB-B）：普通切换即放弃多选（Ctrl/Shift 路径在 eventFilter 已消费事件）
         if self._tab_multi:
             self._tab_multi.clear()
@@ -2571,12 +3130,16 @@ class MainWindow(QMainWindow):
             self._update_multi_highlight()
         # 编辑视图尚未加载完成时无法取回内容，直接同步激活
         if not self._vstate[self._active_role()]["loaded"]:
+            # v3.45.8（REQ3#9）：记录本次切换到达的目标文档
+            self._nav_arrive(self._docs[idx]["path"], delay=550)
             self._pending_switch = idx
             self._on_switch_capture(None)
             return
         # 切换前先把当前内容存入缓存
         self._pending_switch = idx
         self._switching = True
+        # v3.45.8（REQ3#9）：记录本次切换到达的目标文档（延迟到加载后读比例）
+        self._nav_arrive(self._docs[idx]["path"], delay=550)
         self._js_active("window.getMarkdown()", self._on_switch_capture)
 
     def _on_switch_capture(self, md):
@@ -2602,17 +3165,33 @@ class MainWindow(QMainWindow):
         self._last_preview_md = None
         self._push_doc_dir()   # 图片相对路径随文档目录变化（先于正文下发）
         self._push_text(text)
+        # v3.45.7（REQ4）：恢复该文件自身的模式（渲染 / 源码 / 分屏）
+        doc_mode = doc.get("mode", "edit")
+        if doc_mode == "dual":
+            self._set_mode("dual", force=True)
+        elif doc_mode != self._mode:
+            self._set_mode(doc_mode, force=True)
+        else:
+            self._js_active("window.setSourceMode(%s)"
+                            % ("true" if doc_mode == "src" else "false"))
+            self._dual = False
+            self._update_mode_button()
         self._dirty = bool(doc.get("dirty"))   # v3.38（TAB-1）：恢复该文档自己的修改标记
         self._update_title()
         self._refresh_tab_texts()
         if self.file_path:
             self._sidebar.set_root(self.file_path)
             self._status.setText(f"已打开 · {self.file_path}")
+            if self._book:   # v3.44.34（BOOK-1）：书籍中切换文档时高亮对应章节
+                self._sidebar.highlight_book_path(self.file_path)
+                self._record_book_chapter()   # v3.45.7（BOOK-READ-1）
         else:
             self._sidebar.clear_current_file()   # v3.38（OUT-3）：清除残留的文件上下文与高亮
             self.show_status("未命名文档")
         self._remember_last_session()   # v3.38（OUT-5）
         # 期间用户又点了其他标签 -> 继续处理最新请求
+        self.refresh_wiki()  # v3.44.37（BACKLINK-3）：切换后重建双链索引与反向链接
+        self.refresh_backlinks()  # v3.48.13（BACKLINK-4）：反链页可见时同步刷新
         if self._tabbar.currentIndex() != self._cur:
             QTimer.singleShot(0, lambda: self._on_tab_clicked(self._tabbar.currentIndex()))
 
@@ -3339,6 +3918,788 @@ class MainWindow(QMainWindow):
         self._add_recent(path)
         self._remember_last_session()   # v3.38（OUT-5）
 
+    # ================= v3.44.34（BOOK-1）：书籍模式 =================
+    def open_book(self):
+        """打开 mdBook 项目：选择书籍根目录（含 book.toml 或 SUMMARY.md）。"""
+        d = QFileDialog.getExistingDirectory(self, "打开书籍（选择书籍根目录）", "")
+        if not d:
+            return
+        info = bookmode.read_book(d)
+        if not info:
+            QMessageBox.warning(self, "打开书籍失败",
+                                "未检测到 mdBook 项目：\n需要在该目录下存在 book.toml 或 SUMMARY.md。")
+            return
+        self._load_book(info)
+        self.show_status("已打开书籍：" + info["title"])
+        # 打开第一章（含链接的章节）
+        first = self._book_first_chapter(info["root"])
+        if first and first.get("abs_path"):
+            self.open_book_link(first["abs_path"])
+
+    # v3.44.35（BOOK-2）：新建书籍向导
+    def create_new_book(self):
+        """向导式新建 mdBook 项目：选择根目录 + 书名 → 生成 book.toml / src/SUMMARY.md / src/README.md。"""
+        d = QFileDialog.getExistingDirectory(
+            self, "选择书籍根目录（将在此处创建 book.toml 与 src/）", "")
+        if not d:
+            return
+        title, ok = QInputDialog.getText(self, "新建书籍", "书籍名称：", text="未命名书籍")
+        if not ok or not title.strip():
+            return
+        title = title.strip()
+        book_dir = os.path.abspath(d)
+        # 冲突检查：已存在书籍项目则拒绝（避免覆盖既有 book.toml / SUMMARY.md）
+        if (os.path.exists(os.path.join(book_dir, "book.toml"))
+                or os.path.exists(os.path.join(book_dir, "SUMMARY.md"))
+                or os.path.exists(os.path.join(book_dir, "src", "SUMMARY.md"))):
+            QMessageBox.warning(self, "新建书籍失败",
+                                "该目录已存在 mdBook 项目（book.toml / SUMMARY.md），请另选目录。")
+            return
+        src_dir = os.path.join(book_dir, "src")
+        try:
+            os.makedirs(src_dir, exist_ok=True)
+            with open(os.path.join(book_dir, "book.toml"), "w", encoding="utf-8") as f:
+                f.write('[book]\n')
+                f.write('title = "%s"\n' % title.replace('"', "'"))
+                f.write('authors = [""]\n')
+                f.write('language = "zh-CN"\n')
+                f.write('src = "src"\n')
+            with open(os.path.join(src_dir, "SUMMARY.md"), "w", encoding="utf-8") as f:
+                f.write("# %s\n\n- [简介](README.md)\n" % title)
+            with open(os.path.join(src_dir, "README.md"), "w", encoding="utf-8") as f:
+                f.write("# %s\n\n> 这是《%s》的第一章。在右侧编辑内容，"
+                        "或从「书籍」页签右键新增章节。\n" % (title, title))
+        except OSError as e:
+            QMessageBox.critical(self, "新建书籍失败", str(e))
+            return
+        info = bookmode.read_book(book_dir)
+        if not info:
+            QMessageBox.warning(self, "新建书籍失败",
+                                "书籍文件已生成，但无法解析，请检查目录权限。")
+            return
+        self._load_book(info)
+        self.show_status("已新建书籍：" + info["title"])
+        first = self._book_first_chapter(info["root"])
+        if first and first.get("abs_path"):
+            self.open_book_link(first["abs_path"])
+
+    # ================= v3.45.7（BOOK-READ-1）：启动恢复书籍 + 阅读进度 =================
+    def _load_book(self, info):
+        """载入一本书籍（设置 _book + 侧栏），不自动打开章节。
+        同时记录为「上次阅读的书籍」供启动恢复。"""
+        self._book = info
+        self._sidebar.set_book(info)
+        self.refresh_book_links()
+        self._sidebar.select_tab(Sidebar.TAB_BOOK)
+        self._sidebar.setVisible(True)
+        self._update_side_btn()
+        self._settings.setValue("lastBook", info["book_dir"])
+        # v3.47.1（BOOK-TOC）：登记书籍是否已有目录页（存在则可同步/删除）
+        self._book_toc_page = None
+        self._book_toc_rel = None
+        for ch in bookmode.flat_chapters(info["root"]):
+            if ch.get("path") and os.path.basename(ch["path"]) == "目录.md":
+                self._book_toc_page = (ch.get("abs_path")
+                                      or os.path.normpath(os.path.join(
+                                          info["summary_dir"], ch["path"])))
+                self._book_toc_rel = ch["path"]
+                break
+
+    # ================= v3.45.7（BOOK-TOC）：编辑目录 + 在正文前插入目录 =================
+    def _open_summary_for_edit(self, summary_path):
+        """书籍右键「编辑目录」：以普通文档标签打开该书的 summary.md（保留书籍关联）。"""
+        if not summary_path or not os.path.isfile(summary_path):
+            self.show_status("未找到目录文件：" + str(summary_path))
+            return
+        self._load_path(summary_path)
+        self.show_status("正在编辑目录：" + os.path.basename(summary_path))
+
+    # ================= v3.46（TOC-SEL）：目录改为「侧栏选择入口」触发 =================
+    def insert_toc_for_file(self, path):
+        """从文件列表选择单个文件 → 仅对该文件生成并插入标题大纲目录。"""
+        path = os.path.abspath(path)
+        if not os.path.isfile(path):
+            self.show_status("文件不存在：" + path)
+            return
+        if self.file_path and os.path.normpath(self.file_path) == path:
+            # 已是当前活动文档：直接取回正文后插入标题大纲
+            self._js_view(self._view, "window.getMarkdown()",
+                          lambda md: self._insert_toc_text(self._build_heading_toc(md or "")))
+            return
+        # 否则打开该文件（成为活动文档），加载完成后插入
+        self._toc_insert_kind = "file"
+        self._toc_insert_path = path
+        self._load_path(path)
+        self._maybe_run_pending_toc()
+
+    def insert_toc_for_book(self, summary_path):
+        """书籍插入目录：在书籍最前生成「目录」页（独立 .md），并在 summary.md
+        首行登记该章节；目录页内容随 summary.md 章节变动自动同步。"""
+        summary_path = os.path.abspath(summary_path)
+        info = bookmode.read_book(os.path.dirname(summary_path))
+        if not info:
+            self.show_status("无法解析书籍目录：" + summary_path)
+            return
+        summary_dir = info["summary_dir"]
+        toc_rel = "目录.md"
+        toc_path = os.path.normpath(os.path.join(summary_dir, toc_rel))
+        root = info["root"]
+        # 生成目录页内容（排除目录页自身，避免自引用）
+        toc = self._build_book_toc_from_root(root, exclude_rel=toc_rel)
+        if not toc:
+            self.show_status("该书暂无可用于生成目录的章节")
+            return
+        try:
+            self._write_text(toc_path, toc)
+        except OSError as e:
+            self.show_status("目录页创建失败：" + str(e))
+            return
+        # 在 summary.md 首行（书籍标题之后）登记「目录」章节项
+        self._insert_toc_entry_into_summary(root, toc_rel, "目录")
+        try:
+            bookmode.write_summary(summary_path, root)
+        except OSError as e:
+            self.show_status("目录写入 SUMMARY 失败：" + str(e))
+            return
+        # 重新载入书籍并登记目录页
+        info2 = bookmode.read_book(os.path.dirname(summary_path))
+        if info2:
+            self._load_book(info2)
+        self._book_toc_page = toc_path
+        self._book_toc_rel = toc_rel
+        self.show_status("已在书籍最前插入目录（随 SUMMARY.md 自动同步）")
+
+    def _maybe_run_pending_toc(self):
+        """目标文档已打开且编辑视图就绪时立即插入；否则由 _on_loaded 加载后插入。"""
+        if (self._toc_insert_kind
+                and self.file_path
+                and os.path.normpath(self.file_path)
+                == os.path.normpath(self._toc_insert_path or "")
+                and self._vstate[self._active_role()]["loaded"]):
+            kind = self._toc_insert_kind
+            self._toc_insert_kind = None
+            self._toc_insert_path = None
+            QTimer.singleShot(200, lambda k=kind: self._run_pending_toc(k))
+
+    def _run_pending_toc(self, kind):
+        if kind == "book":
+            toc = self._build_book_toc()
+            if not toc:
+                self.show_status("该书暂无可用于生成目录的章节")
+                return
+            self._insert_toc_text(toc)
+        else:
+            self._js_view(self._view, "window.getMarkdown()",
+                          lambda md: self._insert_toc_text(self._build_heading_toc(md or "")))
+
+    def _insert_toc_text(self, toc):
+        """把目录文本插入到当前文档正文最前（取回当前正文后前置）。"""
+        if not toc:
+            self.show_status("暂无可用于生成目录的标题/章节")
+            return
+
+        def on_md(md):
+            text = md if md is not None else ""
+            # 若开头已是目录块，先整段移除（避免叠加重复），再前置新目录
+            body, had = self._strip_leading_toc(text)
+            new_md = toc.rstrip("\n") + "\n\n" + body.lstrip("\n")
+            self._js_view(self._view, f"window.setMarkdown({js(new_md)})")
+            self.show_status("已更新目录" if had else "已在正文前插入目录")
+        self._js_view(self._view, "window.getMarkdown()", on_md)
+
+    @staticmethod
+    def _strip_leading_toc(md):
+        """若文档以「# 目录」标题块开头，移除该目录块（含其后连续列表），
+        返回 (剩余正文, 是否移除)。用于插入时去重与「删除目录」。"""
+        lines = md.split("\n")
+        i = 0
+        while i < len(lines) and lines[i].strip() == "":
+            i += 1
+        if i >= len(lines):
+            return md, False
+        if not re.match(r"^#\s+目录\s*$", lines[i].strip()):
+            return md, False
+        # 消费标题之后的连续列表项（允许项间空行；遇非列表非空行即止）
+        k = i + 1
+        while k < len(lines):
+            line = lines[k]
+            if re.match(r"^\s*[-*+]\s", line):
+                k += 1
+            elif line.strip() == "":
+                nk = k + 1
+                while nk < len(lines) and lines[nk].strip() == "":
+                    nk += 1
+                if nk < len(lines) and re.match(r"^\s*[-*+]\s", lines[nk]):
+                    k = nk
+                else:
+                    break
+            else:
+                break
+        rest = lines[k:]
+        while rest and rest[0].strip() == "":
+            rest.pop(0)
+        return "\n".join(rest), True
+
+    def remove_toc_for_file(self, path):
+        """从文件列表选择单个文件 → 移除其正文前（若有）的目录块。"""
+        path = os.path.abspath(path)
+        if not os.path.isfile(path):
+            self.show_status("文件不存在：" + path)
+            return
+        if self.file_path and os.path.normpath(self.file_path) == path:
+            self._remove_toc_text()
+            return
+        # 否则打开该文件（成为活动文档），加载完成后移除
+        self._toc_remove_path = path
+        self._load_path(path)
+        self._maybe_run_pending_toc_remove()
+
+    def remove_toc_for_current(self):
+        """从大纲右键等入口 → 移除当前活动文档的目录块。"""
+        if not self.file_path:
+            self.show_status("当前没有打开的文档")
+            return
+        self._remove_toc_text()
+
+    def _remove_toc_text(self):
+        def on_md(md):
+            text = md if md is not None else ""
+            body, had = self._strip_leading_toc(text)
+            if not had:
+                self.show_status("该文档未包含目录")
+                return
+            self._js_view(self._view, f"window.setMarkdown({js(body)})")
+            self.show_status("已删除目录")
+        self._js_view(self._view, "window.getMarkdown()", on_md)
+
+    def _maybe_run_pending_toc_remove(self):
+        """目标文档已打开且编辑视图就绪时立即移除；否则由 _on_loaded 加载后移除。"""
+        if (self._toc_remove_path
+                and self.file_path
+                and os.path.normpath(self.file_path)
+                == os.path.normpath(self._toc_remove_path)
+                and self._vstate[self._active_role()]["loaded"]):
+            self._toc_remove_path = None
+            QTimer.singleShot(200, lambda: self._remove_toc_text())
+
+    def _build_book_toc_from_root(self, root, exclude_rel=None):
+        """由书籍 root 树生成嵌套 Markdown 目录（相对路径链接）。
+        exclude_rel：跳过该相对路径对应的章节（目录页自身），避免自引用。"""
+        if root is None:
+            return None
+        chapters = self._book_chapters_with_depth({"root": root})
+        chapters = [c for c in chapters if c.get("title")]
+        if exclude_rel:
+            ex = os.path.normpath(exclude_rel).lower()
+            chapters = [c for c in chapters
+                        if not (c.get("path")
+                                and os.path.normpath(c["path"]).lower() == ex)]
+        if not chapters:
+            return None
+        lines = ["# 目录", ""]
+        for ch in chapters:
+            depth = ch.get("depth", 0)
+            indent = "  " * depth
+            title = ch["title"]
+            path = ch.get("path") or ""
+            if path:
+                lines.append("%s- [%s](%s)" % (indent, title, path))
+            else:
+                lines.append("%s- %s" % (indent, title))
+        return "\n".join(lines) + "\n"
+
+    def _build_book_toc(self):
+        """由当前书籍章节清单生成嵌套 Markdown 目录（相对路径链接）。"""
+        if not self._book:
+            return None
+        return self._build_book_toc_from_root(self._book["root"])
+
+    def _insert_toc_entry_into_summary(self, root, toc_rel, title):
+        """在 summary 根的首位插入指向目录页的章节项（已存在则跳过，避免重复）。"""
+        for ch in bookmode.flat_chapters(root):
+            if (ch.get("path")
+                    and os.path.normpath(ch["path"]).lower()
+                    == os.path.normpath(toc_rel).lower()):
+                return
+        node = {"kind": "chapter", "title": title, "path": toc_rel,
+                "abs_path": None, "children": [], "line": -1}
+        root["children"].insert(0, node)
+
+    def _remove_toc_entry_from_summary(self, root, toc_rel):
+        """从 summary 树中移除指向目录页的章节项，返回是否移除。"""
+        ex = os.path.normpath(toc_rel).lower()
+        removed = [False]
+
+        def walk(node):
+            kids = node.get("children", [])
+            new = []
+            for ch in kids:
+                if (ch.get("kind") == "chapter" and ch.get("path")
+                        and os.path.normpath(ch["path"]).lower() == ex):
+                    removed[0] = True
+                    continue
+                if ch.get("children"):
+                    walk(ch)
+                new.append(ch)
+            node["children"] = new
+        walk(root)
+        return removed[0]
+
+    def remove_toc_for_book(self, summary_path):
+        """书籍删除目录：移除 summary.md 中的目录章节项并删除目录页文件。"""
+        summary_path = os.path.abspath(summary_path)
+        info = bookmode.read_book(os.path.dirname(summary_path))
+        if not info:
+            self.show_status("无法解析书籍目录：" + summary_path)
+            return
+        root = info["root"]
+        toc_rel = "目录.md"
+        if not self._remove_toc_entry_from_summary(root, toc_rel):
+            self.show_status("该书未包含目录")
+            return
+        try:
+            bookmode.write_summary(summary_path, root)
+        except OSError as e:
+            self.show_status("目录移除失败：" + str(e))
+            return
+        # 删除目录页文件（仅限我们生成的 目录.md，避免误删）
+        toc_path = os.path.normpath(os.path.join(info["summary_dir"], toc_rel))
+        if os.path.isfile(toc_path):
+            try:
+                os.remove(toc_path)
+            except OSError:
+                pass
+        info2 = bookmode.read_book(os.path.dirname(summary_path))
+        if info2:
+            self._load_book(info2)
+        self._book_toc_page = None
+        self._book_toc_rel = None
+        self.show_status("已删除书籍目录")
+
+    def _refresh_book_toc_page(self):
+        """summary.md 章节变动后，按最新结构重建目录页（自动同步）。"""
+        if not self._book or not self._book_toc_page:
+            return
+        sp = self._book.get("summary_path")
+        if not sp or not os.path.isfile(sp):
+            return
+        try:
+            with open(sp, "r", encoding="utf-8") as f:
+                text = f.read()
+        except OSError:
+            return
+        root = bookmode.parse_summary(text)
+        toc = self._build_book_toc_from_root(
+            root, exclude_rel=self._book_toc_rel or "目录.md")
+        if not toc:
+            return
+        try:
+            self._write_text(self._book_toc_page, toc)
+        except OSError as e:
+            self.show_status("目录页刷新失败：" + str(e))
+            return
+        self._sync_open_doc_if_match(self._book_toc_page, toc)
+        self.show_status("目录已随 SUMMARY.md 自动更新")
+
+    def _sync_open_doc_if_match(self, path, content):
+        """若 path 正作为标签页打开，同步其内容与磁盘（活动标签则刷新视图）。"""
+        ap = os.path.normpath(path)
+        for i, d in enumerate(self._docs):
+            if d.get("path") and os.path.normpath(d["path"]) == ap:
+                d["content"] = content
+                if i == self._cur:
+                    self._js_view(self._view,
+                                  f"window.setMarkdown({js(content)})")
+                    self._dirty = False
+                    self._update_title()
+                    self._refresh_tab_texts()
+                break
+
+    @staticmethod
+    def _slugify(text):
+        """与 editor.html slugify 同源：trim→折叠空白→小写→仅留字母数字空格
+        （CJK 原样）→ 空格转 '-' → 去首尾/连续 '-'。用于标题锚点。"""
+        if not text:
+            return ""
+        s = " ".join(str(text).strip().split()).lower()
+        out = []
+        for ch in s:
+            if ch.isalnum() or ch == " ":   # isalnum 含 CJK/字母/数字
+                out.append(ch)
+        s = "".join(out).replace(" ", "-").replace("--", "-").strip("-")
+        return s
+
+    def _build_heading_toc(self, md):
+        """由文档标题大纲生成嵌套 Markdown 目录（#slug 锚点链接）。"""
+        if not md:
+            return None
+        import re as _re
+        lines = ["# 目录", ""]
+        stack = []   # (level, slug, count)
+        seen = {}
+        any_h = False
+        for raw in md.splitlines():
+            m = _re.match(r"^(#{1,6})\s+(.*\S)\s*$", raw)
+            if not m:
+                continue
+            level = len(m.group(1))
+            title = m.group(2).strip()
+            base = self._slugify(title) or "section"
+            n = seen.get(base, 0)
+            seen[base] = n + 1
+            # 与 editor.html slugify 去重同源：首条 = base，其后 = base-2 / base-3 …
+            # （旧版用 base-1，导致导出 HTML/PDF 内目录锚点跳转失效）
+            slug = base if n == 0 else "%s-%d" % (base, n + 1)
+            indent = "  " * (level - 1)
+            lines.append("%s- [%s](#%s)" % (indent, title, slug))
+            any_h = True
+        if not any_h:
+            return None
+        return "\n".join(lines) + "\n"
+
+    def _restore_book(self):
+        """启动若上次在阅读书籍，自动恢复书籍 + 阅读进度（章节 + 滚动位置）。"""
+        _lb = str(self._settings.value("lastBook", "") or "")
+        if not _lb or not os.path.isdir(_lb):
+            return
+        info = bookmode.read_book(_lb)
+        if not info:
+            return
+        self._load_book(info)
+        self.show_status("已恢复书籍：" + info["title"])
+        # 恢复上次章节
+        _lc = str(self._settings.value("lastBookChapter", "") or "")
+        target = None
+        if _lc:
+            cand = os.path.normpath(os.path.join(info["summary_dir"], _lc))
+            target = bookmode.find_chapter(info["root"], cand)
+        if not target:
+            target = self._book_first_chapter(info["root"])
+        if target and target.get("abs_path"):
+            self.open_book_link(target["abs_path"])
+        # 恢复滚动位置（内容渲染后重试定位）
+        try:
+            _sr = float(self._settings.value("lastBookScroll", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            _sr = 0.0
+        if _sr > 0:
+            self._pending_book_scroll = _sr
+            self._schedule_book_scroll()
+
+    def _schedule_book_scroll(self, tries=0):
+        """内容渲染完成后把视图滚到上次比例（带重试，最多 ~5s）。"""
+        if self._pending_book_scroll is None:
+            return
+        ratio = self._pending_book_scroll
+
+        def cb(res):
+            if res == "ok":
+                self._pending_book_scroll = None
+            elif tries < 12:
+                QTimer.singleShot(400, lambda: self._schedule_book_scroll(tries + 1))
+        self._js_view(self._view, "window.scrollToRatio(%s)" % json.dumps(ratio), cb)
+
+    def _on_book_scroll(self, res):
+        """周期性记录当前章节滚动比例（0~1）。"""
+        try:
+            v = float(res)
+        except (TypeError, ValueError):
+            return
+        if 0 <= v <= 1:
+            self._settings.setValue("lastBookScroll", v)
+
+    def _record_book_chapter(self):
+        """若当前文件是书籍章节，记录为「上次章节」（相对路径）。"""
+        if not self._book or not self.file_path:
+            return
+        node = bookmode.find_chapter(self._book["root"], self.file_path)
+        if node and node.get("path"):
+            self._settings.setValue("lastBookChapter", node["path"])
+
+    def _save_book_progress(self):
+        """退出前记录书籍 / 章节（滚动比例由 _poll 周期写入兜底）。"""
+        self._record_book_chapter()
+        if self._book:
+            self._settings.setValue("lastBook", self._book["book_dir"])
+
+    def _book_first_chapter(self, root):
+        for ch in bookmode.flat_chapters(root):
+            if ch.get("abs_path"):
+                return ch
+        return None
+
+    def open_book_link(self, abs_path):
+        """通用增强：在编辑器内打开一个 Markdown 文件（书籍章节 / 文档内相对链接共用）。
+
+        绝对路径交给 _load_path（已开则切换、否则新开标签）；文件不存在时提示。
+        v3.45.3（LINK-FB）：链接以 .html 结尾但文件不存在时，回退打开同名 .md
+        （导出 HTML 站点后的双向兼容：站点内链写 .html，源文件是 .md）。
+        链接可携带 #fragment（如 page.html#slug），此处剥落后按纯路径处理。"""
+        if not abs_path:
+            return
+        # 剥离开头 fragment（#slug 不进文件系统判断）
+        _frag = ""
+        _p = str(abs_path)
+        _q = _p.find("#")
+        if _q >= 0:
+            _frag = _p[_q:]
+            _p = _p[:_q]
+        p = os.path.abspath(_p)
+        if not os.path.exists(p):
+            _root, _ext = os.path.splitext(p)
+            _fb = ""
+            if _ext.lower() == ".html":
+                _cand = _root + ".md"
+                if os.path.exists(_cand):
+                    _fb = _cand
+            if _fb:
+                self.show_status("未找到 %s，已回退打开 %s"
+                                 % (os.path.basename(p), os.path.basename(_fb)))
+                p = _fb
+            else:
+                QMessageBox.warning(self, "打开失败", f"文件不存在：\n{p}")
+                return
+        self._load_path(p)
+        # 携带 #锚点：打开后滚动定位（与 on_wikilink 同口径）
+        if _frag and len(_frag) > 1:
+            self._js_active("setTimeout(function(){ scrollToAnchor(%s); }, 400);"
+                            % json.dumps(_frag[1:], ensure_ascii=False))
+        # 若当前处于书籍模式且打开的恰是书中章节，侧栏会随标签切换自动高亮
+
+    def on_book_entry_selected(self, rel):
+        """v3.45.3（BOOK-6）：书籍树章节被点击 → 状态栏显示对应文件名。
+
+        树内不再双行显示文件名（只显示子章节名），文件名改在这里呈现；
+        打开章节时会异步写「已打开 · 路径」常驻信息，故延后一拍覆盖，
+        保证用户看到的是文件名（连接顺序在 bookEntryOpen 之后）。"""
+        name = (rel or "").strip()
+        text = "文件：" + (name if name else "（无对应文件）")
+        QTimer.singleShot(120, lambda: self._status.setText(text))
+
+    def on_book_structure_changed(self, root):
+        """书籍目录结构变化（拖拽重排 / 新增 / 重命名 / 删除）→ 写回 SUMMARY.md。"""
+        if not self._book:
+            return
+        self._book["root"] = root
+        try:
+            bookmode.write_summary(self._book["summary_path"], root)
+            self.show_status("已更新书籍目录 " + os.path.basename(self._book["summary_path"]))
+        except OSError as e:
+            QMessageBox.warning(self, "写回失败", str(e))
+            return
+        # v3.47.1（BOOK-TOC）：目录结构变动后，同步重建目录页
+        self._refresh_book_toc_page()
+
+    # v3.44.35（BOOK-2）：整本书级导出 / 关闭
+    def close_book(self):
+        """关闭当前书籍（清空侧栏书籍目录与 _book 状态）。"""
+        self._book = None
+        self._sidebar.set_book(None)
+        self.show_status("已关闭书籍")
+
+    def _book_chapters_with_depth(self, info):
+        """返回书籍全部 chapter 节点（按文档顺序），并就地标注 depth（嵌套层级）。"""
+        out = []
+
+        def walk(node, depth):
+            for ch in node.get("children", []):
+                if ch["kind"] == "chapter":
+                    ch["depth"] = depth
+                    out.append(ch)
+                    walk(ch, depth + 1)
+                elif ch["kind"] == "part":
+                    walk(ch, depth)
+        walk(info["root"], 0)
+        return out
+
+    def on_book_export_requested(self, fmt, summary_path):
+        """书籍右键「导出整本书」派发：PDF / HTML / EPUB / Word。"""
+        info = bookmode.read_book(summary_path)
+        if not info:
+            QMessageBox.warning(self, "导出失败", "无法解析书籍：" + str(summary_path))
+            return
+        # v3.47.1（BOOK-TOC）：导出前刷新目录页，保证导出物目录最新
+        if (self._book and self._book_toc_page
+                and os.path.normpath(self._book.get("summary_path", ""))
+                == os.path.normpath(summary_path)):
+            self._refresh_book_toc_page()
+        chapters = self._book_chapters_with_depth(info)
+        chapters = [c for c in chapters
+                    if c.get("abs_path") and os.path.exists(c["abs_path"])]
+        if not chapters:
+            QMessageBox.information(self, "导出失败", "该书没有可导出的章节。")
+            return
+        if fmt == "pdf":
+            self._export_book_pdf(info, chapters)
+        elif fmt == "html":
+            self._export_book_html(info, chapters)
+        else:
+            self._export_book_ebook(info, chapters, fmt)
+
+    def _export_book_pdf(self, info, chapters):
+        """整本书 PDF：有界并行渲染 + pypdf 合并（书签 / 页码）。"""
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出整本书 PDF",
+            self._dlg_start("pdf", (info["title"] or "book") + ".pdf"), "PDF 文件 (*.pdf)")
+        if not path:
+            return
+        self._remember_dir("pdf", path)
+        self.show_status("正在导出整本书 PDF（并行渲染 %d 章）…" % len(chapters))
+        from bookexport import BookPdfExporter
+        editor_html = os.path.join(os.path.dirname(os.path.abspath(__file__)), "editor.html")
+        # v3.47.1（PDF-SET）：整本书 PDF 复用已保存的页边距 / 字体 / 字号默认
+        opts = self._pdf_defaults()
+        self._book_pdf_exp = BookPdfExporter(
+            self, EditorPage, editor_html, max_slots=3, opts=opts,
+            on_done=lambda ok_path, msg: self._book_pdf_done(ok_path, msg),
+            on_progress=lambda d, t: self.show_status(
+                "整本书 PDF：已渲染 %d / %d 章" % (d, t)))
+        self._book_pdf_exp.start(list(chapters), info["summary_dir"], path)
+
+    def _book_pdf_done(self, ok_path, msg):
+        if not ok_path:
+            self.show_status("整本书 PDF 导出失败")
+            QMessageBox.warning(self, "导出失败", msg or "未知错误")
+            return
+        self.show_status("已导出整本书 PDF · " + ok_path
+                        + ("（" + msg + "）" if msg else ""))
+        self._export_done("PDF", ok_path)
+
+    def _book_combined_md(self, chapters):
+        """把多章 markdown 拼接为一个文档（章标题作为分隔标题），用于无 pandoc 回退。"""
+        parts = []
+        for ch in chapters:
+            try:
+                with open(ch["abs_path"], "r", encoding="utf-8") as f:
+                    md = f.read().strip()
+            except OSError:
+                md = ""
+            title = ch.get("title") or os.path.basename(ch.get("path") or "")
+            if md and not md.lstrip().startswith("#"):
+                parts.append("# " + title + "\n\n" + md)
+            else:
+                parts.append(md)
+        return "\n\n\n".join(parts)
+
+    def _book_build_html(self, md, base_dir, title):
+        from exporters import parse_blocks, _blocks_to_xhtml
+        body = _blocks_to_xhtml(parse_blocks(md), base_dir, {}, None, None)
+        return ("<!DOCTYPE html>\n<html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
+                "<title>%s</title></head><body>\n%s\n</body></html>" % (title, body))
+
+    def _export_book_html(self, info, chapters):
+        """整本书 HTML：按 mdBook 方式生成多页站点（每章一个 HTML + 目录页 +
+        共享样式 + 上下章导航），并用内置本地服务器以网址打开。
+
+        v3.44.36（BOOK-5）：由「导出单个 HTML 文件」改为「导出多页站点」——
+        输出目录含 index.html（目录）、NN-章节名.html（每章一页）、style.css。
+        可用 file:// 直接打开，或经 http://127.0.0.1:<port>/index.html 访问。
+        """
+        import bookhtml
+        from PySide6.QtGui import QDesktopServices
+
+        base = info.get("book_dir") or info.get("summary_dir") or os.getcwd()
+        default = os.path.join(base, "_site")
+        try:
+            os.makedirs(default, exist_ok=True)
+        except OSError:
+            default = base
+        out_dir = QFileDialog.getExistingDirectory(
+            self, "选择整本书 HTML 站点输出目录（每章生成一个 HTML）", default)
+        if not out_dir:
+            return
+        self.show_status("正在生成整本书 HTML 站点…")
+        ok, msg, index_path = bookhtml.build_site(info, chapters, out_dir)
+        if not ok:
+            QMessageBox.warning(self, "导出失败", msg)
+            return
+        # 本地 HTTP 服务器：http://127.0.0.1:<port>/index.html（可输入网址访问）
+        url = None
+        try:
+            old = getattr(self, "_book_site_server", None)
+            if old is not None:
+                old.stop()
+            self._book_site_server = bookhtml.LocalSiteServer(out_dir)
+            url = self._book_site_server.start()
+        except Exception:   # noqa: BLE001
+            self._book_site_server = None
+            url = None
+        if not os.environ.get("MDEDITOR_NO_BROWSER"):
+            try:
+                target = QUrl(url) if url else QUrl.fromLocalFile(index_path)
+                QDesktopServices.openUrl(target)
+            except Exception:   # noqa: BLE001
+                pass
+        if url:
+            self.show_status("已生成整本书 HTML 站点（%d 章）：%s"
+                             % (len(chapters), url))
+        else:
+            self.show_status("已生成整本书 HTML 站点（%d 章）：%s"
+                             % (len(chapters), index_path))
+
+    def _export_book_ebook(self, info, chapters, fmt):
+        """整本书 EPUB / Word：pandoc 优先；缺失则内置回退（合并 md 单文件）。"""
+        label = "EPUB" if fmt == "epub" else "Word (docx)"
+        ext = ".epub" if fmt == "epub" else ".docx"
+        filt = "EPUB 电子书 (*.epub)" if fmt == "epub" else "Word 文档 (*.docx)"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出整本书 " + label,
+            self._dlg_start(fmt, (info["title"] or "book") + ext), filt)
+        if not path:
+            return
+        self._remember_dir(fmt, path)
+        self.show_status("正在导出整本书 %s…" % label)
+        pandoc = self._pandoc_exe()
+        if pandoc:
+            if self._book_pandoc(pandoc, chapters, path, info, [], 300):
+                self.show_status("已导出整本书 %s · %s" % (label, path))
+                self._export_done(label, path)
+            return
+        # 内置回退
+        md = self._book_combined_md(chapters)
+        base_dir = info["summary_dir"]
+        title = info["title"] or "book"
+        if fmt == "epub":
+            ok, msg = exporters.write_epub(
+                md, path, base_dir, title,
+                border_color=getattr(self, "_theme_border", "") or "#ddd")
+        else:
+            ok, msg = exporters.write_docx(md, path, base_dir, title)
+        self.show_status(msg)
+        if not ok:
+            QMessageBox.warning(self, "导出失败", msg)
+        else:
+            self._export_done(label, path)
+
+    def _book_pandoc(self, pandoc, chapters, out_path, info, extra, timeout):
+        """调用 pandoc 多文件合并导出；返回是否成功。"""
+        import subprocess as _sp
+        files = [c["abs_path"] for c in chapters]
+        cmd = ([pandoc] + files + ["-o", out_path, "--from", "gfm+tex_math_dollars",
+                "--resource-path", info["summary_dir"], "--standalone",
+                "--toc", "--toc-depth=3"] + list(extra))
+        try:
+            r = _sp.run(cmd, capture_output=True, timeout=timeout)
+        except Exception as e:   # noqa: BLE001
+            QMessageBox.warning(self, "导出失败", str(e))
+            return False
+        if r.returncode != 0:
+            QMessageBox.warning(self, "导出失败",
+                                (r.stderr or b"").decode("utf-8", "replace")[-400:])
+            return False
+        return True
+
+    def on_book_reveal(self, book_dir):
+        """书籍右键「打开所在文件」：在资源管理器打开书籍根目录。"""
+        if not book_dir or not os.path.exists(book_dir):
+            QMessageBox.information(self, "打开所在文件",
+                                    "书籍目录不存在：" + str(book_dir))
+            return
+        try:
+            subprocess.Popen(["explorer", os.path.abspath(book_dir)])
+        except OSError as e:
+            QMessageBox.critical(self, "打开失败", str(e))
+
     def save_file(self) -> bool:
         if not self.file_path:
             return self.save_file_as()
@@ -3359,6 +4720,13 @@ class MainWindow(QMainWindow):
                 self._refresh_tab_texts()
                 self._update_save_cell()   # v3.40（UI-R7）：✓ 已保存（静默）
                 self.show_status(f"已保存 · {self.file_path}")
+                self.refresh_wiki()  # v3.44.37（BACKLINK-3）：保存后重建双链索引与反向链接
+                self.refresh_backlinks()  # v3.48.13（BACKLINK-4）：反链页可见时同步刷新
+                # v3.47.1（BOOK-TOC）：若保存的恰是书籍 SUMMARY.md → 同步目录页
+                if (self._book and self._book_toc_page
+                        and os.path.normpath(self.file_path)
+                        == os.path.normpath(self._book.get("summary_path", ""))):
+                    self._refresh_book_toc_page()
             except OSError as e:
                 self._update_save_cell()
                 QMessageBox.critical(self, "保存失败", str(e))
@@ -3435,12 +4803,262 @@ class MainWindow(QMainWindow):
         clicked = box.clickedButton()
         try:
             if clicked is b_open:
-                os.startfile(path)                     # noqa: S606
+                openutil.open_path(path)
             elif clicked is b_dir:
-                os.startfile(os.path.dirname(path) or ".")   # noqa: S606
+                openutil.open_in_folder(path)
         except OSError:
             self.show_status("无法打开：系统缺少关联程序")
         return
+
+    # ================= v3.44.37（BACKLINK-1~3）：双链 / 反向链接 =================
+    def on_wikilink(self, target):
+        """点击 [[双链]] 或 [[章节#锚点]]：解析标题/章节→文件→打开；不存在则新建。
+        v3.45（BOOKLINK-C）：支持 target#anchor，拆分后跳章并滚动到锚点。"""
+        if not target or not target.strip():
+            return
+        target = target.strip()
+        anchor = ""
+        if "#" in target:
+            ti, _, anchor = target.partition("#")
+            ti = ti.strip()
+            anchor = anchor.strip()
+        else:
+            ti = target
+        if not ti:
+            return
+        if self._book:
+            # 书籍模式：按章节标题解析，命中则在本编辑器内打开该章并滚动锚点
+            path = self._resolve_book_chapter(ti)
+            if path and os.path.exists(path):
+                self.open_book_link(path)
+                if anchor:
+                    self._js_active("setTimeout(function(){ scrollToAnchor(%s); }, 400);"
+                                    % json.dumps(anchor, ensure_ascii=False))
+                return
+            self.show_status("书籍中未找到章节：" + ti)
+            return
+        idx = getattr(self, "_note_index", {}) or {}
+        path = idx.get(ti)
+        if path and os.path.exists(path):
+            self._load_path(path)
+            if anchor:
+                self._js_active("setTimeout(function(){ scrollToAnchor(%s); }, 400);"
+                                % json.dumps(anchor, ensure_ascii=False))
+            return
+        base = self._doc_dir() or getattr(self._sidebar, "_cur_dir", "") or ""
+        if not base or not os.path.isdir(base):
+            self.show_status("无法定位笔记目录，无法新建笔记：" + ti)
+            return
+        safe = "".join(c if c not in '\\/:*?"<>|' else "_" for c in ti)
+        fp = os.path.join(base, safe + ".md")
+        if os.path.exists(fp):
+            self._load_path(fp)
+            if anchor:
+                self._js_active("setTimeout(function(){ scrollToAnchor(%s); }, 400);"
+                                % json.dumps(anchor, ensure_ascii=False))
+            return
+        try:
+            self._write_text(fp, "# " + ti + "\n\n")
+        except OSError as e:
+            self.show_status("新建笔记失败：" + str(e))
+            return
+        self._add_recent(fp)
+        self._load_path(fp)
+
+    def _resolve_book_chapter(self, title):
+        """书籍模式下按章节标题查找章节绝对路径（精确匹配标题，回退匹配文件名）。"""
+        if not self._book:
+            return None
+        for ch in self._book_chapters_with_depth(self._book):
+            ap = ch.get("abs_path")
+            if not ap:
+                continue
+            if (ch.get("title") or "").strip() == title:
+                return ap
+            if os.path.basename(ap).rsplit(".", 1)[0] == title:
+                return ap
+        return None
+
+    def _doc_first_title(self, md):
+        """取文档首个一级 / 二级标题作为笔记标题（用于双链索引与反向链接）。"""
+        if not md:
+            return ""
+        for line in md.splitlines():
+            st = line.strip()
+            if st.startswith("# "):
+                return st[2:].strip()
+            if st.startswith("## "):
+                return st[3:].strip()
+        return ""
+
+    def refresh_wiki(self):
+        """重建笔记索引（标题→路径）并刷新反向链接面板。"""
+        base = self._doc_dir() or getattr(self._sidebar, "_cur_dir", "") or ""
+        idx = {}
+        if base and os.path.isdir(base):
+            count = 0
+            for dirpath, dirnames, filenames in os.walk(base):
+                dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+                for fn in filenames:
+                    if count >= 4000:
+                        break
+                    if not fn.lower().endswith((".md", ".markdown", ".mdown", ".txt")):
+                        continue
+                    fp = os.path.join(dirpath, fn)
+                    try:
+                        with open(fp, "r", encoding="utf-8", errors="ignore") as f:
+                            head = f.read(8000)
+                    except OSError:
+                        continue
+                    title = self._doc_first_title(head)
+                    if title and title not in idx:
+                        idx[title] = fp
+                    count += 1
+                if count >= 4000:
+                    break
+        for doc in self._docs:
+            c = doc.get("content")
+            if not c:
+                continue
+            title = self._doc_first_title(c)
+            if title:
+                p = doc.get("path")
+                idx[title] = p if p else idx.get(title)
+        self._note_index = idx
+        try:
+            self._js_active("window.__noteIndex = " + json.dumps(idx, ensure_ascii=False) + ";")
+        except Exception:
+            pass
+
+    # ---- v3.48.13（BACKLINK-4）：反向链接 ----
+    _BL_MAX_FILES = 4000
+    _BL_MAX_SIZE = 1_500_000
+    _WL_RE = re.compile(r"\[\[([^\[\]\n]+)\]\]")
+
+    def _bl_active(self):
+        """反链页签是否为当前可见页（决定切换/保存时是否顺带刷新）。"""
+        try:
+            return self._sidebar.stack.currentIndex() == self._sidebar.TAB_BACKLINKS
+        except Exception:
+            return False
+
+    def refresh_backlinks(self, force=False):
+        """反链面板数据源：扫描笔记库，找出链接到当前文档的全部 (文件, 行, 摘录)。
+
+        口径与 on_wikilink 导航一致：[[X]] / [[X#锚]] / [[X#锚|别名]] 的头部 X
+        命中当前文档标题（_doc_first_title）或文件名（去扩展名）即计入；指向
+        自身的链接不计。增量：按 (mtime, size) 缓存，只重读变更文件；面板不可见
+        且非 force 时跳过（进入反链页签 / 点刷新按钮时会强制刷）。
+        """
+        if not force and not self._bl_active():
+            return
+        cur_path = os.path.abspath(self.file_path) if self.file_path else ""
+        title = ""
+        if cur_path:
+            try:
+                with open(cur_path, "r", encoding="utf-8", errors="ignore") as f:
+                    title = self._doc_first_title(f.read(8000))
+            except OSError:
+                title = ""
+        elif self._cur >= 0 and self._docs[self._cur].get("content"):
+            title = self._doc_first_title(self._docs[self._cur]["content"])
+        stem = os.path.splitext(os.path.basename(cur_path))[0] if cur_path else ""
+        keys = {k.lower() for k in (title, stem) if k}
+        base = self._doc_dir() or getattr(self._sidebar, "_cur_dir", "") or ""
+        items = []
+        if base and os.path.isdir(base) and cur_path and keys:
+            cache = getattr(self, "_bl_cache", None)
+            if cache is None:
+                cache = {}
+                self._bl_cache = cache
+            seen = set()
+            count = 0
+            for dirpath, dirnames, filenames in os.walk(base):
+                dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+                for fn in filenames:
+                    if count >= self._BL_MAX_FILES:
+                        break
+                    if not fn.lower().endswith((".md", ".markdown", ".mdown", ".txt")):
+                        continue
+                    fp = os.path.join(dirpath, fn)
+                    ap = os.path.abspath(fp)
+                    if ap == cur_path:
+                        continue          # 自链不计
+                    count += 1
+                    seen.add(ap)
+                    try:
+                        st = os.stat(fp)
+                    except OSError:
+                        continue
+                    if st.st_size > self._BL_MAX_SIZE:
+                        continue
+                    rows = None
+                    old = cache.get(ap)
+                    if old and not force and abs(old[0] - st.st_mtime) < 0.01 \
+                            and int(old[1]) == st.st_size:
+                        rows = old[2]
+                    else:
+                        try:
+                            with open(fp, "r", encoding="utf-8", errors="ignore") as f:
+                                text = f.read()
+                        except OSError:
+                            continue
+                        rows = []
+                        for no, line in enumerate(text.split("\n"), 1):
+                            for m in self._WL_RE.finditer(line):
+                                head = m.group(1).split("#", 1)[0]
+                                head = head.split("|", 1)[0].strip()
+                                if head and head.lower() in keys:
+                                    snip = line.strip()
+                                    if len(snip) > 90:
+                                        snip = snip[:90] + "…"
+                                    rows.append((no, snip))
+                                    break
+                        cache[ap] = (st.st_mtime, st.st_size, rows)
+                    items.extend((ap, no, snip) for no, snip in (rows or []))
+            for ap in [k for k in cache if k not in seen]:
+                cache.pop(ap, None)
+        try:
+            self._sidebar.set_backlinks(title or stem or "未命名文档", items)
+        except Exception:
+            pass
+
+    def refresh_book_links(self):
+        """构建本书全部章节 + 各章标题锚点清单，注入 window.__bookLinks
+        供浮动栏「本书链接」选择器（章节 / 锚点两级）使用。
+        数据结构（与 mdutil.slugify 同源，导出阶段复用）：
+            [{title, path, headings:[{level, text, slug, line}]}, ...]"""
+        if not self._book:
+            try:
+                self._js_active("window.__bookLinks = [];")
+            except Exception:
+                pass
+            return
+        chapters = self._book_chapters_with_depth(self._book)
+        out = []
+        for ch in chapters:
+            ap = ch.get("abs_path")
+            if not ap or not os.path.exists(ap):
+                continue
+            title = ch.get("title") or os.path.basename(ap)
+            headings = []
+            try:
+                with open(ap, "r", encoding="utf-8", errors="ignore") as f:
+                    md = f.read()
+                headings = mdutil.extract_headings(md, max_level=4)
+            except OSError:
+                pass
+            out.append({"title": title, "path": ap, "headings": headings})
+        self._book_links = out
+        try:
+            self._js_active("window.__bookLinks = "
+                            + json.dumps(out, ensure_ascii=False) + ";")
+        except Exception:
+            pass
+
+    def _on_backlink_open(self, path, line):
+        """反向链接被双击：打开来源文档并跳转到引用所在行。"""
+        self.open_file_at(path, line)
 
     def archive_workspace(self):
         """v3.32（P0-7）：把当前工作区（当前文档所在目录或侧栏根目录）
@@ -3542,12 +5160,79 @@ class MainWindow(QMainWindow):
             # v3.30.18（IMG-2）：本地相对路径图片内嵌为 data URI ——
             # 单文件 HTML 发给别人不再裂图（默认内嵌；失败图片保留原样）
             html, n_img = self._embed_local_images(html)
+            # v3.45.3（EXPORT-LINK）：指向本地 .md 的链接改写为 .html
+            # （单文件 HTML 的配套文件若也导出为 .html，链接才指得过去）
+            html, n_link = self._rewrite_md_links(html)
             with open(path, "w", encoding="utf-8") as f:
                 f.write(html)
             self.show_status(f"已导出 HTML · {path}"
-                             + (f"（内嵌 {n_img} 张图片）" if n_img else ""))
+                             + (f"（内嵌 {n_img} 张图片）" if n_img else "")
+                             + (f"（{n_link} 条链接改为 .html）" if n_link else ""))
             self._export_done("HTML", path)
         self._js_active("window.getExportHTML()", cb)
+
+    def export_png(self):
+        """v3.45.8（REQ3#8）：将当前渲染区导出为 PNG 图片（补齐竞品短板 #8）。
+
+        抓取当前可见的编辑视图（写作态渲染区）；若当前处于源码态则改抓源码视图。
+        采用对当前可见视图直接 grab 的方式，避免离屏 QWebEngineView 在无 GPU /
+        远程会话下可能出现的渲染阻塞，稳定可靠。"""
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出图片 (PNG)",
+            self._dlg_start("png",
+                os.path.splitext(self.file_path or "未命名")[0] + ".png"),
+            "PNG 图片 (*.png)")
+        if not path:
+            return
+        self._remember_dir("png", path)
+        view = self._view
+        if not view.isVisible():
+            vs = getattr(self, "_view_src", None)
+            if vs is not None and vs.isVisible():
+                view = vs
+        if not view.isVisible():
+            self.show_status("导出 PNG 失败：当前无可渲染视图")
+            return
+        pix = view.grab()
+        if pix.isNull():
+            self.show_status("导出 PNG 失败：截图为空")
+            return
+        out = QImage(pix.size(), QImage.Format_ARGB32_Premultiplied)
+        out.fill(Qt.white)
+        p = QPainter(out)
+        p.drawImage(0, 0, pix.toImage())
+        p.end()
+        if out.save(path, "PNG"):
+            self.show_status("已导出 PNG 图片 · " + path)
+            self._export_done("PNG", path)
+        else:
+            self.show_status("导出 PNG 失败：保存失败")
+
+    def _rewrite_md_links(self, html):
+        """v3.45.3（EXPORT-LINK）：导出 HTML 里指向本地 .md 的 <a href>
+        改写为 .html（保留 #fragment）。外部 / 锚点 / data / 绝对路径不动。
+        返回 (html, 改写条数)。"""
+        if not html or ".md" not in html.lower():
+            return html, 0
+        count = [0]
+
+        def _repl(m):
+            href = m.group(1)
+            low = href.lower()
+            if low.startswith(("http://", "https://", "mailto:", "data:",
+                               "blob:", "file:", "#", "/")):
+                return m.group(0)
+            path = href.split("#", 1)[0]
+            if not re.search(r"\.(md|markdown|mdown)$", path, re.I):
+                return m.group(0)
+            new = exporters._rewrite_export_link(href, "", None)
+            if new == href:
+                return m.group(0)
+            count[0] += 1
+            return m.group(0).replace(href, new, 1)
+
+        html = re.sub(r'<a\s[^>]*href="([^"]+)"', _repl, html)
+        return html, count[0]
 
     def _embed_local_images(self, html):
         """v3.30.18（IMG-2）：把导出 HTML 里的本地图片内嵌为 base64 data URI。
@@ -3635,48 +5320,158 @@ class MainWindow(QMainWindow):
         return html.replace("__KATEX_CSS__", css)
 
     def export_pdf(self):
-        def cb(html):
-            if not html:
-                return
-            path, _ = QFileDialog.getSaveFileName(
-                self, "导出 PDF",
-                self._dlg_start("pdf",
-                    os.path.splitext(self.file_path or "未命名")[0] + ".pdf"),
-                "PDF 文件 (*.pdf)")
-            if not path:
-                return
-            self._remember_dir("pdf", path)
-            self._pdf_path = path
-            # 先取出标题大纲，PDF 生成后用于写入书签
-            self._pending_toc = list(getattr(self, "_outline_cache", []) or [])
-            self._pdf_view = QWebEngineView(self)  # 隐藏的导出视图
-            self._pdf_view.hide()
-            v = self._pdf_view
-            v.setPage(EditorPage(v))
-            v.settings().setAttribute(
-                QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
-            v.settings().setAttribute(
-                QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
-            # v3.30.11（MATH-1）：PDF 渲染同样走离线内嵌 css（公式静态化后零依赖）
-            html = self._inline_katex_css(html)
-            base = QUrl.fromLocalFile(
-                (os.path.dirname(self.file_path) if self.file_path else os.path.expanduser("~")) + "/")
-            v.loadFinished.connect(self._print_pdf)
-            v.setHtml(html, base)
-        self._js_active("window.getExportHTML()", cb)
+        # v3.47.1（PDF-SET）：导出前弹出页边距 / 字体 / 字号设置（可保存为默认）
+        dlg = PdfExportDialog(self, self._settings)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        opts = dlg.result_opts()
+        if opts.get("save_default"):
+            self._settings.setValue("pdf/margin", opts["margin_mm"])
+            self._settings.setValue("pdf/fontFamily", opts["font_family"])
+            self._settings.setValue("pdf/fontSize", opts["font_size_pt"])
+        self._pdf_opts = opts
+        # v3.45.3（EXPORT-LINK）：书签数据在导出瞬间实时取（700ms 轮询缓存
+        # 可能滞后，刚切文档就导出会拿到空大纲 → 无书签）
+        self._js_active(
+            "window.getOutline() ? JSON.stringify(window.getOutline()) : '[]'",
+            self._export_pdf_go)
+
+    def _export_pdf_go(self, outline_json):
+        try:
+            self._pending_toc = json.loads(outline_json) \
+                if isinstance(outline_json, str) else list(outline_json or [])
+        except (TypeError, ValueError):
+            self._pending_toc = []
+        self._js_active("window.getExportHTML()", self._export_pdf_html)
+
+    def _export_pdf_html(self, html):
+        # v3.48.3（PDF-FIX）：旧版 html 为空时静默 return，表现为「点了导出没反应」。
+        # 现在明确报错（JS 异常 / 空文档 / 视图未就绪都会走到这里）。
+        if not html:
+            self.show_status("导出 PDF 失败：未能获取文章内容")
+            QMessageBox.warning(self, "导出 PDF 失败",
+                "未能从编辑器获取文章内容（可能当前视图未就绪或页面脚本报错）。\n"
+                "请切换到编辑视图后重试；若仍失败请把 ai.log / 控制台信息反馈。")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出 PDF",
+            self._dlg_start("pdf",
+                os.path.splitext(self.file_path or "未命名")[0] + ".pdf"),
+            "PDF 文件 (*.pdf)")
+        if not path:
+            return
+        self._remember_dir("pdf", path)
+        self._pdf_path = path
+        self._pdf_view = QWebEngineView(self)  # 隐藏的导出视图
+        self._pdf_view.hide()
+        v = self._pdf_view
+        v.setPage(EditorPage(v, self))
+        v.settings().setAttribute(
+            QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+        v.settings().setAttribute(
+            QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
+        # v3.30.11（MATH-1）：PDF 渲染同样走离线内嵌 css（公式静态化后零依赖）
+        html = self._inline_katex_css(html)
+        # v3.48.5（PDF-BG）：导出 HTML 的 body 背景随主题（--canvas 灰），
+        # printToPdf 会把整页画布背景印出来 —— PDF 末页空白区一片灰。
+        # PDF 导出强制白底（正文卡片 .page 本身是白底，不受影响）。
+        html = html.replace(
+            "</head>",
+            "<style>html,body{background:#ffffff !important}</style>\n</head>",
+            1)
+        # v3.47.1（PDF-SET）：应用用户设定的字体 / 字号（注入 !important 样式）
+        opts = getattr(self, "_pdf_opts", None)
+        if opts and opts.get("font_size_pt"):
+            html = self._apply_pdf_font_css(
+                html, opts.get("font_family", ""), opts["font_size_pt"])
+        base = QUrl.fromLocalFile(
+            (os.path.dirname(self.file_path) if self.file_path else os.path.expanduser("~")) + "/")
+        v.loadFinished.connect(self._print_pdf)
+        v.setHtml(html, base)
 
     def _print_pdf(self, ok):
-        if not ok or not self._pdf_view:
+        if not self._pdf_view:
             return
-        page = self._pdf_view.page()
-        page.pdfPrintingFinished.connect(self._pdf_done)
-        page.printToPdf(self._pdf_path)
+        # v3.48.3（PDF-FIX）：加载失败不再静默 —— 旧版 ok=False 直接 return，
+        # 表现为「点了导出没反应、也没有任何提示」
+        if not ok:
+            self.show_status("导出 PDF 失败：内容页面加载失败")
+            self._pdf_done_cleanup()
+            QMessageBox.warning(self, "导出 PDF 失败",
+                "导出内容页面加载失败，请重试；若持续失败请反馈。")
+            return
+        try:
+            page = self._pdf_view.page()
+            page.pdfPrintingFinished.connect(self._pdf_done)
+            opts = getattr(self, "_pdf_opts", None)
+            if opts and opts.get("margin_mm", 0) > 0:
+                # v3.48.4（PDF-KW）：PySide6 6.11 的 printToPdf 只支持位置参数传
+                # QPageLayout（pageLayout= 关键字抛 AttributeError），且该异常类型
+                # 不是 TypeError——降级分支改为 Exception 兜底。
+                try:
+                    layout = QPageLayout(
+                        QPageSize(QPageSize.A4), QPageLayout.Portrait,
+                        QMarginsF(opts["margin_mm"], opts["margin_mm"],
+                                  opts["margin_mm"], opts["margin_mm"]))
+                    page.printToPdf(self._pdf_path, layout)
+                except Exception:
+                    page.printToPdf(self._pdf_path)
+            else:
+                page.printToPdf(self._pdf_path)
+        except Exception as e:
+            self.show_status("导出 PDF 失败：%s" % e)
+            self._pdf_done_cleanup()
+            QMessageBox.critical(self, "导出 PDF 失败", str(e))
+
+    def _pdf_done_cleanup(self):
+        """v3.48.3（PDF-FIX）：失败路径同样回收隐藏导出视图，避免句柄残留。"""
+        self._pending_toc = None
+        if self._pdf_view:
+            self._pdf_view.deleteLater()
+            self._pdf_view = None
+
+    # v3.47.1（PDF-SET）：PDF 字体 / 字号注入（覆盖导出模板默认 16px 正文）
+    @staticmethod
+    def _apply_pdf_font_css(html, font_family, font_size_pt):
+        fam = (font_family or "").strip()
+        if not fam:
+            fam = '"Microsoft YaHei", "PingFang SC", sans-serif'
+        style = (
+            "<style id='mded-pdf-font'>"
+            "body,.page,#editor{font-family:%s!important;"
+            "font-size:%.1fpt!important;}"
+            "@media print{body{font-size:%.1fpt!important;}}"
+            "</style>"
+            % (fam, font_size_pt, font_size_pt))
+        if "</head>" in html:
+            return html.replace("</head>", style + "</head>", 1)
+        return html + style
+
+    def _pdf_defaults(self):
+        """读取已保存的 PDF 默认设置（无则取界面字体 / 常规值）。"""
+        try:
+            margin = float(self._settings.value("pdf/margin", 20.0) or 20.0)
+        except (TypeError, ValueError):
+            margin = 20.0
+        try:
+            size = float(self._settings.value("pdf/fontSize", 11.0) or 11.0)
+        except (TypeError, ValueError):
+            size = 11.0
+        fam = str(self._settings.value("pdf/fontFamily", "") or "")
+        return {"margin_mm": margin, "font_family": fam, "font_size_pt": size}
 
     def _pdf_done(self, path, ok):
         if not ok:
             self.show_status("导出 PDF 失败")
         else:
             n, msg = exporters.add_pdf_bookmarks(path, getattr(self, "_pending_toc", None))
+            # v3.45.5（PDF-LINK-2）：本地 .md 链接注解 → 相对 .html 路径。
+            # 单文档导出此前完全不做链接改写，file:// 注解在多数阅读器里
+            # 点了没反应；与 HTML 导出口径对齐（换后缀 + 相对路径）。
+            m = exporters.linkify_pdf_links(
+                path, {}, out_dir=os.path.dirname(os.path.abspath(path)))
+            if m:
+                msg += f"，{m} 条链接改为相对 .html 路径"
             self.show_status(f"已导出 PDF · {path}" + (f"（{msg}）" if n else f"（{msg}）"))
             self._export_done("PDF", path)
         self._pending_toc = None
@@ -3695,6 +5490,33 @@ class MainWindow(QMainWindow):
         found = self._pandoc_exe()
         self.show_status(f"pandoc 路径已保存：{found}" if found
                              else "pandoc 路径已保存（当前未探测到 pandoc，将使用内置导出）")
+
+    # ---- v3.48.12（SEM-2）：本地语义搜索 ----
+    def set_semantic_search(self, on):
+        """本地语义搜索总开关（系统设置 → 通用 → 本地语义搜索）。"""
+        self._sem_enabled = bool(on)
+        self._settings.setValue("semSearchEnabled", bool(on))
+        self.show_status("本地语义搜索：开" if on else "本地语义搜索：关")
+
+    def sem_index_stats(self):
+        """语义索引状态（设置页展示）。异常退化为空 dict。"""
+        try:
+            idx = semsearch.SemIndex()
+            st = idx.stats()
+            idx.close()
+            return st
+        except Exception:
+            return {}
+
+    def sem_rebuild_index(self):
+        """清空语义索引（下次语义搜索自动全量重建）。"""
+        try:
+            idx = semsearch.SemIndex()
+            idx.clear()
+            idx.close()
+            self.show_status("语义索引已清除，下次语义搜索时自动重建")
+        except Exception as e:
+            self.show_status(f"清除语义索引失败：{e}")
 
     def _export_document(self, kind):
         """kind: 'docx' | 'epub'。优先 pandoc，未安装则回退内置实现。"""
@@ -3964,7 +5786,7 @@ class MainWindow(QMainWindow):
             log_md = os.path.join(os.path.dirname(os.path.abspath(__file__)), "CHANGELOG.md")
         if os.path.exists(log_md):
             try:
-                os.startfile(log_md)     # noqa: S606 — 系统默认程序打开
+                openutil.open_path(log_md)     # 跨平台：系统默认程序打开
             except OSError:
                 self.show_status("无法打开更新日志")
         else:
@@ -4054,6 +5876,16 @@ class MainWindow(QMainWindow):
 
     # ---- 侧边栏 ----
     def toggle_sidebar(self):
+        # v3.47.6（REQ1）：AI 助手 与 侧边栏 互斥。若 AI 面板当前可见，则强制
+        # 隐藏 AI（并显示侧栏），实现「显示其一即隐藏另一」；否则正常切换侧栏。
+        if self._ai_dock.isVisible():
+            self._hide_ai_dock()
+            act_ai = getattr(self, "_act_ai", None)
+            if act_ai is not None:
+                act_ai.setChecked(False)
+            self._sidebar.setVisible(True)
+            self._update_side_btn()
+            return
         self._sidebar.setVisible(not self._sidebar.isVisible())
         self._update_side_btn()
 
@@ -4149,9 +5981,12 @@ class MainWindow(QMainWindow):
         nxt = order[(order.index(self._mode) + 1) % len(order)]
         self._set_mode(nxt)
 
-    def _set_mode(self, mode):
-        """统一的三态模式切换，保留各视图内容不丢失。"""
-        if mode not in ("edit", "src", "dual") or mode == self._mode:
+    def _set_mode(self, mode, force=False):
+        """统一的三态模式切换，保留各视图内容不丢失。
+
+        v3.45.7（REQ4）：force=True 时即便目标模式与当前相同也强制重应用
+        （用于切换文件后让视图与「该文件自身模式」严格对齐，消除源态漂移）。"""
+        if mode not in ("edit", "src", "dual") or (mode == self._mode and not force):
             return
         if mode == "dual":
             # 首次进入分屏：此时才创建源码/预览视图（启动提速）
@@ -4161,6 +5996,7 @@ class MainWindow(QMainWindow):
             def apply(md):
                 text = md if md is not None else ""
                 self._mode = mode
+                self._store_doc_mode()
                 self._dual = True
                 self._last_preview_md = None
                 self._push_text(text)
@@ -4183,6 +6019,7 @@ class MainWindow(QMainWindow):
             else:
                 st["pending"] = text
             self._mode = mode
+            self._store_doc_mode()
             self._dual = False
             self._update_mode_button()
             name, _ = self._mode_label()
@@ -4196,9 +6033,18 @@ class MainWindow(QMainWindow):
             if st["loaded"]:
                 self._js_view(self._view, f"window.setSourceMode({src_on})")
             self._mode = mode
+            self._store_doc_mode()
             self._update_mode_button()
             name, _ = self._mode_label()
             self.show_status(name)
+
+    def _store_doc_mode(self):
+        """v3.45.7（REQ4）：把当前全局模式写入当前文档字典，供切走再切回时恢复。"""
+        if 0 <= self._cur < len(self._docs):
+            d = self._docs[self._cur]
+            if "mode" not in d:
+                d["mode"] = "edit"
+            d["mode"] = self._mode
 
     def toggle_typewriter(self):
         self._typewriter = not getattr(self, "_typewriter", False)
@@ -4235,7 +6081,10 @@ class MainWindow(QMainWindow):
 
     # ---- v3.40（UI-R7）：状态栏 / 视图状态区辅助 ----
     def toggle_statusbar(self, checked=True):
-        """视图 → 显示 / 隐藏状态栏（checkable 动作，QSettings 持久化）。"""
+        """视图 → 显示 / 隐藏状态栏（checkable 动作，QSettings 持久化）。
+
+        v3.47.6（REQ1）：状态栏与 AI 助手不再互斥 —— 仅由用户显隐控制，
+        与侧边栏 / AI 面板相互独立。"""
         vis = bool(checked)
         self.statusBar().setVisible(vis)
         self._settings.setValue("ui/statusbarVisible", vis)
@@ -4478,7 +6327,14 @@ class MainWindow(QMainWindow):
           装在 central widget 上方（包装容器懒创建一次）；
         - _vsz_corner 在菜单栏 ↔ 统一工具栏之间反_parent（模式/专注/打字机状态单一源不复制）；
         - 无边框不改窗口 flags（避免 re-show 闪烁），只切 nativeEvent 命中标记；
-        - 退出时菜单栏 / 左工具栏 / corner / 无边框全部还原。"""
+        - 退出时菜单栏 / 左工具栏 / corner / 无边框全部还原。
+
+        v3.47（P0 跨平台）：无边框窗口是 Win32 专属实现（nativeEvent 拦截
+        WM_NCCALCSIZE / WM_NCHITTEST）。非 Windows 平台强制关闭该形态，
+        改用系统原生窗口（含原生标题栏 / 拖拽 / 缩放），避免无边框逻辑在
+        macOS / Linux 上失效导致窗口无法拖拽。"""
+        if platform.system() != "Windows":
+            on = False
         tb = getattr(self, "_mac_title", None)
         if on:
             # v3.44.12（RIBBON-1）：从功能区形态切入 mac 时，先把主区取回 mac 包装
@@ -5277,6 +7133,9 @@ class MainWindow(QMainWindow):
 
     def jump_to_heading(self, index, text=None):
         """v3.38（OUT-4）：text = 大纲缓存标题文本，JS 侧先校验再跳（过期自动重查）。"""
+        # v3.45.8（REQ3#9）：页内锚点跳转记入跳转历史
+        self._nav_ensure_seed()
+        self._nav_arrive(self.file_path or "", delay=450)
         suffix = f", {js(text)}" if text else ""
         if self._dual and self._view_src is not None:
             self._js_view(self._view_src, f"window.gotoHeadingSrc({index}{suffix})")
@@ -5405,6 +7264,19 @@ class MainWindow(QMainWindow):
         page = view.page()
         readonly = view is self._view_prev
         menu = QMenu(self)
+        # v3.48.3（F3-b）：「AI优化」子菜单置顶 —— 右键选中文字后可直接发起
+        # 预设 AI 操作（润色/精简/扩写/纠错/翻译/改语气/选中）。注意：菜单构造
+        # 期间**不**同步阻塞等待 runJavaScript（嵌套事件循环易与右键上下文菜单
+        # 事件死锁，导致右键菜单整片不弹出）；点击子菜单项时**实时**取回选区文本。
+        if not readonly:
+            ai_menu = menu.addMenu("AI优化")
+            for _label, _key in (
+                ("润色", "polish"), ("精简", "condense"), ("扩写", "expand"),
+                ("纠错", "correct"), ("翻译", "translate"), ("改语气", "tone"),
+                ("选中提问", "select"),
+            ):
+                ai_menu.addAction(_label, lambda k=_key: self._ai_ctx_action(k))
+            menu.addSeparator()
         if not readonly:
             menu.addAction("撤销", lambda: page.triggerAction(QWebEnginePage.Undo))
             menu.addAction("重做", lambda: page.triggerAction(QWebEnginePage.Redo))
@@ -5431,6 +7303,7 @@ class MainWindow(QMainWindow):
         if not need_ask:
             self._remember_last_session()   # v3.38（OUT-5）
             self.save_session()             # v3.44（SESSION）
+            self._save_book_progress()       # v3.45.7（BOOK-READ-1）
             self._quitting = True
             e.accept()
             return
@@ -5470,3 +7343,163 @@ class MainWindow(QMainWindow):
         self.save_session()             # v3.44（SESSION）
         self._quitting = True
         e.accept()
+
+
+# ================= v3.46（SoloMD P1）：AI 助手桥接（模块级，供主窗口实例化） =================
+class AIBridge(QObject):
+    """把 AI 面板需要的编辑器操作转接到主窗口（runJavaScript）。"""
+
+    def __init__(self, mw):
+        super().__init__()
+        self._mw = mw
+
+    def settings(self):
+        return self._mw._settings
+
+    def get_selection(self, callback):
+        self._mw._js_active('window.aiSelText()',
+                            lambda v: callback(v if isinstance(v, str) else ''))
+
+    def replace_selection(self, text, callback=None, orig_text=""):
+        """v3.48.3（AI-FIX）：aiReplaceSel 返回 JSON {ok, err, hosts, recovered}。
+        v3.48.5（AI-REDESIGN）：带 orig_text（发起改写时的原文快照）—— JS 侧
+        预检当前选区文本是否仍一致（AI 往返期间原文被改 → stale-selection）；
+        callback(ok, err)。"""
+        def _cb(v):
+            ok, err = False, "unknown"
+            if isinstance(v, str):
+                try:
+                    import json as _json
+                    d = _json.loads(v)
+                    if isinstance(d, dict):
+                        ok = bool(d.get("ok"))
+                        err = str(d.get("err") or ("ok" if ok else "unknown"))
+                except ValueError:
+                    err = "bad-json"
+            if callback:
+                callback(ok, err)
+        self._mw._js_active(
+            'window.aiReplaceSel(' + js(text) + ', ' + js(orig_text or "") + ')', _cb)
+
+    def insert_at_caret(self, text, callback=None):
+        """v3.48.5（AI-REDESIGN）：旧版调 window.insertTextAtCaret —— 该函数是
+        IIFE 内局部函数、window 上不存在 → AI「插入」一直静默失败。改调
+        window.aiInsertAtCaret（本次新增，带 {ok, err} 返回），结果回传。"""
+        def _cb(v):
+            ok, err = False, "unknown"
+            if isinstance(v, str):
+                try:
+                    import json as _json
+                    d = _json.loads(v)
+                    if isinstance(d, dict):
+                        ok = bool(d.get("ok"))
+                        err = str(d.get("err") or ("ok" if ok else "unknown"))
+                except ValueError:
+                    err = "bad-json"
+            if callback:
+                callback(ok, err)
+        self._mw._js_active('window.aiInsertAtCaret(' + js(text) + ')', _cb)
+
+    def get_markdown(self, callback):
+        """v3.48.5（AI-REDESIGN）：取当前编辑器全文（Markdown），供插入预览
+        过期检测（预览期间文档被改 → 不直接覆盖，先询问用户）。"""
+        self._mw._js_active(
+            'window.getMarkdown()',
+            lambda v: callback(v if isinstance(v, str) else ''))
+
+    # v3.48.18（AI-CTX）：自适应上下文的数据源 —— 文档全文 + 光标块 + 选区 +
+    # 书籍目录/当前章节。JS 侧 aiContextInfo() 一次性取回，避免多次往返。
+    def get_document_context(self, callback):
+        """回调 dict：{md, block, selText, book}。
+
+        安全兜底：页面未就绪 / JS 异常时 1.5s 后以空上下文回调，
+        保证 AI 请求不会因为「取不到上下文」而永远不发出。"""
+        state = {"done": False}
+
+        def _fin(info):
+            if state["done"]:
+                return
+            state["done"] = True
+            callback(info if isinstance(info, dict) else {})
+
+        def _cb(v):
+            info = {}
+            if isinstance(v, str):
+                try:
+                    d = json.loads(v)
+                    if isinstance(d, dict):
+                        info = d
+                except ValueError:
+                    info = {}
+            info["book"] = self._book_ctx_info()
+            _fin(info)
+
+        try:
+            QTimer.singleShot(1500, lambda: _fin({}))
+            self._mw._js_active('window.aiContextInfo()', _cb)
+        except Exception:      # noqa: BLE001
+            _fin({})
+
+    def _book_ctx_info(self):
+        """书籍模式：返回 {title, toc:[(depth,title,path)], chapter_path,
+        chapter_title}；非书籍模式返回 None。"""
+        mw = self._mw
+        book = getattr(mw, "_book", None)
+        if not book:
+            return None
+        chapters = []
+        try:
+            chapters = mw._book_chapters_with_depth(book)
+        except Exception:      # noqa: BLE001
+            chapters = []
+        toc = []
+        for c in chapters:
+            try:
+                toc.append((int(c.get("depth") or 0), c.get("title") or "",
+                            c.get("abs_path") or ""))
+            except Exception:  # noqa: BLE001
+                continue
+        cur = getattr(mw, "file_path", None) or ""
+        cur_abs = os.path.abspath(cur) if cur else ""
+        cur_title = ""
+        for c in chapters:
+            p = c.get("abs_path") or ""
+            if cur_abs and p and os.path.abspath(p) == cur_abs:
+                cur_title = c.get("title") or ""
+                break
+        return {"title": book.get("title") or "", "toc": toc,
+                "chapter_path": cur_abs, "chapter_title": cur_title}
+
+    # v3.47.8（AI-PREVIEW）：插入前先计算修改前/修改后，供预览面板展示
+    def get_insert_plan(self, text, callback):
+        def _cb(v):
+            try:
+                import json as _json
+                d = _json.loads(v) if isinstance(v, str) else v
+            except Exception:
+                d = None
+            callback(d)
+        self._mw._js_active('window.aiInsertPlan(' + js(text) + ')', _cb)
+
+    # v3.47.8（AI-PREVIEW）：确认后把合并后全文写回编辑区（与版本合并一致：
+    # 经 _push_text 落盘前写入并置脏，不覆盖磁盘；会重置该视图内部撤销栈）
+    def apply_ai_insert(self, text, msg=None):
+        # v3.48.8（AI-UNDO）：改走 aiApplyInsert —— 旧版 _push_text→setMarkdown
+        # 会清空编辑器撤销栈，插入后 Ctrl+Z 无效；新路径把插入前快照压栈，
+        # Ctrl+Z 撤销插入、重做恢复。
+        if self._dual:
+            self._mw._push_text(text)   # 双栏源码视图仍走原路径（源码态无快照栈）
+        else:
+            self._mw._js_view(self._mw._view, f"window.aiApplyInsert({js(text)})")
+        self._mw._dirty = True
+        self._mw._update_title()
+        self._mw.show_status(
+            msg or "已插入 AI 回复到文档 · Ctrl+Z 可撤销 · Ctrl+S 保存")
+
+    # v3.47.2（SoloMD 对标）：主面板「连接设置」按钮 → 打开独立连接面板
+    def open_connection(self):
+        self._mw.open_ai_connection()
+
+    def connection_status(self):
+        from ai_core import connection_status as _cs
+        return _cs(self._mw._settings)

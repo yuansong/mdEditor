@@ -31,3 +31,24 @@ _bak_*
 _TO_DELETE/
 tmp_mmd/
 _tpl_js.json
+
+# ---- 追加（2026-10-25 发布清理）：临时探针 / 诊断 / 构建副产品 ----
+# 测试目录下的临时探针与诊断脚本（真实测试基建 _runner.py / _run_full.py / _syntax_check.py 已跟踪，不受影响）
+tests/_*
+tests/shots/
+tests/*.old*
+tests/*_run.txt
+# 构建 / 调试临时文件
+*.log
+dist*.sha256
+tmp_ab/
+nul
+yb_*
+_tmp_diag/
+build_exe1[0-9][0-9].ps1
+_ssh_run.py
+_sshlib.py
+ribbon_buttons_demo.py
+verify_*.py
+verify_*.txt
+verify_tmp.py

@@ -324,6 +324,14 @@ mark, .blk mark {
 .blk.t-src.src-hl {
   position: absolute; inset: 0; z-index: 0; margin: 0;
   overflow: hidden; pointer-events: none; user-select: none;
+  /* v3.45.5（SRC-HL-GRID）：与编辑层 .raw-edit.t-src 保持同字体 / 字号 /
+     行高 —— 此前高亮垫层漏配这三项，继承 body（16px / line-height 1.8 =
+     28.8px），而编辑层为 0.92em / 1.6（≈14.7px / 23.6px）；双层网格不一致
+     导致彩色源码逐行累积漂移（119 行文档实测偏差 ~625px），垫层底部被裁，
+     用户看到的就是「源码不在光标所在位置」。行号槽 .src-gutter 本就配了
+     同款三项，此处补齐后三层（行号 / 高亮 / 编辑）网格严格对齐。 */
+  font-family: Consolas, "Cascadia Code", monospace;
+  font-size: 0.92em; line-height: 1.6;
 }
 body .raw-edit.t-src { color: transparent; caret-color: var(--text); }
 /* v3.30.6（源码模式折行修复）：每条源码行恒显示为单行，超宽横向滚动。
@@ -525,6 +533,14 @@ body[data-theme="sepia"] { --flash: #f5e2a0; }
 #defhint b { color: var(--accent); }
 body[data-theme="dark"] #defhint { color: var(--text); }
 #slashmenu .empty { padding: 12px; color: #8b949e; text-align: center; }
+  .blk a.wikilink { color: var(--accent, #0052d9); text-decoration: none; border-bottom: 1px dashed var(--accent, #0052d9); cursor: pointer; }
+  .blk a.wikilink.broken { color: #b35900; border-bottom-color: #b35900; }
+  #wikimenu { position: fixed; z-index: 9999; background: var(--pop-bg, #fff); color: var(--pop-fg, #222); border: 1px solid var(--pop-border, #d0d7de); border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.18); max-height: 280px; overflow-y: auto; padding: 4px; width: 260px; font-size: 13px; }
+  #wikimenu .wi { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+  #wikimenu .wi:hover, #wikimenu .wi.act { background: var(--pop-hover, #eef2f7); color: var(--accent, #0052d9); }
+  #wikimenu .wi .lb { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #wikimenu .wi .ds { font-size: 11.5px; color: var(--muted, #8b949e); margin-left: auto; flex: 0 0 auto; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #wikimenu .empty { padding: 12px; color: var(--muted, #8b949e); text-align: center; }
 /* v3.25：代码风格弹层 / 图片重命名弹层（复用 si 行样式） */
 #stylepop { width: 160px; padding: 5px; }
 #cmdpop { width: 210px; padding: 5px; }
@@ -740,7 +756,7 @@ body[data-theme="dark"] .blk .codeblock pre.fence .tk-num { color: #f78c6c; }
 #imgpop .row input:focus { border-color: #7aa5e0; }
 #imgpop .wide { width: 100%; text-align: left; }
 /* F1：链接输入改为页内小弹层（替换原来的 window.prompt 原生对话框） */
-#linkpop { width: 292px; padding: 11px 13px; }
+#linkpop { width: 330px; padding: 11px 13px; }
 #linkpop .cap { font-size: 12px; color: #8b949e; margin-bottom: 8px; }
 #linkpop .row { display: flex; gap: 6px; margin-top: 9px; }
 #linkpop .row input {
@@ -755,6 +771,16 @@ body[data-theme="dark"] .blk .codeblock pre.fence .tk-num { color: #f78c6c; }
 #linkpop button:hover { background: #eef2f7; }
 #linkpop button.primary { background: #0052d9; border-color: #0052d9; color: #fff; }
 #linkpop button.primary:hover { background: #0043b8; }
+/* v3.45（LINKMERGE）：链接插入选项面板 */
+#linkpop .linksug { margin-top: 10px; max-height: 246px; overflow-y: auto; border-top: 1px solid #eceff3; padding-top: 6px; }
+#linkpop .lsg { font-size: 11px; color: #8b949e; margin: 7px 0 3px; font-weight: 600; letter-spacing: .3px; }
+#linkpop .lsg:first-child { margin-top: 0; }
+#linkpop .lsi { display: flex; align-items: center; gap: 7px; padding: 4px 6px; border-radius: 5px; cursor: pointer; font-size: 12.5px; color: #384048; }
+#linkpop .lsi:hover { background: #eef2f7; }
+#linkpop .lsi .lic { width: 16px; text-align: center; flex: none; opacity: .65; font-size: 12px; }
+#linkpop .lsi.sub { padding-left: 24px; }
+#linkpop .lsi .ltxt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* v3.30.11（MATH-5）：单元格公式编辑弹层（与链接弹层同款） */
 #mathpop { width: 292px; padding: 11px 13px; }
 #mathpop .cap { font-size: 12px; color: #8b949e; margin-bottom: 8px; }
@@ -912,6 +938,11 @@ body[data-theme="sepia"] .blk.raw-edit:empty::before { color: var(--ph); }
 #linkpop button { background: var(--pop-bg); border-color: var(--pop-border); color: var(--pop-text); }
 #linkpop button:hover { background: var(--pop-hover); }
 #linkpop button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+#linkpop .linksug { border-top-color: var(--pop-border); }
+#linkpop .lsg { color: var(--muted); }
+#linkpop .lsi { color: var(--pop-text); }
+#linkpop .lsi:hover { background: var(--pop-hover); }
+
 /* v3.30.11（MATH-5）：单元格公式编辑弹层（暗色主题） */
 #mathpop .cap { color: var(--muted); }
 #mathpop .row input { background: var(--pop-bg); border-color: var(--pop-border); color: var(--pop-text); }
@@ -1265,7 +1296,8 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
 <!-- v3.27：imgpop 已移除（插入图片统一走 Qt 端 InsertImageDialog） -->
 <div id="linkpop" class="pop">
   <div class="cap">插入链接</div>
-  <div class="row"><input id="link-url" placeholder="https://example.com"><button type="button" id="link-ok" class="primary">确定</button></div>
+  <div class="row"><input id="link-url" placeholder="http://example.com"><button type="button" id="link-ok" class="primary">确定</button></div>
+  <div id="link-suggest" class="linksug"></div>
 </div>
 <div id="mathpop" class="pop">
   <div class="cap">编辑单元格公式（LaTeX，留空移除）</div>
@@ -1544,6 +1576,27 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
           i += fcm[0].length; textStart = i; continue;
         }
       }
+      // wiki link [[Target]] / [[Target|别名]]（v3.44.37 BACKLINK-1）
+      if (c === '[' && s[i + 1] === '[') {
+        var _wEnd = -1;
+        for (var _wi = i + 2; _wi < to - 1; _wi++) {
+          if (s[_wi] === ']' && s[_wi + 1] === ']') { _wEnd = _wi; break; }
+        }
+        if (_wEnd !== -1) {
+          var _wInner = s.slice(i + 2, _wEnd);
+          var _wPipe = _wInner.indexOf('|');
+          var _wHead = _wPipe === -1 ? _wInner : _wInner.slice(0, _wPipe);
+          var _wAlias = _wPipe === -1 ? _wInner : _wInner.slice(_wPipe + 1);
+          var _wHash = _wHead.indexOf('#');
+          var _wTarget = _wHash === -1 ? _wHead : _wHead.slice(0, _wHash);
+          var _wAnchor = _wHash === -1 ? '' : _wHead.slice(_wHash + 1);
+          flush(i);
+          nodes.push({ type: 'wikilink', s: s, rs: i, re: _wEnd + 2,
+                       target: _wTarget, anchor: _wAnchor, cs: i + 2, ce: _wEnd,
+                       ch: parseInline(_wAlias, 0, _wAlias.length) });
+          i = _wEnd + 2; textStart = i; continue;
+        }
+      }
       // link
       if (c === '[') {
         var ml = matchLink(s, i, to);
@@ -1575,6 +1628,20 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     return String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;')
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
+  function slugify(text) {
+    /* 锚点命名规范（与 Python 导出同源）：trim -> 折叠空白 -> 小写 ->
+       仅保留字母/数字/空格（CJK 原样保留）-> 空格转 '-' -> 去首尾/连续 '-'。
+       空结果由调用方回退 section-n */
+    if (!text) return '';
+    var s = String(text).trim().replace(/\s+/g, ' ').toLowerCase();
+    var out = '';
+    for (var i = 0; i < s.length; i++) {
+      var ch = s[i];
+      if (/[\p{L}\p{N}]/u.test(ch) || ch === ' ') out += ch;
+    }
+    s = out.replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+    return s;
+  }
 
   function renderNodes(nodes) {
     var out = '';
@@ -1593,7 +1660,12 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         case 'sub': out += '<sub>' + renderNodes(n.ch) + '</sub>'; break;
         case 'fnref': out += '<sup class="fnref"><a href="#fn-' + esc(n.id) + '" data-fn="' +
           esc(n.id) + '">[' + esc(n.id) + ']</a></sup>'; break;
-        case 'link': out += '<a href="' + esc(n.url) + '" target="_blank" rel="noopener">' + renderNodes(n.ch) + '</a>'; break;
+        case 'wikilink': {
+          /* v3.45.5（LINK-TITLE）：悬停显示链接地址（title 提示） */
+          var _wlAddr = n.target + (n.anchor ? ('#' + n.anchor) : '');
+          out += '<a class="wikilink" title="' + esc(_wlAddr) + '" data-target="' + esc(n.target) + '"' + (n.anchor ? ' data-anchor="' + esc(n.anchor) + '"' : '') + '>' + renderNodes(n.ch) + '</a>'; break;
+        }
+        case 'link': out += '<a href="' + esc(n.url) + '" title="' + esc(n.url) + '" target="_blank" rel="noopener">' + renderNodes(n.ch) + '</a>'; break;
         case 'image': {
           /* v3.36：渲染时 src 会被解析成绝对 file URL（resolveImgSrc），行内格式
              回写需要原始相对路径 → 地址被改写时补记 data-md（导出前统一摘除） */
@@ -2218,7 +2290,20 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
    * Editor state & DOM
    * ========================================================= */
   var ED = document.getElementById('editor');
-  var state = { raw: [''], editIdx: -1, dirty: false, lazyBuild: false };   /* v3.31（#15）：lazyBuild 仅在 rebuild 全文构建期间为 true */
+  var state = { raw: [''], editIdx: -1, dirty: false, lazyBuild: false,
+    /* v3.48.20（IMPERCEPT-L1）：IME 组合输入标志 + rebuild 延后标志。
+       composing 由 ED 委托的 compositionstart/end 维护；rebuild 期间若
+       检测到 composing 为真则把请求延后到 compositionend 重放，从而不
+       打断中文连打（候选框不跳走、不掉字）—— 对 UI 完全无感。 */
+    composing: false, rebuildDeferred: false };   /* v3.31（#15）：lazyBuild 仅在 rebuild 全文构建期间为 true */
+  /* v3.48.20（IMPERCEPT-L1）：在 ED 上统一维护 IME 组合态。组合事件从
+     .raw-edit / srcEl 冒泡到 ED，无需逐元素挂监听。compositionend 时若有
+     被延后的 rebuild 请求则重放（rebuild 本就重建全部块，延后一次不丢状态）。 */
+  ED.addEventListener('compositionstart', function () { state.composing = true; });
+  ED.addEventListener('compositionend', function () {
+    state.composing = false;
+    if (state.rebuildDeferred) { state.rebuildDeferred = false; rebuild(); }
+  });
   /* v3.37（DOCGEN-1）：文档世代号 —— 整体替换文档（setMarkdown / 换源内容 /
       源码态落回）时自增。渲染态编辑器的「失焦回写」（.fnedit 脚注定义、引用内
       代码块）靠 DOM 位置反查块下标：换文档后旧元素被移除会触发一次 blur，此时
@@ -3628,10 +3713,22 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
        换文档（setMarkdown）与退出源码（setSourceMode(false)）都会先把 srcEl
        置空再进来，不受此守卫影响 */
     if (srcEl) { updateSrcGutter(); renderSrcHl(); return; }
+    /* v3.48.20（IMPERCEPT-L1）：IME 组合输入期间禁止重建。否则 .raw-edit 被
+       拆除 → 候选框跳走、中文连打掉字，是「无感化」最刺眼的破绽。组合中遇到
+       的 rebuild 请求一律延后到 compositionend 重放（此时 composing 已复位，
+       守卫自然放行），对 UI 完全无感。此守卫与各处 `e.isComposing` 按键守卫互补：
+       前者兜底任何代码路径的 rebuild，后者拦住组合中的块操作。 */
+    if (state.composing) { state.rebuildDeferred = true; return; }
     /* v3.38（PARA-WYS）：重建摘除聚焦中的渲染态元素时会同步触发失焦回写
        （实测 Chromium 在 textContent='' 期间派发 blur 且 isConnected 仍为
        true，docGen / isConnected 双守卫拦不住），旧内容会覆盖刚切分 /
        合并的 raw —— 重建期间所有失焦回写一律丢弃 */
+    /* v3.48.21（IMPERCEPT-L5·滚动保持）：清空 ED 会让浏览器把 scrollTop 复位为
+       0；不在重建后恢复，长文档编辑画面会「跳回顶部」——这是「无感化」最刺眼的
+       滚动漂移破绽。清空前记下位置，重建挂载后原值恢复（新高度不足时浏览器
+       自动 clamp 到合法范围，无副作用）。 */
+    var _rebuildScrollTop = ED.scrollTop;
+    mcDescs = [];   /* v3.48.15（MC-5）：重建后旧光标描述全部失效 */
     state.rebuilding = true;
     try {
       ED.textContent = '';
@@ -3648,6 +3745,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     } finally {
       state.rebuilding = false;
     }
+    ED.scrollTop = _rebuildScrollTop;   /* 复原滚动位置，消除重建跳动 */
     lazySetup();
     updateSlashPh();   /* v3.40（UI-R7）：重建后刷新空段落占位（删块 / 撤销重做 / 换行均走重建） */
   }
@@ -3668,6 +3766,26 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   }
   window.__lazyFlushAll = flushLazyAll;   /* 导出 / 测试前补齐 */
   window.__lazyCount = function () { return ED.querySelectorAll('.blk[data-lazy]').length; };
+  /* v3.48.20（IMPERCEPT-L1）：无感化探针专用钩子 —— 仅暴露重建守卫态与一次
+     受守卫约束的重建触发，生产路径无任何副作用；供 _probe_impercept_l1l2.py 验证。 */
+  window.__rebuildGuard = function () {
+    return { composing: state.composing, deferred: state.rebuildDeferred, rebuilding: state.rebuilding };
+  };
+  window.__forceRebuild = function () {
+    var a = ED.innerHTML;
+    rebuild();
+    return { ran: ED.innerHTML !== a, guard: window.__rebuildGuard() };
+  };
+  /* v3.48.21（IMPERCEPT-L3）：语义边界监听 —— 把「回车 / 失焦」这类结构性动作
+     强制压栈为独立撤销步（连续打字仍走 350ms 防抖合并，符合预期）。
+     1) 回车是拆块 / 新段落的结构性边界，顶层拦截避免飞快连打 + 回车被合并成一步；
+     2) 失焦代表用户离开编辑语境，离开前固化当前状态，避免下次回来撤销粒度混乱。
+     与下方 wrapSelection / applyBlockAct 等语义入口的 force flush 互补。 */
+  ED.addEventListener('keydown', function (e) {
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) scheduleSnapshot(true);
+  });
+  ED.addEventListener('blur', function () { scheduleSnapshot(true); });
   function lazySetup() {
     if (typeof ED.querySelectorAll !== 'function') return;   /* node 测试桩无完整 DOM */
     if (lazyObserver) { lazyObserver.disconnect(); lazyObserver = null; }
@@ -3688,6 +3806,329 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   function markDirty() { state.dirty = true; updateStats(); }
 
   function setCaret(el, off) { setCaretSel(el, off, 0); }
+  /* ================= v3.48.15（MC）：单块多光标 =================
+     语义（VS Code 子集，限于单个编辑块）：
+       Ctrl+D      选 / 加选下一个相同词（cmd('selnext')）
+       Alt+点击    在点击处添加光标（同处再点移除）
+       Esc         退出多光标，回到主光标
+     输入同步：beforeinput 阶段对全部光标执行同一操作
+       （insertText / insertLineBreak / deleteContentBackward /
+        deleteContentForward；其余输入类型保守退出多光标）。
+     格式：加粗 / 斜体 / 删除线 / 行内码 / 高亮 / 下划线作用于全部选区
+       （同块 raw 内从后往前串行应用，各选区不重叠互不位移）。
+     生命周期：commitEdit / rebuild 时描述失效即清；用户改变 DOM 选区
+       （selectionchange 检出 rangeCount 与描述不一致）自动收敛，
+       防幽灵光标。 */
+  var mcDescs = [];        /* [{idx, off, len}]，mcDescs[0] = 主光标（anchor） */
+  var mcSilent = false;    /* mcRestore 期间抑制 selectionchange 误清 */
+  function mcActive() { return mcDescs.length > 1; }
+  function mcBlkEl() { return ED.querySelector('.raw-edit'); }
+  /* Range → 块内纯文本偏移（编辑态块 textContent == raw，偏移同系） */
+  function mcRangeOffsets(el, r) {
+    function endAt(c, o) {
+      var p = document.createRange();
+      p.selectNodeContents(el);
+      try { p.setEnd(c, o); } catch (e) { return -1; }
+      return p.toString().length;
+    }
+    var a = endAt(r.startContainer, r.startOffset);
+    var b = endAt(r.endContainer, r.endOffset);
+    if (a < 0 || b < 0 || b < a) return null;
+    return { off: a, len: b - a };
+  }
+  /* 描述 → DOM Range（不动 selection） */
+  function mcMakeRange(el, off, len) {
+    var tn = el.firstChild;
+    var r = document.createRange();
+    var max = tn && tn.nodeType === 3 ? tn.length : 0;
+    var pos = Math.max(0, Math.min(off, max));
+    if (tn && tn.nodeType === 3) r.setStart(tn, pos); else r.setStart(el, 0);
+    if (len > 0 && tn && tn.nodeType === 3) r.setEnd(tn, Math.min(max, pos + len));
+    else r.collapse(true);
+    return r;
+  }
+  /* 从描述重建多选区（mcDescs[0] 为 anchor） */
+  function mcRestore() {
+    /* v3.48.16：Chromium 的 Selection 只支持单 range（addRange 为替换语义，
+       Firefox 式多 range 不可用）→ DOM 仅呈现主光标 mcDescs[0]，次光标以
+       descs 为唯一真值（格式/输入同步均按 descs 执行，不受 DOM 限制）。 */
+    var el = mcBlkEl();
+    var sel = getSelection();
+    mcSilent = true;
+    sel.removeAllRanges();
+    if (el && mcDescs.length) {
+      sel.addRange(mcMakeRange(el, mcDescs[0].off, mcDescs[0].len));
+    }
+    setTimeout(function () { mcSilent = false; }, 0);
+  }
+  /* 收敛到主光标（清附加，保留 mcDescs[0] 的位置/选区） */
+  function mcCollapsePrimary() {
+    var el = mcBlkEl();
+    var keep = mcDescs[0];
+    mcDescs = [];
+    var sel = getSelection();
+    mcSilent = true;
+    sel.removeAllRanges();
+    if (el && keep) sel.addRange(mcMakeRange(el, keep.off, keep.len));
+    setTimeout(function () { mcSilent = false; }, 0);
+  }
+  /* 词字符：拉丁 / 数字 / 下划线 / CJK（含中文标点区间外的表意文字） */
+  function mcIsWordCh(ch) {
+    if (!ch) return false;
+    var c = ch.charCodeAt(0);
+    if (/[0-9A-Za-z_]/.test(ch)) return true;
+    if (c >= 0x3000 && c <= 0x303f) return false;   /* CJK 标点（。，、《》…） */
+    if (c >= 0xff00 && c <= 0xffef) return false;   /* 全角形式（！？：；） */
+    return (c >= 0x2e80 && c <= 0x9fff) ||
+           (c >= 0xf900 && c <= 0xfaff);
+  }
+  /* 光标处的词（向两侧扩展） */
+  function mcWordAt(text, pos) {
+    if (pos < 0 || pos > text.length) return null;
+    if (!mcIsWordCh(text.charAt(pos)) && !mcIsWordCh(text.charAt(pos - 1))) return null;
+    var s = pos, e = pos;
+    while (s > 0 && mcIsWordCh(text.charAt(s - 1))) s--;
+    while (e < text.length && mcIsWordCh(text.charAt(e))) e++;
+    if (e <= s) return null;
+    return { start: s, len: e - s };
+  }
+  /* 从 from 起找词下一次出现（词边界校验：词首/尾为词字符时邻字符不得为词字符） */
+  function mcFindWord(text, word, from) {
+    var wFirst = mcIsWordCh(word.charAt(0));
+    var wLast = mcIsWordCh(word.charAt(word.length - 1));
+    var i = text.indexOf(word, Math.max(0, from));
+    while (i >= 0) {
+      var okL = !wFirst || !mcIsWordCh(text.charAt(i - 1));
+      var okR = !wLast || !mcIsWordCh(text.charAt(i + word.length));
+      if (okL && okR) return i;
+      i = text.indexOf(word, i + 1);
+    }
+    return -1;
+  }
+  /* 同步兜底：描述与 DOM 选区数量不一致（selectionchange 异步未及派发）→ 清 */
+  function mcSyncCheck() {
+    /* v3.48.16：主光标比对 —— DOM 主 range 与 descs[0] 错位（用户点击 /
+       方向键移动）才收敛；Chromium 单 range 下不能按 rangeCount 计数比对。 */
+    var sel = getSelection();
+    if (!mcActive()) return;
+    if (!sel.rangeCount) { mcDescs = []; return; }
+    var el = mcBlkEl();
+    var o = el ? mcRangeOffsets(el, sel.getRangeAt(0)) : null;
+    var d0 = mcDescs[0];
+    if (!o || o.off !== d0.off || o.len !== d0.len) mcDescs = [];
+  }
+  /* Ctrl+D：选 / 加选下一个相同词 */
+  function mcSelectNext() {
+    var aeM = document.activeElement;
+    if (aeM && (aeM.tagName === 'INPUT' || aeM.tagName === 'TEXTAREA')) return;
+    if (editorLocked()) { toastStatus('源码 / 分屏 / 预览模式下不可用多光标'); return; }
+    mcSyncCheck();
+    var el = mcBlkEl();
+    if (!el) {
+      if (state.editIdx < 0 && state.raw.length) {
+        enterEdit(state.raw.length - 1, 1e9);
+        el = mcBlkEl();
+      }
+      if (!el) { toastStatus('请先点击一个文本块'); return; }
+    }
+    var text = el.textContent;
+    var sel = getSelection();
+    var cur = null;
+    var folded = false;   /* DOM 原始 range 是否折叠（区分首次 Ctrl+D） */
+    if (sel.rangeCount) {
+      var o = mcRangeOffsets(el, sel.getRangeAt(0));
+      if (o) {
+        if (o.len > 0) cur = { off: o.off, len: o.len };
+        else {
+          folded = true;
+          var w = mcWordAt(text, o.off);
+          if (w) cur = { off: w.start, len: w.len };
+        }
+      }
+    }
+    if (!cur) { toastStatus('请先把光标放到一个词上'); return; }
+    var word = text.substr(cur.off, cur.len);
+    var from = mcDescs.length
+      ? mcDescs[mcDescs.length - 1].off + mcDescs[mcDescs.length - 1].len
+      : cur.off + cur.len;
+    var hit = mcFindWord(text, word, from);
+    if (hit < 0) { toastStatus('没有更多相同的「' + word + '」'); return; }
+    if (!mcDescs.length && folded) {
+      /* v3.48.16：首次 Ctrl+D（光标折叠）仅选中当前词（VS Code 语义），
+         不开多光标；再次 Ctrl+D（已有词选区）才把当前词与下一个相同词
+         组成 n=2 的多光标。 */
+      var r0 = mcMakeRange(el, cur.off, cur.len);
+      var sel0 = getSelection();
+      mcSilent = true;
+      sel0.removeAllRanges();
+      sel0.addRange(r0);
+      setTimeout(function () { mcSilent = false; }, 0);
+      toastStatus('已选中「' + word + '」，再按 Ctrl+D 加选下一个');
+      return;
+    }
+    if (!mcDescs.length)
+      mcDescs = [{ idx: state.editIdx, off: cur.off, len: cur.len }];
+    mcDescs.push({ idx: state.editIdx, off: hit, len: word.length });
+    mcRestore();
+    toastStatus('已选第 ' + mcDescs.length + ' 个相同词（Esc 退出）');
+  }
+  /* Alt+点击：增删光标（普通点击的选区变化由 selectionchange 收敛） */
+  ED.addEventListener('mousedown', function (e) {
+    if (editorLocked() || !e.altKey || e.button !== 0) return;
+    var el = mcBlkEl();
+    if (!el) return;
+    var r = null;
+    try { r = document.caretRangeFromPoint(e.clientX, e.clientY); } catch (err) { r = null; }
+    if (!r) return;
+    var host = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
+    /* v3.48.16：块边缘 caretRangeFromPoint 可能返回 el 本身（元素容器）→
+       视为块首 off0，不再误判「点在块外」而丢弃。 */
+    if (!host || (!el.contains(host) && host !== el)) return;
+    e.preventDefault();
+    var o = mcRangeOffsets(el, r);
+    if (!o) return;
+    var i;
+    for (i = mcDescs.length - 1; i >= 1; i--) {
+      if (mcDescs[i].off === o.off && !mcDescs[i].len) {
+        mcDescs.splice(i, 1);
+        mcRestore();
+        return;
+      }
+    }
+    if (!mcDescs.length) {
+      var sel = getSelection();
+      var main = sel.rangeCount ? mcRangeOffsets(el, sel.getRangeAt(0)) : null;
+      if (!main) main = { off: o.off, len: 0 };
+      mcDescs.push({ idx: state.editIdx, off: main.off, len: main.len });
+    }
+    mcDescs.push({ idx: state.editIdx, off: o.off, len: 0 });
+    mcRestore();
+  });
+  /* 用户改变 DOM 选区（点击 / 方向键 / 拖选）→ rangeCount 与描述不一致即收敛 */
+  document.addEventListener('selectionchange', function () {
+    if (mcSilent) { mcSilent = false; return; }
+    if (!mcActive()) return;
+    var sel = getSelection();
+    var el = mcBlkEl();
+    var o = (sel.rangeCount && el) ? mcRangeOffsets(el, sel.getRangeAt(0)) : null;
+    var d0 = mcDescs[0];
+    if (!o || o.off !== d0.off || o.len !== d0.len) mcDescs = [];
+  });
+  /* 删除折叠选区的一个字符（含代理对）；false = 边界无处可删 */
+  function mcShiftDelete(r, back) {
+    var c = r.startContainer;
+    if (c.nodeType !== 3) return false;
+    var o = r.startOffset;
+    var step = 1;
+    if (back) {
+      if (o - 2 >= 0) {
+        var ch = c.nodeValue.charCodeAt(o - 2);
+        if (ch >= 0xD800 && ch <= 0xDBFF) step = 2;
+      }
+      if (o - step < 0) return false;
+      r.setStart(c, o - step);
+    } else {
+      if (o + 1 < c.nodeValue.length) {
+        var ch2 = c.nodeValue.charCodeAt(o);
+        if (ch2 >= 0xD800 && ch2 <= 0xDBFF) step = 2;
+      }
+      if (o + step > c.nodeValue.length) return false;
+      r.setEnd(c, o + step);
+    }
+    return true;
+  }
+  /* beforeinput：多光标输入同步 */
+  ED.addEventListener('beforeinput', function (e) {
+    if (!mcActive() || editorLocked()) return;
+    var el = mcBlkEl();
+    if (!el || !el.contains(e.target)) return;
+    var t = e.inputType;
+    var del = t === 'deleteContentBackward' || t === 'deleteContentForward';
+    var ins = t === 'insertText' || t === 'insertLineBreak';
+    if (!del && !ins) {
+      /* 粘贴 / 拖放 / 组删除等：退出多光标，放行默认行为（作用于主光标） */
+      mcCollapsePrimary();
+      toastStatus('该输入操作暂不支持多光标同步，已退出多光标');
+      return;
+    }
+    e.preventDefault();
+    var data = t === 'insertLineBreak' ? '\n' : (e.data || '');
+    var order = mcDescs.slice().sort(function (x, y) { return y.off - x.off; });
+    for (var i = 0; i < order.length; i++) {
+      var d = order[i];
+      var r = mcMakeRange(el, d.off, d.len);
+      if (ins) {
+        if (d.len > 0) r.deleteContents();
+        r.startContainer.insertData(r.startOffset, data);
+        d.off = r.startOffset + data.length;
+        d.len = 0;
+      } else {
+        if (d.len > 0) {
+          r.deleteContents();
+          d.len = 0;
+        } else {
+          if (!mcShiftDelete(r, t === 'deleteContentBackward')) continue;
+          r.deleteContents();
+          if (t === 'deleteContentBackward') d.off -= 1;
+        }
+      }
+    }
+    mcRestore();
+    /* preventDefault 的 beforeinput 不会自动派发 input —— 手动触发回写管道 */
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  /* 单光标核心分发（mcApplyAll 收敛后 / dispatcher 非激活时共用） */
+  function _mcSingle(marker, kind, close) {
+    if (kind === 'marker') _wrapSelectionSingle(marker);
+    else _wrapSelectionTagSingle(marker, close);
+  }
+  /* 多选区串行应用：同块内各选区不重叠 → 从后往前逐段跑单选区核心。
+     marker 类（加粗/斜体/删除线/码/高亮）与 tag 类（下划线 <u>）均支持；
+     raw 长度差 ±2*标记长 判定包裹 / 解包，据此平移该光标描述。 */
+  function mcApplyAll(marker, kind, close) {
+    mcSyncCheck();
+    if (!mcActive()) { _mcSingle(marker, kind, close); return; }
+    var el = editEl();
+    if (!el) return;
+    var descs = [];
+    var i;
+    for (i = 0; i < mcDescs.length; i++) {
+      if (mcDescs[i].len > 0) descs.push(mcDescs[i]);
+    }
+    if (!descs.length) { toastStatus('多光标模式下没有选区，格式未应用'); return; }
+    descs.sort(function (x, y) { return y.off - x.off; });
+    var sel = getSelection();
+    for (i = 0; i < descs.length; i++) {
+      var d = descs[i];
+      var before = state.raw[state.editIdx].length;
+      mcSilent = true;
+      sel.removeAllRanges();
+      sel.addRange(mcMakeRange(el, d.off, d.len));
+      if (kind === 'marker') _wrapSelectionSingle(marker);
+      else _wrapSelectionTagSingle(marker, close);
+      var after = state.raw[state.editIdx].length;
+      var delta = after - before;
+      if (Math.abs(delta) === 2 * marker.length
+          || Math.abs(delta) === marker.length + close.length) {
+        /* 自身选区前插/前删 marker.length；已在本次之前处理完的更大 off
+           描述被本次前后插入整体推动 delta（v3.48.16：修复第二处光标
+           解包/包裹错位 —— M14 实证「香蕉」被误包）。 */
+        var shift = delta > 0 ? marker.length : -marker.length;
+        d.off += shift;
+        for (var j = 0; j < i; j++) descs[j].off += delta;
+      }
+    }
+    mcRestore();
+    hidePops();
+  }
+  /* v3.48.15（MC-1）：测试钩子 —— 探针读取多光标状态 */
+  window.__mcDbg = function () {
+    return { active: mcActive(), n: mcDescs.length,
+             descs: mcDescs.map(function (d) {
+               return { idx: d.idx, off: d.off, len: d.len };
+             }) };
+  };
+
   function setCaretSel(el, off, len) {
     var tn = el.firstChild;
     var range = document.createRange();
@@ -3712,6 +4153,19 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     rr.selectNodeContents(el);
     rr.setEnd(r.endContainer, r.endOffset);
     return rr.toString().length;
+  }
+  /* v3.45.5（LINK-EDIT）：选区起止的纯文本偏移（源码态链接定位用） */
+  function selRawRange(el) {
+    var sel = getSelection();
+    if (!sel.rangeCount) return null;
+    var r = sel.getRangeAt(0);
+    var pre = r.cloneRange();
+    pre.selectNodeContents(el);
+    pre.setEnd(r.startContainer, r.startOffset);
+    var post = r.cloneRange();
+    post.selectNodeContents(el);
+    post.setEnd(r.endContainer, r.endOffset);
+    return { start: pre.toString().length, end: post.toString().length };
   }
   function selCollapsed() {
     var sel = getSelection();
@@ -3941,6 +4395,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     return changed ? out.join('\n') : text;
   }
   function commitEdit() {
+    if (mcActive()) mcDescs = [];   /* v3.48.15（MC-5）：切出编辑态描述失效 */
     var el = editEl();
     if (!el) return;
     var i = state.editIdx;
@@ -3950,6 +4405,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     markDirty();
   }
   function commitEditSilent() {
+    if (mcActive()) mcDescs = [];   /* v3.48.15（MC-5）：切出编辑态描述失效 */
     var el = editEl();
     if (!el) return;
     var i = state.editIdx;
@@ -4070,6 +4526,11 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   };
 
   function wrapSelection(marker) {
+    scheduleSnapshot(true);   /* v3.48.21（IMPERCEPT-L3）：行内格式是语义边界，强制压栈 */
+    if (mcActive()) { mcApplyAll(marker, 'marker'); return; }
+    _wrapSelectionSingle(marker);
+  }
+  function _wrapSelectionSingle(marker) {
     var el = editEl();
     if (!el) return;
     var sel = getSelection();
@@ -4404,6 +4865,11 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
        2) 选区自身已含标签（源码态手动选中 <u>x</u>）→ 剥除；
        3) 否则包裹。 */
   function wrapSelectionTag(open, close) {
+    scheduleSnapshot(true);   /* v3.48.21（IMPERCEPT-L3）：非对称标记对包裹 / 取消是语义边界 */
+    if (mcActive()) { mcApplyAll(open, 'tag', close); return; }
+    _wrapSelectionTagSingle(open, close);
+  }
+  function _wrapSelectionTagSingle(open, close) {
     var el = editEl();
     if (!el) return;
     var sel = getSelection();
@@ -4946,33 +5412,60 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     }
     lastSnapshot = snap;
   }
-  function scheduleSnapshot() {
+  /* v3.48.21（IMPERCEPT-L3）：语义边界强制 flush。连续打字仍走 350ms 防抖
+     （合并符合预期），但回车 / 粘贴 / 格式化 / 块操作 / 失焦这些「明确语义单元」
+     传入 force=true 立即压栈，使每个语义操作成为独立撤销步，杜绝「一次 Ctrl+Z
+     退掉半句 / 整段」的不可预期粒度。 */
+  function scheduleSnapshot(force) {
     clearTimeout(snapTimer);
+    if (force) { snapshotNow(); return; }
     snapTimer = setTimeout(snapshotNow, 350);
   }
-  function applySnap(snap) {
+  /* v3.48.20（IMPERCEPT-L2）：把光标复位到「撤销/重做前所在块 + 块内偏移」。
+     用（块下标, 块内偏移）而非绝对文档偏移：绝对偏移在「被编辑块被缩短」
+     时会把光标推到下一格，反而错位；而块下标 + 偏移 + 钳制能正确还原
+     「用户在哪一块、块的哪一处」的编辑语境（插入末尾→撤回应回到该块末尾；
+     删除选区→撤回应回到选区起点）。落点越界一律钳到合法范围，绝不抛错。 */
+  function restoreCaretPos(idx, off) {
+    if (idx == null || idx < 0 || state.raw.length === 0) return;
+    if (idx >= state.raw.length) idx = state.raw.length - 1;
+    if (off < 0) off = 0;
+    if (off > state.raw[idx].length) off = state.raw[idx].length;
+    enterEditRaw(idx, off);
+  }
+  function applySnap(snap, restore) {
     state.raw = JSON.parse(snap);
     lastSnapshot = snap;
     state.editIdx = -1;
     rebuild();
+    /* v3.48.20（IMPERCEPT-L2）：撤销 / 重做后把光标复位到撤销前的编辑语境——
+       撤销只是改了文本，用户的笔不该从视野里消失。仅当用户撤销前正在编辑
+       （editIdx>=0）才恢复，渲染态的撤销保持原有「无光标」表现，避免无谓跳变。 */
+    if (restore) restoreCaretPos(restore.idx, restore.off);
     markDirty();
   }
   function undo() {
     if (!undoStack.length) return;
+    /* 必须在 commitEditSilent 之前抓取（块下标, 块内偏移）（之后 editIdx 归 -1、
+       编辑层被替换为渲染块，选区随之失效） */
+    var ei = state.editIdx, eo = 0;
+    if (ei >= 0 && editEl()) { try { eo = caretRawOffset(editEl()); } catch (e) { eo = 0; } }
     commitEditSilent();
     snapshotNow();
     var cur = JSON.stringify(state.raw);
     var prev = undoStack.pop();
     redoStack.push(cur);
-    applySnap(prev);
+    applySnap(prev, ei >= 0 ? { idx: ei, off: eo } : null);
   }
   function redo() {
     if (!redoStack.length) return;
+    var ei = state.editIdx, eo = 0;
+    if (ei >= 0 && editEl()) { try { eo = caretRawOffset(editEl()); } catch (e) { eo = 0; } }
     commitEditSilent();
     var cur = JSON.stringify(state.raw);
     var next = redoStack.pop();
     undoStack.push(cur);
-    applySnap(next);
+    applySnap(next, ei >= 0 ? { idx: ei, off: eo } : null);
   }
 
   /* ---------- events ---------- */
@@ -5041,6 +5534,15 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       var mdSrc = n.getAttribute('data-md');
       if (mdSrc == null) mdSrc = n.getAttribute('src') || '';
       return '![' + (n.getAttribute('alt') || '') + '](' + mdSrc + ')';
+    }
+    if (n.classList && n.classList.contains('wikilink')) {
+      /* v3.45（BOOKLINK-A）：反序列化 [[Target#anchor|alias]] ——
+         从 data-target / data-anchor 还原头部，与别名文本比对省略冗余 |alias */
+      var _wt = n.getAttribute('data-target') || '';
+      var _wa = n.getAttribute('data-anchor') || '';
+      var _wd = (n.textContent || '').split('[[').join('').split(']]').join('');
+      var _wHead = _wt + (_wa ? '#' + _wa : '');
+      return _wd && _wd !== _wHead ? ('[[' + _wHead + '|' + _wd + ']]') : ('[[' + _wHead + ']]');
     }
     return null;
   }
@@ -5443,6 +5945,11 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   });
   ED.addEventListener('keydown', function (e) {
     if (e.isComposing || e.keyCode === 229) return;
+    /* v3.48.15（MC-4）：多光标激活时输入类按键交给 beforeinput 同步管道，
+       跳过块级按键逻辑（自动配对 / 斜杠菜单 / 列表续行等仅服务单光标） */
+    if (mcActive() && !e.ctrlKey && !e.metaKey &&
+        (e.key === 'Enter' || e.key === 'Backspace' || e.key === 'Delete' ||
+         e.key === 'Tab' || (e.key.length === 1 && !e.altKey))) return;
     var t = e.target.closest ? e.target.closest('#editor [contenteditable]') : null;
     if (!t || t.closest('.raw-edit')) return;
     if (t.tagName === 'BLOCKQUOTE') quoTipOnce();   /* v3.38（QUO-11） */
@@ -6307,6 +6814,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     var el = e.target.closest('.raw-edit');
     if (!el) return;
     e.preventDefault();
+    scheduleSnapshot(true);   /* v3.48.21（IMPERCEPT-L3）：粘贴是明确语义单元，先固化粘贴前状态 */
     var cdR = e.clipboardData || window.clipboardData;
     var text = (cdR.getData ? cdR.getData('text/plain') : '') || '';
     var htmlR = (cdR.getData ? cdR.getData('text/html') : '') || '';
@@ -6661,6 +7169,610 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     }
     return true;
   }
+  /* =========================================================
+   * v3.46（SoloMD P2/P1）：桥接函数 —— 表格导入插入 + AI 选中改写
+   * ---------------------------------------------------------
+   * insertMarkdown(md)：在光标所在块按上下文插入 Markdown（复用 pasteMdInto）。
+   * aiSelText()：返回最近一次编辑器内非空选区文本（selectionchange 缓存，
+   *   即便焦点已移到 AI 面板也不会丢失）；aiReplaceSel(text)：把缓存选区替换为 text。
+   * ========================================================= */
+  function _caretTargetEl() {
+    var sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return null;
+    var r = sel.getRangeAt(0);
+    var n = r.startContainer;
+    var el = (n && n.nodeType === 1) ? n : (n ? n.parentElement : null);
+    while (el && el !== ED) {
+      var tg = el.tagName;
+      if (tg === 'CODE' || tg === 'TD' || tg === 'TH' || tg === 'BLOCKQUOTE' ||
+          tg === 'LI' || /^H[1-6]$/.test(tg) ||
+          (el.classList && (el.classList.contains('raw-edit') || el.classList.contains('blk'))))
+        return el;
+      el = el.parentElement;
+    }
+    return null;
+  }
+  window.insertMarkdown = function (md) {
+    if (!md) return false;
+    var t = _caretTargetEl() || editEl();
+    if (!t) return false;
+    return pasteMdInto(t, md);
+  };
+  var _aiSelText = '';
+  var _aiSelRange = null;        // 最近一次**非折叠**选区（替换目标）
+  var _aiAnchorRange = null;     // v3.48.18：最近一次任意选区/光标（就近择优锚点）
+  function _xselEditableHost(node) {
+    var el = (node && node.nodeType === 1) ? node : (node ? node.parentElement : null);
+    /* v3.48.19（AI-FRAG4）：入参是容器元素（如 .blk，selectNodeContents 后
+       startContainer 即它）且自身不可编辑时，先向下找内部可编辑宿主 ——
+       旧版只向上遍历，跨块替换必然返回 null → insert-failed。 */
+    if (el && el.nodeType === 1 && !el.isContentEditable && el.querySelector) {
+      var inner = el.querySelector(
+        '[contenteditable="plaintext-only"],[contenteditable="true"]');
+      if (inner && ED.contains(inner)) return inner;
+    }
+    while (el && el !== ED) {
+      if (el.getAttribute && (el.getAttribute('contenteditable') === 'plaintext-only' ||
+          el.getAttribute('contenteditable') === 'true')) return el;
+      el = el.parentElement;
+    }
+    return null;
+  }
+  document.addEventListener('selectionchange', function () {
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    /* v3.48.18（FRAG-ANCHOR）：折叠光标同样记录锚点 —— 旧版只记录非折叠
+       选区，用户点一下别处后 _relocateRange 的「就近择优」仍按旧位置挑，
+       同名段落可能被替换错。 */
+    var rA = sel.getRangeAt(0);
+    var nA = rA.startContainer;
+    var eA = (nA && nA.nodeType === 1) ? nA : (nA ? nA.parentElement : null);
+    if (eA && eA.closest && eA.closest('#editor')) {
+      try { _aiAnchorRange = rA.cloneRange(); } catch (eA2) {}
+    }
+    if (sel.isCollapsed) return;
+    var r = sel.getRangeAt(0);
+    var n = r.startContainer;
+    var el = (n && n.nodeType === 1) ? n : (n ? n.parentElement : null);
+    if (el && el.closest && el.closest('#editor')) {
+      /* v3.48.0（F2 #474）：原生单宿主选区出现时，覆盖层选区失效，清除之 */
+      var hS = _xselEditableHost(r.startContainer);
+      var hE = _xselEditableHost(r.endContainer);
+      if (hS && hS === hE) {
+        _xselHasSel = false;
+        _xselClearOverlay();
+      }
+      try { _aiSelRange = r.cloneRange(); } catch (e) { _aiSelRange = null; }
+      /* v3.48.10（AI-RELOC）：口径统一为 Range.toString() —— 旧版
+         sel.toString() 对跨宿主选区可能截断，与 aiReplaceSel 预检的
+         Range 口径不一致 → 误报 stale-selection（替换失败）。 */
+      _aiSelText = r.toString();
+    }
+  });
+  /* ===== v3.48.0（F2 #474）：跨块选区叠加层 =====
+     逐块 plaintext-only 宿主使原生跨段选区不可能。这里用 caretRangeFromPoint
+     手动构造跨块 Range，并绘制半透明叠加高亮；mouseup 将选中文本写入 _aiSelText
+     供右键「AI」子菜单与复制使用；Ctrl+C / 右键「复制」经 copy 事件拦截改用
+     _aiSelText（原生跨宿主选区无法保留）。 */
+  var _xselLayer = null;
+  var _xselStartRng = null;
+  var _xselEndRng = null;
+  var _xselActive = false;
+  var _xselHasSel = false;
+  var _xselText = '';
+  function _xselBlockOf(node) {
+    var el = (node && node.nodeType === 1) ? node : (node ? node.parentElement : null);
+    while (el && el !== ED) {
+      if (el.classList && el.classList.contains('blk')) return el;
+      el = el.parentElement;
+    }
+    return null;
+  }
+  /* =========================================================
+   * v3.48.18（AI-FRAG3）：片段定位 / 替换核心重写
+   * ---------------------------------------------------------
+   * 一、_mdStrip —— Markdown 符号剥离（与 Python mdrender.md_to_plain 同口径）
+   *     渲染态 DOM 文本不含 ** / ` / # 等标记，而原文选区可能来自源码态或
+   *     AI 回复（带标记）。统一剥离后再比对，消除「Markdown 符号差异」误判。
+   * 二、_textIndex —— 把所有可编辑宿主的文本节点串成全局归一串，
+   *     并保留 norm 下标 -> (node, offset) 映射，供精确定位。
+   *     排除 .src-hl（源码高亮叠层，内容与 .raw-edit 重复）。
+   * 三、_relocateRange —— 归一匹配 + 多处出现时取「离上次选区最近」的一处，
+   *     避免同名段落被错位替换；找不到返回 null（由调用方给明确回退提示）。
+   * ========================================================= */
+  function _mdStrip(str) {
+    var t = String(str || '');
+    t = t.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1');          /* 图片 → alt */
+    t = t.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');            /* 链接 → 文本 */
+    t = t.replace(/^\s{0,3}(`{3,}|~{3,})[^\n]*$/gm, '');      /* 围栏行 */
+    t = t.replace(/`([^`]*)`/g, '$1');                        /* 行内代码 */
+    t = t.replace(/\*\*\*|\*\*|___|__|~~/g, '');              /* 粗/斜/删除 */
+    t = t.replace(/(^|[^\w])\*(?!\*)/g, '$1');
+    t = t.replace(/^\s{0,3}#{1,6}\s+/gm, '');                 /* 标题井号 */
+    t = t.replace(/^\s{0,3}>\s?/gm, '');                      /* 引用符 */
+    t = t.replace(/^\s*[-*+]\s+/gm, '');                      /* 列表符 */
+    t = t.replace(/^\s*\d+[.)]\s+/gm, '');                    /* 有序列表符 */
+    t = t.replace(/^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/gm, '');
+    t = t.replace(/\|/g, ' ');
+    return t;
+  }
+  /* 归一：剥 Markdown 符号 + 去全部空白（首尾 / 中间空白差异一并消除） */
+  function _normSel(str) {
+    return _mdStrip(str).replace(/\s+/g, '');
+  }
+  /* 文本索引：norm 串 + gmap[normIdx] = [textNode, offsetInNode] */
+  function _textIndex() {
+    var gnorm = '', gmap = [], blks = [];
+    var roots = document.querySelectorAll('#editor .blk');
+    if (!roots.length) roots = document.querySelectorAll('#editor *');
+    for (var i = 0; i < roots.length; i++) {
+      var r = roots[i];
+      if (!r || !r.nodeType) continue;
+      if (r.classList && (r.classList.contains('src-hl') ||
+                          r.classList.contains('src-gutter'))) continue;
+      if (r.closest && r.closest('.src-hl')) continue;
+      blks.push(r);
+    }
+    for (var b = 0; b < blks.length; b++) {
+      var w = document.createTreeWalker(blks[b], NodeFilter.SHOW_TEXT, null);
+      var tn;
+      while ((tn = w.nextNode())) {
+        if (tn.parentElement && tn.parentElement.closest &&
+            tn.parentElement.closest('.src-hl')) continue;
+        var t = tn.nodeValue || '';
+        for (var j = 0; j < t.length; j++) {
+          if (!/\s/.test(t.charAt(j))) { gnorm += t.charAt(j); gmap.push([tn, j]); }
+        }
+      }
+    }
+    return { norm: gnorm, map: gmap };
+  }
+  /* 当前光标 / 选区在归一串中的起点（「就近择优」的锚）。
+     依次尝试：实时选区（含折叠光标）→ _aiAnchorRange → _aiSelRange。
+     任一处落在 #editor 外则跳过。 */
+  function _selNormAnchor() {
+    var cands = [];
+    try {
+      var live = window.getSelection();
+      if (live && live.rangeCount) cands.push(live.getRangeAt(0));
+    } catch (e0) {}
+    if (_aiAnchorRange) cands.push(_aiAnchorRange);
+    if (_aiSelRange) cands.push(_aiSelRange);
+    for (var i = 0; i < cands.length; i++) {
+      var r = cands[i];
+      if (!r || !r.startContainer || !r.startContainer.isConnected) continue;
+      try { if (!ED.contains(r.startContainer)) continue; } catch (eC) { continue; }
+      try {
+        var pre = document.createRange();
+        pre.selectNodeContents(ED);
+        pre.setEnd(r.startContainer, r.startOffset);
+        return _normSel(pre.toString()).length;
+      } catch (e1) {}
+    }
+    return -1;
+  }
+  /* 按归一文本重新定位：返回 Range 或 null */
+  function _relocateRange(origText) {
+    var target = _normSel(origText);
+    if (!target) return null;
+    var idx = _textIndex();
+    var gnorm = idx.norm, gmap = idx.map;
+    if (!gnorm) return null;
+    /* 收集全部出现位置（上限 200 处，防超长文档退化） */
+    var hits = [], at = gnorm.indexOf(target);
+    while (at >= 0 && hits.length < 200) {
+      hits.push(at);
+      at = gnorm.indexOf(target, at + 1);
+    }
+    if (!hits.length) return null;
+    var pick = hits[0];
+    if (hits.length > 1) {
+      /* 多处出现：取离上次选区起点最近的一处（错位替换防护） */
+      var anchor = _selNormAnchor();
+      if (anchor >= 0) {
+        var best = Infinity;
+        for (var h = 0; h < hits.length; h++) {
+          var d = Math.abs(hits[h] - anchor);
+          if (d < best) { best = d; pick = hits[h]; }
+        }
+      }
+    }
+    var ms = gmap[pick], me = gmap[pick + target.length - 1];
+    if (!ms || !me) return null;
+    var r = document.createRange();
+    try {
+      r.setStart(ms[0], ms[1]);
+      r.setEnd(me[0], me[1] + 1);
+    } catch (err) { return null; }
+    return r;
+  }
+  /* v3.48.18：源码态（.t-src）定位 —— 在 state.raw 拼串里找可见文本，
+     命中后映射回源码框内容偏移（textarea / 纯文本宿主）。 */
+  function _relocateSrcRange(origText) {
+    var src = document.querySelector('#editor .t-src') ||
+              document.querySelector('#editor .raw-edit');
+    if (!src) return null;
+    var target = _normSel(origText);
+    if (!target) return null;
+    var text = src.value != null ? src.value : (src.textContent || '');
+    /* 逐字符建立 归一下标 -> 原始下标 映射 */
+    var norm = '', map = [];
+    for (var j = 0; j < text.length; j++) {
+      if (!/\s/.test(text.charAt(j))) { norm += text.charAt(j); map.push(j); }
+    }
+    var at = norm.indexOf(target);
+    if (at < 0) return null;
+    var a = map[at], b = map[at + target.length - 1] + 1;
+    if (src.setSelectionRange) {
+      try { src.setSelectionRange(a, b); } catch (e0) { return null; }
+      return { kind: 'src', el: src, start: a, end: b };
+    }
+    return { kind: 'src-dom', el: src, start: a, end: b };
+  }
+  function _applySrcReplace(info, text) {
+    var el = info.el;
+    if (el.value != null) {
+      el.value = el.value.slice(0, info.start) + text + el.value.slice(info.end);
+      if (el.setSelectionRange) {
+        try { el.setSelectionRange(info.start, info.start + text.length); } catch (e) {}
+      }
+    } else {
+      var t = el.textContent || '';
+      el.textContent = t.slice(0, info.start) + text + t.slice(info.end);
+    }
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    markDirty(); scheduleSnapshot();
+    return true;
+  }
+  /* v3.48.19（AI-FRAG4）：宿主内文本边界 —— 返回该 .blk 首个 / 末个可编辑
+     文本节点及其长度（跳过 .src-hl 叠层）。旧实现用 selectNodeContents 把
+     边界落在 .blk 元素节点上，addRange 后选区塌陷为 0 长度 → execCommand
+     失效（跨块替换报 insert-failed）；此处改为落在**文本节点**上，保证选区
+     真实可见、命令可执行。 */
+  function _hostTextBounds(h) {
+    var nodes = [];
+    var w = document.createTreeWalker(h, NodeFilter.SHOW_TEXT, null);
+    var tn;
+    while ((tn = w.nextNode())) {
+      if (tn.parentElement && tn.parentElement.closest &&
+          tn.parentElement.closest('.src-hl')) continue;
+      nodes.push(tn);
+    }
+    if (!nodes.length) return null;
+    return { first: nodes[0], last: nodes[nodes.length - 1],
+             firstLen: (nodes[0].nodeValue || '').length,
+             lastLen: (nodes[nodes.length - 1].nodeValue || '').length };
+  }
+  function _mkHostRange(host, startNode, startOff, endNode, endOff) {
+    var b = _hostTextBounds(host);
+    if (!b) {
+      /* 兜底：退化到元素边界（极少触发） */
+      var sub0 = document.createRange();
+      try { sub0.selectNodeContents(host); } catch (e) { return null; }
+      return sub0;
+    }
+    var sub = document.createRange();
+    try {
+      if (host.contains(startNode)) sub.setStart(startNode, startOff);
+      else sub.setStart(b.first, 0);
+      if (host.contains(endNode)) sub.setEnd(endNode, endOff);
+      else sub.setEnd(b.last, b.lastLen);
+    } catch (e) { return null; }
+    return sub;
+  }
+  function _xselEnsureLayer() {
+    if (_xselLayer) return _xselLayer;
+    var L = document.createElement('div');
+    L.className = 'xsel-layer';
+    L.style.position = 'fixed';
+    L.style.left = '0'; L.style.top = '0';
+    L.style.width = '100%'; L.style.height = '100%';
+    L.style.pointerEvents = 'none';
+    L.style.zIndex = '2147483640';
+    document.body.appendChild(L);
+    _xselLayer = L;
+    return L;
+  }
+  function _xselClearOverlay() { if (_xselLayer) _xselLayer.innerHTML = ''; }
+  function _xselRangeFromTwo(a, b) {
+    var cmp = a.compareBoundaryPoints(Range.START_TO_START, b);
+    var s = cmp > 0 ? b : a, e = cmp > 0 ? a : b;
+    var r = document.createRange();
+    try { r.setStart(s.startContainer, s.startOffset); r.setEnd(e.startContainer, e.startOffset); }
+    catch (err) { return null; }
+    return r;
+  }
+  function _xselDraw() {
+    var L = _xselEnsureLayer();
+    L.innerHTML = '';
+    var r = _xselRangeFromTwo(_xselStartRng, _xselEndRng);
+    if (!r) return;
+    var rects = r.getClientRects();
+    for (var i = 0; i < rects.length; i++) {
+      var rc = rects[i];
+      if (rc.width <= 0 || rc.height <= 0) continue;
+      var d = document.createElement('div');
+      d.className = 'xsel-rect';
+      d.style.position = 'absolute';
+      d.style.left = rc.left + 'px';
+      d.style.top = rc.top + 'px';
+      d.style.width = rc.width + 'px';
+      d.style.height = rc.height + 'px';
+      /* v3.48.21（IMPERCEPT-L4）：背景绑定原生 ::selection 同色变量 --sel，
+         亮 / 暗 / 护眼等主题自动对齐，消除自绘叠层与原生选区的色差；圆角
+         对齐原生（无圆角）。几何已用 getClientRects 原生选区矩形，逐行精确。 */
+      d.style.background = 'var(--sel)';
+      d.style.borderRadius = '0';
+      L.appendChild(d);
+    }
+  }
+  ED.addEventListener('mousedown', function (e) {
+    if (editorLocked()) return;
+    if (e.button !== 0) return;
+    _xselHasSel = false;
+    _xselActive = false;
+    _xselClearOverlay();
+    try { _xselStartRng = document.caretRangeFromPoint(e.clientX, e.clientY); }
+    catch (err) { _xselStartRng = null; }
+  });
+  ED.addEventListener('mousemove', function (e) {
+    if (editorLocked()) return;
+    if (!_xselStartRng || e.buttons !== 1) return;
+    var endRng = null;
+    try { endRng = document.caretRangeFromPoint(e.clientX, e.clientY); } catch (err) { endRng = null; }
+    if (!endRng) return;
+    if (!_xselActive) {
+      var sb = _xselBlockOf(_xselStartRng.startContainer);
+      var eb = _xselBlockOf(endRng.startContainer);
+      if (eb && sb && eb !== sb) {
+        /* 跨块：接管选区，清除原生选区避免塌陷 */
+        _xselActive = true;
+        try { window.getSelection().removeAllRanges(); } catch (_) {}
+      } else if (!eb) {
+        /* 拖出编辑区（垂直越界）也视为跨块，允许继续绘制 */
+        _xselActive = true;
+        try { window.getSelection().removeAllRanges(); } catch (_) {}
+      } else {
+        return;  /* 同块：交给原生选区，不干扰单块编辑 */
+      }
+    }
+    _xselEndRng = endRng;
+    _xselDraw();
+  });
+  window.addEventListener('mouseup', function (e) {
+    if (editorLocked()) return;
+    if (!_xselStartRng) return;
+    if (_xselActive) {
+      var endRng = null;
+      try { endRng = document.caretRangeFromPoint(e.clientX, e.clientY); } catch (_) {}
+      if (endRng) _xselEndRng = endRng;
+      var r = _xselRangeFromTwo(_xselStartRng, _xselEndRng);
+      if (r) {
+        _xselText = r.toString();
+        _aiSelText = _xselText;
+        try { _aiSelRange = r.cloneRange(); } catch (_) {}
+        _xselHasSel = true;
+        _xselDraw();   /* 保留高亮作为选中反馈，直至下次 mousedown / 滚动 */
+      }
+      _xselActive = false;
+    }
+  });
+  function _xselRedrawIfAny() { if (_xselActive || _xselHasSel) _xselDraw(); }
+  window.addEventListener('scroll', _xselRedrawIfAny, true);
+  if (ED.addEventListener) ED.addEventListener('scroll', _xselRedrawIfAny, true);
+  document.addEventListener('copy', function (e) {
+    if (_xselHasSel && _xselText) {
+      try {
+        if (e.clipboardData && e.clipboardData.setData) {
+          e.preventDefault();
+          e.clipboardData.setData('text/plain', _xselText);
+          toastStatus('已复制选中内容（跨段）');
+        }
+      } catch (err) {}
+    }
+  });
+  window.aiSelText = function () { return _aiSelText || ''; };
+  /* v3.48.5（AI-REDESIGN）：AI 插入入口 —— 旧 bridge 调 window.insertTextAtCaret，
+     但那是 IIFE 内局部函数、window 上不存在 → AI「插入」路径一直静默失败。
+     此处提供带结果返回的 window 版本：{ok, err}。 */
+  window.aiInsertAtCaret = function (text) {
+    var sel = window.getSelection();
+    if (!sel || !sel.rangeCount)
+      return JSON.stringify({ ok: false, err: 'no-caret' });
+    var n = sel.getRangeAt(0).startContainer;
+    var el = (n && n.nodeType === 1) ? n : (n ? n.parentElement : null);
+    var host = (el && el.closest)
+      ? el.closest('#editor [contenteditable="plaintext-only"]') : null;
+    if (!host) return JSON.stringify({ ok: false, err: 'no-host' });
+    try { host.focus(); } catch (e0) {}
+    var ok = false;
+    try { ok = document.execCommand('insertText', false, text); } catch (e1) {}
+    if (ok) { markDirty(); scheduleSnapshot(); }
+    return JSON.stringify({ ok: !!ok, err: ok ? '' : 'insert-failed' });
+  };
+  /* v3.48.18（AI-FRAG3）：把缓存选区精确替换为 text。
+     返回 JSON {ok, err, hosts, recovered, mode}。
+     错误码：no-range / stale-dom / not-found / bad-order / no-host /
+             insert-failed / empty */
+  window.aiReplaceSel = function (text, origText) {
+    text = String(text == null ? '' : text);
+    if (!text) return JSON.stringify({ ok: false, err: 'empty' });
+
+    /* ---- 源码态：走 state.raw 定位，不依赖 DOM 选区 ---- */
+    var srcMode = !!document.querySelector('#editor .t-src') ||
+                  !!document.querySelector('#editor .raw-edit.t-src');
+    if (srcMode) {
+      var si = _relocateSrcRange(origText);
+      if (!si) return JSON.stringify({ ok: false, err: 'not-found', mode: 'src' });
+      try {
+        _applySrcReplace(si, text);
+        return JSON.stringify({ ok: true, err: '', hosts: 1,
+                                recovered: false, mode: 'src' });
+      } catch (eS) {
+        return JSON.stringify({ ok: false, err: 'insert-failed', mode: 'src' });
+      }
+    }
+
+    /* ---- 渲染态：定位目标 Range ---- */
+    var r = null, how = 'cached';
+    if (_aiSelRange && _aiSelRange.startContainer &&
+        _aiSelRange.startContainer.isConnected &&
+        _aiSelRange.endContainer && _aiSelRange.endContainer.isConnected) {
+      r = _aiSelRange;
+      if (origText) {
+        var curTxt = '';
+        try { curTxt = r.toString(); } catch (e0) {}
+        if (_normSel(curTxt) !== _normSel(origText)) { r = null; how = 'reloc'; }
+      }
+    } else {
+      how = 'reloc';
+    }
+    if (!r && origText) { r = _relocateRange(origText); how = 'reloc'; }
+    if (!r) return JSON.stringify({ ok: false, err: 'not-found' });
+    if (!r.startContainer.isConnected || !r.endContainer.isConnected)
+      return JSON.stringify({ ok: false, err: 'stale-dom' });
+
+    /* ---- 枚举受影响的 .blk（按文档序索引，绝不游走到区间之外） ---- */
+    var all = document.querySelectorAll('#editor .blk');
+    var b1 = _xselBlockOf(r.startContainer);
+    var b2 = _xselBlockOf(r.endContainer);
+    if (!b1 || !b2) return JSON.stringify({ ok: false, err: 'no-host' });
+    var i1 = -1, i2 = -1;
+    for (var k = 0; k < all.length; k++) {
+      if (all[k] === b1) i1 = k;
+      if (all[k] === b2) { i2 = k; break; }
+    }
+    if (i1 < 0) i1 = 0;
+    if (i2 < 0) i2 = i1;
+    if (i2 < i1) return JSON.stringify({ ok: false, err: 'bad-order' });
+    var hosts = [];
+    for (var q = i1; q <= i2; q++) hosts.push(all[q]);
+    if (!hosts.length) hosts = [b1];
+
+    /* ---- 倒序编辑（后面的宿主先处理，前面 DOM 不被扰动） ---- */
+    /* v3.48.19（AI-FRAG4）：跨块替换语义修正 —— i===0（首个宿主）用
+       insertText 写入结果（Chromium 的 insertText 会替换当前选区）；
+       i>0 的后续宿主只需**删除**被选中的原文。旧版对后续宿主插空串，
+       既让「不可编辑宿主」误判失败，也会残留原文造成重复内容。 */
+    var snap = [], okAll = true, failedAt = -1, why = '';
+    for (var i = hosts.length - 1; i >= 0; i--) {
+      var h = hosts[i];
+      snap.push([h, h.innerHTML]);          /* 编辑前快照（用于精确回滚） */
+      var sub = _mkHostRange(h, r.startContainer, r.startOffset,
+                             r.endContainer, r.endOffset);
+      if (!sub) { okAll = false; failedAt = i; why = 'no-range'; break; }
+      var hostEl = _xselEditableHost(sub.startContainer) || h;
+      if (!hostEl || !hostEl.isContentEditable) {
+        okAll = false; failedAt = i; why = 'no-host'; break;
+      }
+      try { hostEl.focus(); } catch (e2) {}
+      var sel = window.getSelection();
+      try { sel.removeAllRanges(); sel.addRange(sub); }
+      catch (e3) { okAll = false; failedAt = i; why = 'no-range'; break; }
+      var ok = true;
+      if (i === 0) {
+        try {
+          ok = document.execCommand('insertText', false, text);
+        } catch (e4) { ok = false; }
+      } else if (!sub.collapsed) {
+        /* 后续宿主：删除被选中的原文段（空选区无需处理） */
+        try {
+          ok = document.execCommand('delete');
+        } catch (e5) { ok = false; }
+      }
+      if (!ok) { okAll = false; failedAt = i; why = 'insert-failed'; break; }
+    }
+
+    /* ---- 失败回滚：按快照原样恢复（不做位置猜测，杜绝错位插入） ---- */
+    var recovered = false;
+    if (!okAll) {
+      for (var z = 0; z < snap.length; z++) {
+        try {
+          if (snap[z][0].innerHTML !== snap[z][1]) {
+            snap[z][0].innerHTML = snap[z][1];
+            recovered = true;
+          }
+        } catch (e5) {}
+      }
+      /* 回滚后仍需把 state.raw 拉回一致 */
+      try { if (typeof commitEditSilent === 'function') commitEditSilent(); } catch (e6) {}
+      return JSON.stringify({ ok: false, err: why || 'insert-failed',
+                              hosts: hosts.length, recovered: recovered });
+    }
+
+    /* ---- 成功：立即把 DOM 变更同步进 state.raw 并置脏 ---- */
+    try { if (typeof commitEditSilent === 'function') commitEditSilent(); } catch (e7) {}
+    markDirty(); scheduleSnapshot();
+    _xselHasSel = false; _xselClearOverlay();
+    return JSON.stringify({ ok: true, err: '', hosts: hosts.length,
+                            recovered: false, mode: how });
+  };
+  /* v3.48.18（AI-CTX）：AI 上下文自适应所需的位置信息。
+     返回 {md, block, selText, selStart, selEnd}；block 为光标所在 .blk 在
+     #editor.children 中的下标（与 state.raw 同序，供邻段扩展）。 */
+  window.aiContextInfo = function () {
+    var md = '';
+    try { md = window.getMarkdown(); } catch (e0) {}
+    var bi = -1, selText = '';
+    var sel = window.getSelection();
+    if (sel && sel.rangeCount) {
+      var rr = sel.getRangeAt(0);
+      try { selText = rr.toString(); } catch (e1) {}
+      var n = rr.startContainer;
+      var el = (n && n.nodeType === 1) ? n : (n ? n.parentElement : null);
+      while (el && el !== ED) {
+        if (el.classList && el.classList.contains('blk')) {
+          bi = blockIndexOf(el); break;
+        }
+        el = el.parentElement;
+      }
+    }
+    if (bi < 0 && typeof state !== 'undefined' && state.editIdx >= 0)
+      bi = state.editIdx;
+    if (!selText) selText = _aiSelText || '';
+    return JSON.stringify({ md: md, block: bi, selText: selText,
+                            src: !!document.querySelector('#editor .t-src') });
+  };
+  /* v3.47.8（AI-PREVIEW）：计算「插入到光标处」的修改前/修改后文本。
+     以块级粒度定位光标所在块 bi，把 AI 文本作为新块插入到该块之后；
+     返回 {before: 当前全文, after: 插入后全文, offset: 插入边界偏移}。 */
+  window.aiInsertPlan = function (text) {
+    text = text || '';
+    var before = window.getMarkdown();
+    var bi = -1;
+    var sel = window.getSelection();
+    if (sel && sel.rangeCount) {
+      var n = sel.getRangeAt(0).startContainer;
+      var el = (n && n.nodeType === 1) ? n : (n ? n.parentElement : null);
+      while (el && el !== ED) {
+        if (el.classList && el.classList.contains('blk')) { bi = blockIndexOf(el); break; }
+        el = el.parentElement;
+      }
+    }
+    if (bi < 0) bi = (state.editIdx >= 0 ? state.editIdx : (state.raw.length - 1));
+    if (bi < 0) bi = 0;
+    var pos = 0;
+    /* v3.48.5（AI-REDESIGN）：pos 基于 state.raw 累加，而 before 取自
+       getMarkdown() —— 两者不同步（回写/规范化差异）时插入点会错位。
+       不一致即退化为文档末尾追加，绝不写错位置。 */
+    if (state.raw.join('\n\n') === before) {
+      for (var k = 0; k <= bi; k++) pos += (state.raw[k] || '').length;
+      pos += 2 * (bi + 1);               // bi+1 个 \n\n 分隔（state.raw.join('\n\n')）
+      if (pos > before.length) pos = before.length;
+    } else {
+      pos = before.length;
+    }
+    var after;
+    if (pos >= before.length) {
+      var pre = before;
+      after = pre + (pre && !pre.endsWith('\n\n') ? '\n\n' : '') + text;
+    } else {
+      var pre2 = before.slice(0, pos);
+      var post = before.slice(pos);
+      after = pre2 + (pre2 && !pre2.endsWith('\n\n') ? '\n\n' : '') + text + '\n\n' + post;
+    }
+    return JSON.stringify({ before: before, after: after, offset: pos });
+  };
   ED.addEventListener('paste', function (e) {
     if (editorLocked()) return;
     var t = e.target.closest ? e.target.closest('#editor [contenteditable="plaintext-only"]') : null;
@@ -7224,6 +8336,31 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   /* 右键空白处：弹出与输入 "/" 一致的插入菜单（v3.14）
      仅空块 / 文档末尾空白响应；有内容的块保留系统右键菜单（复制粘贴等） */
   ED.addEventListener('contextmenu', function (e) {
+    /* v3.45.5（LINK-EDIT）：右键链接 → 编辑 / 复制 / 打开地址。
+       渲染态点 <a>（普通链接 / [[双链]]，fnref 除外）；源码态选中或光标
+       落在链接原文上时同理。置于 editorLocked 守卫与表格 / 脚注 / 代码
+       分支之前 —— 源码态 editorLocked() 恒真（srcEl 非空），链接菜单在
+       两种模式下都应可用；且用户右键的就是这条链接本身，优先级最高。 */
+    var _lkA = e.target.closest ? e.target.closest('#editor a[href], #editor a.wikilink') : null;
+    var _lkCtx = null;
+    if (_lkA && !_lkA.closest('.src-hl')) {
+      _lkCtx = linkRawInfoAtEl(_lkA);
+    } else if (srcEl) {
+      _lkCtx = srcLinkInfoAtSel();
+    }
+    if (_lkCtx) {
+      e.preventDefault(); e.stopPropagation();
+      hidePops();
+      linkEditCtx = _lkCtx;
+      BM._mx = e.clientX; BM._my = e.clientY;   /* 记录打开位置，供「编辑地址」弹层定位 */
+      BM.innerHTML = '<div class="cap">链接</div>' +
+        '<div class="mi" data-act="linkedit"><span style="width:18px;text-align:center">✎</span>编辑地址</div>' +
+        '<div class="mi" data-act="linkcopy"><span style="width:18px;text-align:center">⧉</span>复制地址</div>' +
+        '<div class="mi" data-act="linkopen"><span style="width:18px;text-align:center">↗</span>打开链接</div>';
+      activePop = 'block';
+      placePop(BM, e.clientX, e.clientY);
+      return;
+    }
     if (editorLocked()) return;
     /* v3.28：表格内右键 → 弹出表格操作菜单（悬浮工具栏的右键化，
        避免悬浮条遮挡 / 误触；点选区外的格自动重置为该格单选） */
@@ -7324,6 +8461,43 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
 
   /* click: checkbox toggle & toc link jump */
   ED.addEventListener('click', function (e) {
+    /* v3.45.3（LINK-NAV）：统一链接导航。mdeditor:// 自定义协议会被 Chromium
+       静默丢弃（旧 location.href 桥接已失效），改为 JS 分类入队 __navQ，
+       Python 侧 150ms 轮询 drain 后执行。分类：
+       ext=外部链接（浏览器打开）/ md=本地文件（编辑器内打开）/
+       anchor=页内锚点 / wiki=[[双链]]。 */
+    var _a = e.target.closest('a');
+    if (_a && !_a.classList.contains('wikilink')) {
+      var _href = _a.getAttribute('href') || '';
+      if (_href) {
+        e.preventDefault();
+        var _hl = _href.toLowerCase();
+        var _isAbs = (_hl.indexOf('://') >= 0 || _hl.indexOf('mailto:') === 0
+                      || _hl.indexOf('data:') === 0 || _hl.indexOf('blob:') === 0
+                      || _hl.indexOf('file:') === 0);
+        if (_isAbs) {
+          navPush('ext', _href);
+        } else if (_href.charAt(0) === '#') {
+          /* 页内锚点（含脚注回链 #fn-x —— Python 侧先按标题 slug 找，
+             找不到再按元素 id 找） */
+          navPush('anchor', _href.slice(1));
+        } else {
+          /* 本地文件链接（.md / .html / 其它相对路径）：
+             绝对路径解析交 Python（含 .html→.md 回退） */
+          navPush('md', _href);
+        }
+        return;
+      }
+    }
+    var _wl = e.target.closest('a.wikilink');
+    if (_wl) {
+      e.preventDefault();
+      var _wt = _wl.getAttribute('data-target') || _wl.textContent || '';
+      var _wa = _wl.getAttribute('data-anchor') || '';
+      /* v3.45（BOOKLINK-C）：target 携带 #anchor，Python 端拆分后跳章 + 滚动锚点 */
+      navPush('wiki', _wt + (_wa ? ('#' + _wa) : ''));
+      return;
+    }
     var link = e.target.closest('.toc-link');
     if (link) {
       e.preventDefault();
@@ -7353,9 +8527,9 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   });
 
   document.addEventListener('mousedown', function (e) {
-    if (e.target.closest && (e.target.closest('.blk') || ED.contains(e.target))) return;
+    if (e.target.closest && (e.target.closest('.blk') || ED.contains(e.target) || e.target.closest('#wikimenu'))) return;
     /* 编辑区外点击：关闭键盘驱动的浮层菜单（避免残留菜单吞按键） */
-    if (activePop === 'slash' || activePop === 'block') hidePops();
+    if (activePop === 'slash' || activePop === 'block' || activePop === 'wikimenu') hidePops();
     var rect = ED.getBoundingClientRect();
     if (e.clientY > rect.bottom - 60 || state.editIdx >= 0) {
       if (state.editIdx < 0) goToEditableEnd();
@@ -7377,6 +8551,127 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     }
   }, true);
 
+  /* v3.44.37（BACKLINK-2）：[[ 双链自动补全弹窗 */
+  var wikiMenu = null, wikiActive = false, wikiSel = 0, wikiItems = [], wikiQuery = '';
+  function ensureWikiMenu() {
+    if (wikiMenu) return wikiMenu;
+    wikiMenu = document.createElement('div');
+    wikiMenu.id = 'wikimenu';
+    wikiMenu.style.display = 'none';
+    document.body.appendChild(wikiMenu);
+    wikiMenu.addEventListener('mousedown', function (e) {
+      var item = e.target.closest('.wi');
+      if (!item) return;
+      e.preventDefault();
+      var i = parseInt(item.getAttribute('data-i'), 10);
+      if (isNaN(i)) return;
+      if (wikiItems[0] === '__create__') wikiReplace(wikiQuery, wikiQuery);
+      else wikiReplace(wikiItems[i], wikiItems[i]);
+    });
+    return wikiMenu;
+  }
+  function wikiFilter(q) {
+    var idx = window.__noteIndex || {};
+    var keys = Object.keys(idx);
+    if (!q) return keys;
+    q = q.toLowerCase();
+    return keys.filter(function (k) { return k.toLowerCase().indexOf(q) >= 0; });
+  }
+  function openWikiMenu(rect, partial) {
+    ensureWikiMenu();
+    wikiQuery = partial || '';
+    wikiItems = wikiFilter(wikiQuery);
+    if (!wikiItems.length) wikiItems = ['__create__'];
+    wikiSel = 0;
+    renderWikiMenu();
+    wikiMenu.style.display = 'block';
+    wikiActive = true;
+    var top = (rect ? rect.bottom : 0) + 4;
+    var left = (rect ? rect.left : 0);
+    wikiMenu.style.top = top + 'px';
+    wikiMenu.style.left = Math.max(4, Math.min(left, (window.innerWidth || 800) - 270)) + 'px';
+    activePop = 'wikimenu';
+  }
+  function renderWikiMenu() {
+    var html = '';
+    if (wikiItems[0] === '__create__') {
+      html = '<div class="empty">无匹配笔记，回车创建「' + esc(wikiQuery) + '」</div>';
+    } else {
+      var idx = window.__noteIndex || {};
+      for (var k = 0; k < wikiItems.length; k++) {
+        var t = wikiItems[k];
+        var p = idx[t] || '';
+        html += '<div class="wi' + (k === wikiSel ? ' act' : '') + '" data-i="' + k + '">' +
+                '<span class="lb">' + esc(t) + '</span>' +
+                '<span class="ds">' + esc(p) + '</span></div>';
+      }
+    }
+    wikiMenu.innerHTML = html;
+  }
+  function closeWikiMenu() {
+    if (wikiMenu) wikiMenu.style.display = 'none';
+    wikiActive = false;
+    if (activePop === 'wikimenu') activePop = null;
+  }
+  function wikiCaretRect() {
+    var sel = getSelection();
+    if (!sel.rangeCount) return null;
+    var r = sel.getRangeAt(0);
+    var rect = r.getBoundingClientRect();
+    if (rect && (rect.width || rect.height || rect.top || rect.left)) return rect;
+    return null;
+  }
+  function wikiReplace(partial, full) {
+    var el = editEl();
+    if (!el) { closeWikiMenu(); return; }
+    var sel = getSelection();
+    if (!sel.rangeCount) { closeWikiMenu(); return; }
+    var range = sel.getRangeAt(0);
+    var node = range.startContainer;
+    if (node.nodeType !== 3) { closeWikiMenu(); return; }
+    var caret = range.startOffset;
+    var txt = node.nodeValue || '';
+    var ob = txt.lastIndexOf('[[', caret);
+    if (ob < 0) { closeWikiMenu(); return; }
+    var insert = '[[' + full + ']]';
+    node.nodeValue = txt.slice(0, ob) + insert + txt.slice(caret);
+    var pos = ob + insert.length;
+    var nr = document.createRange();
+    nr.setStart(node, pos); nr.collapse(true);
+    sel.removeAllRanges(); sel.addRange(nr);
+    closeWikiMenu();
+  }
+  function onWikiInput() {
+    if (state.editIdx < 0) { closeWikiMenu(); return; }
+    var el = editEl();
+    var sel = getSelection();
+    if (!sel.rangeCount) return;
+    var range = sel.getRangeAt(0);
+    var node = range.startContainer;
+    if (node.nodeType !== 3) { closeWikiMenu(); return; }
+    var caret = range.startOffset;
+    var before = (node.nodeValue || '').slice(0, caret);
+    var ob = before.lastIndexOf('[[');
+    if (ob < 0) { closeWikiMenu(); return; }
+    var between = before.slice(ob + 2);
+    if (between.indexOf(']') >= 0 || between.indexOf('[') >= 0) { closeWikiMenu(); return; }
+    var rect = wikiCaretRect();
+    openWikiMenu(rect, between);
+  }
+  function onWikiKey(e) {
+    if (!wikiActive) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); e.stopImmediatePropagation(); wikiSel = Math.min(wikiItems.length - 1, wikiSel + 1); renderWikiMenu(); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); e.stopImmediatePropagation(); wikiSel = Math.max(0, wikiSel - 1); renderWikiMenu(); return; }
+    if (e.key === 'Enter') {
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (wikiItems[0] === '__create__') wikiReplace(wikiQuery, wikiQuery);
+      else wikiReplace(wikiItems[wikiSel], wikiItems[wikiSel]);
+      return;
+    }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); closeWikiMenu(); return; }
+  }
+  ED.addEventListener('input', onWikiInput);
+  ED.addEventListener('keydown', onWikiKey, true);
   /* ---------- stats（字数统计 / 阅读时长，状态栏与详情弹窗共用） ---------- */
   function updateStats() {
     var md = state.raw.join('\n\n');
@@ -7629,6 +8924,33 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     /* 空文档（新建/清空后）：默认显示光标并带占位提示，可直接输入 */
     if (state.raw.length === 1 && (state.raw[0] || '') === '') enterEdit(0, 0);
   };
+  /* v3.48.8（AI-UNDO）：AI 写回（预览确认后的全文替换）专用入口 —— 可撤销。
+     旧版走 window.setMarkdown，其内部会清空 undoStack/redoStack → 插入后
+     Ctrl+Z 无效。本函数与 setMarkdown 的差异：先把当前状态压入撤销栈
+     （等价一次普通编辑），再重建文档且不重置栈 → Ctrl+Z 回到插入前、
+     重做（Ctrl+Shift+Z）回到插入后。 */
+  window.aiApplyInsert = function (text) {
+    try { commitEditSilent(); } catch (e0) {}
+    snapshotNow();                  /* 插入前快照压栈（内容相同则自动跳过） */
+    state.editIdx = -1;
+    srcEl = null; srcText = '';
+    window.__lastPreviewMd = null;
+    hidePops();
+    resetSpecialEditors();
+    hideObjSel();
+    foldSet = {};
+    docGen++;
+    state.raw = splitBlocks(text || '');
+    for (var _hi = 0; _hi < state.raw.length; _hi++) state.raw[_hi] = healBlockRaw(state.raw[_hi]);
+    lastFB = null;
+    lastSnapshot = JSON.stringify(state.raw);
+    redoStack.length = 0;           /* 新变更使 redo 失效（与普通编辑一致） */
+    rebuild();
+    updateStats();
+    markDirty();
+    if (state.raw.length === 1 && (state.raw[0] || '') === '') enterEdit(0, 0);
+    return 'ok';
+  };
   /* P1-2：折叠 / 展开全部标题（供菜单、快捷键与测试调用） */
   window.foldAllHeadings = function (close) {
     var n = 0;
@@ -7719,6 +9041,44 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     el.classList.add('flash');
     setTimeout(function () { el.classList.remove('flash'); }, 1600);
   };
+  window.scrollToAnchor = function (slug) {
+    /* v3.45（BOOKLINK-C）：按 slug 在文档内定位标题并滚动。
+       slug 与 mdutil.heading_anchors 同源（仅 h1-h4，与选择器锚点清单一致） */
+    if (!slug) return false;
+    var seen = {}, i, b, t, base, s;
+    for (i = 0; i < state.raw.length; i++) {
+      b = blockInfo(state.raw[i]);
+      if (!b || !/^h[1-4]$/.test(b.type)) continue;
+      t = headingPlainOf(state.raw[i]).trim();
+      base = slugify(t) || 'section';
+      if (base in seen) { seen[base] += 1; s = base + '-' + seen[base]; }
+      else { seen[base] = 1; s = base; }
+      if (s === slug) {
+        var el = ED.children[i];
+        if (!el) return false;
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+        setTimeout(function () { el.classList.remove('flash'); }, 1600);
+        return true;
+      }
+    }
+    return false;
+  };
+  /* v3.45.7（BOOK-READ-1）：阅读进度滚动比例读写（启动恢复滚动位置用）。
+     getScrollRatio 返回字符串（经桥接原生数字会丢，故转字符串）；
+     scrollToRatio 返回 "ok" / "nosize"。 */
+  window.getScrollRatio = function () {
+    var max = document.documentElement.scrollHeight - window.innerHeight;
+    if (!max || max <= 1) return "0";
+    return String(Math.min(1, Math.max(0, window.scrollY / max)));
+  };
+  window.scrollToRatio = function (r) {
+    r = Math.min(1, Math.max(0, +r || 0));
+    var max = document.documentElement.scrollHeight - window.innerHeight;
+    if (!max || max <= 1) return "nosize";
+    window.scrollTo(0, Math.max(0, r * max));
+    return "ok";
+  };
   /* ---------- v3.31（#7）大纲拖拽调序：按新顺序整段重排同级章节 ----------
      pairs = [[start, end), ...]（新顺序）；各节必须首尾相接覆盖一段连续区间 */
   window.reorderSections = function (pairsJson) {
@@ -7747,6 +9107,17 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     return 'ok';
   };
   /* ---------- 指定行号：跳转（Ctrl+G）与光标行列上报 ---------- */
+  /* v3.45.5（SRC-SCROLL/KEEP）：按源码行号把视图滚到该行中央。
+     pre + 固定行高下每行恒等 lh，「首行 Y + (行号-1) × 行高」与行号槽
+     .src-gutter 同网格，比 collapsed Range 的 rect 可靠（空行 rect 退化 0×0）。 */
+  function scrollSrcToLine(n) {
+    if (!srcEl) return;
+    var lh = parseFloat(getComputedStyle(srcEl).lineHeight) || 24;
+    var cs = getComputedStyle(srcEl);
+    var top0 = srcEl.getBoundingClientRect().top + window.scrollY
+             + (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.borderTopWidth) || 0);
+    window.scrollTo(0, Math.max(0, top0 + (Math.max(1, n) - 1) * lh - window.innerHeight / 2));
+  }
   window.gotoLine = function (n) {
     n = Math.max(1, Math.round(+n || 1));
     if (srcEl && srcEl.classList.contains('t-src')) {
@@ -7762,8 +9133,15 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         var sel = getSelection();
         sel.removeAllRanges();
         sel.addRange(rng);
+        /* v3.45.5（SRC-SCROLL）：空行 / 行首上 collapsed Range 的 rect 退化为
+           0×0，旧滚动算式（scrollY + rect.top - 半窗）算出来回 0 → Ctrl+G
+           跳空行、文档开头无反应。rect 可信时沿用；退化时走行号×行高定位。 */
         var rect = rng.getBoundingClientRect();
-        window.scrollTo(0, window.scrollY + rect.top - window.innerHeight / 2);
+        if (rect.top === 0 && rect.width === 0 && rect.height === 0) {
+          scrollSrcToLine(n);
+        } else {
+          window.scrollTo(0, window.scrollY + rect.top - window.innerHeight / 2);
+        }
       }
       srcEl.focus();
       return 'ok';
@@ -7973,6 +9351,41 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   window.setSourceMode = function (on) {
     on = !!on;
     if (on && !srcEl) {
+      /* v3.45.5（SRC-KEEP）：先记写作态光标所在块 / 块内偏移（commitEditSilent
+         与 ED 清空都会丢掉选区，必须在此之前取）。
+         两条来源：① 源码编辑态（editIdx≥0，表格/代码/图片等）直接取；
+         ② 渲染态段落编辑（editIdx=-1，p/标题/列表/引用等最常见场景）从当前
+         选区反查宿主块，渲染文本偏移经 mapPlainToRaw 归一为 raw 偏移
+         （与 enterEdit / getCaretLineCol 同口径）。 */
+      var _bi = state.editIdx;
+      var _boff = 0;
+      if (_bi >= 0 && _bi < state.raw.length && ED.children[_bi]) {
+        try { _boff = caretRawOffset(ED.children[_bi]); } catch (e3) {}
+      } else {
+        try {
+          var _sn = getSelection();
+          if (_sn && _sn.rangeCount) {
+            var _sc = _sn.getRangeAt(0).startContainer;
+            var _pe = _sc.nodeType === 3 ? _sc.parentNode : _sc;
+            if (_pe && _pe.closest) {
+              var _pp = _pe.closest('p[contenteditable]');
+              if (_pp && !_pp.closest('.raw-edit')) {
+                var _b2 = blockIndexOf(_pp.closest('.blk'));
+                if (_b2 >= 0) {
+                  _bi = _b2;
+                  var _plain = '';
+                  (function _walk(nd) {
+                    if (nd.nodeType === 3) { _plain += nd.nodeValue; return; }
+                    if (nd.tagName === 'BR') { _plain += '\n'; return; }
+                    for (var _c = nd.firstChild; _c; _c = _c.nextSibling) _walk(_c);
+                  })(_pp);
+                  _boff = mapPlainToRaw(state.raw[_bi], paraCaretOffset(_pp));
+                }
+              }
+            }
+          }
+        } catch (e4) {}
+      }
       commitEditSilent();
       srcText = state.raw.join('\n\n');
       ED.textContent = '';
@@ -8010,9 +9423,40 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       });
       updateSrcGutter();
       renderSrcHl();
+      /* v3.45.5（SRC-KEEP）：切源码态不丢视图位置与光标 —— 把写作态光标
+         所在块 / 块内偏移映射为 srcText 偏移，落光标后按行号滚动到视口
+         中央（此前恒回文档顶部，且光标跳到文本开头）。 */
       srcEl.focus();
       state.editIdx = -1;
+      if (_bi >= 0 && _bi < state.raw.length) {
+        var _srcOff = 0;
+        for (var _k = 0; _k < _bi; _k++) _srcOff += state.raw[_k].length + 2;
+        _srcOff = Math.min(_srcOff + _boff, srcText.length);
+        var _tn0 = srcEl.firstChild;
+        if (_tn0 && _tn0.nodeType === 3) {
+          var _r0 = document.createRange();
+          _r0.setStart(_tn0, _srcOff);
+          _r0.collapse(true);
+          var _s0 = getSelection();
+          _s0.removeAllRanges();
+          _s0.addRange(_r0);
+        }
+        markSrcCur();
+        var _ln0 = srcText.slice(0, _srcOff).split('\n').length;
+        scrollSrcToLine(_ln0);
+      } else if (window._srcScrollMem) {
+        window.scrollTo(0, window._srcScrollMem);
+        window._srcScrollMem = 0;
+      }
     } else if (!on && srcEl) {
+      /* v3.45.5（SRC-KEEP）：记源码态滚动像素与光标行，退出后 rebuild 完成
+         再把视图滚回对应块（DOM 重建后浏览器默认停在顶部） */
+      var _srcLine = 1;
+      try {
+        var _soff = caretRawOffset(srcEl);
+        _srcLine = srcText.slice(0, _soff).split('\n').length;
+      } catch (e2) {}
+      window._srcScrollMem = window.scrollY;
       srcEl = null; srcGutter = null; srcWrap = null; srcBox = null; srcHl = null;
       var t = srcText;
       docGen++;   /* v3.37（DOCGEN-1）：源码态落回 = 整体替换文档 */
@@ -8025,6 +9469,19 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       undoStack = []; redoStack = [];
       rebuild();
       updateStats();
+      /* v3.45.5（SRC-KEEP）：源码行 → 块（按各块行数累计），视图滚回该块 */
+      var _acc = 1, _tb = -1;
+      for (var _k2 = 0; _k2 < state.raw.length; _k2++) {
+        var _lc = state.raw[_k2].split('\n').length;
+        if (_srcLine < _acc + _lc) { _tb = _k2; break; }
+        _acc += _lc + 1;
+      }
+      if (_tb < 0) _tb = state.raw.length - 1;
+      var _blkEl = ED.children[_tb];
+      if (_blkEl) {
+        var _y2 = _blkEl.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.35;
+        window.scrollTo(0, Math.max(0, _y2));
+      }
     }
   };
   window.setMode = function (m) {
@@ -8302,6 +9759,84 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   }
   window.__resolveImgSrc = resolveImgSrc;   // 供自动化测试检查
 
+  /* v3.44.34（BOOK-1）：相对 .md 链接解析为绝对路径（供编辑器内跳转） */
+  function resolveMdLinkAbs(href) {
+    if (!window.__docDir) return null;
+    var _frag = '';
+    var _q = href.indexOf('#');
+    if (_q >= 0) { _frag = href.slice(_q); href = href.slice(0, _q); }
+    if (!href) return null;
+    var _d = String(window.__docDir).split('\\').join('/').replace(/\/+$/, '');
+    var _rel = String(href).split('\\').join('/').replace(/^\.\//, '');
+    var _joined = (_rel.indexOf('/') === 0) ? _rel : (_d + '/' + _rel);
+    var _parts = _joined.split('/');
+    var _stack = [];
+    for (var _k = 0; _k < _parts.length; _k++) {
+      var _p = _parts[_k];
+      if (_p === '' || _p === '.') continue;
+      if (_p === '..') { if (_stack.length) _stack.pop(); }
+      else _stack.push(_p);
+    }
+    return _stack.join('/') + _frag;
+  }
+  window.__resolveMdLinkAbs = resolveMdLinkAbs;   // 供自动化测试检查
+
+  /* v3.45.3（LINK-NAV）：链接导航队列。
+     mdeditor:// 自定义协议会被 Chromium 静默丢弃（location.href 赋值后
+     acceptNavigationRequest 根本不被调用，v3.45.3 实测），旧桥接已失效；
+     改为 JS 分类入队、Python 侧 150ms 轮询 __navDrain 消费。
+     k: ext=外部链接 / md=本地文件 / wiki=[[双链]] / anchor=页内锚点。 */
+  window.__navQ = [];
+  window.navPush = function (k, u) {
+    try { window.__navQ.push({ k: String(k || ''), u: String(u || '') }); }
+    catch (e) { /* 队列不可用（极端环境）时静默丢弃，不影响编辑 */ }
+  };
+  window.__navDrain = function () {
+    var q = window.__navQ;
+    window.__navQ = [];
+    return q;
+  };
+
+  /* v3.45.3（EXPORT-LINK）：导出用相对路径 —— 由文档目录绝对化到目标
+     绝对路径的逆运算（供 [[双链]] 在导出 HTML 中生成可点击 href）。 */
+  function relFromDocDir(abs) {
+    if (!abs) return null;
+    var d = String(window.__docDir || '').replace(/\\/g, '/').replace(/\/+$/, '');
+    var a = String(abs).replace(/\\/g, '/');
+    if (!d) return a;
+    var dp = d.split('/'), ap = a.split('/'), i = 0;
+    if (dp[0].toLowerCase() !== ap[0].toLowerCase()) return a;   // 跨盘符：绝对路径
+    while (i < dp.length && i < ap.length - 1 && dp[i] === ap[i]) i++;
+    var up = [], k;
+    for (k = i; k < dp.length; k++) up.push('..');
+    var down = ap.slice(i).join('/');
+    var rel = up.concat(down ? [down] : []).join('/');
+    return rel || a;
+  }
+  window.__relFromDocDir = relFromDocDir;   // 供自动化测试检查
+
+  /* v3.45.6（PDF-LINK-3）：双链目标与本书章节的匹配放宽。
+     旧匹配只认「标题全等 / 绝对路径全等」，用户手写的 [[ch2]]、[[./ch2.md]]、
+     [[sub/ch3.md]]、英文大小写差异全部落空 → 导出物里退化为纯文本（PDF 死链）。
+     归一化：trim + 反斜杠转正斜杠 + 去 './' 前缀 + 小写（Windows 语义）。 */
+  function _wlNorm(s) {
+    return String(s || '').trim().replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
+  }
+  function _wlMatch(target, ch) {
+    if (!target || !ch) return false;
+    var t = _wlNorm(target), p = String(ch.path || '');
+    if (!t || !p) return false;
+    var pn = _wlNorm(p);
+    if (t === pn) return true;                              // 绝对路径全等
+    if (t === _wlNorm(ch.title || '')) return true;         // 标题全等
+    var pb = pn.split('/').pop();                           // 基名（含扩展名）
+    if (t === pb) return true;                              // ch2.md
+    var pbn = pb.replace(/\.[^./]+$/, '');                  // 基名去扩展名
+    if (t === pbn) return true;                             // ch2
+    return false;
+  }
+  window.__wlMatch = _wlMatch;   // 供自动化测试检查
+
   /* ---------- 图片插入（本地选择 / 复制粘贴 / 拖拽）----------
    * assets 模式：Python 把图片写入「文档名.assets/」，这里只收到相对路径；
    * embed  模式：Python / 剪贴板直接给出 data URL。 */
@@ -8402,9 +9937,75 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         mmdMap[ds] = mms[k2].innerHTML;
     }
     var body = '';
+    /* v3.45.3（EXPORT-LINK）：导出物标题锚点 id（h1-h4，slug 与编辑器
+       scrollToAnchor / 书籍站同源，章内去重 -2/-3）—— 此前导出 HTML 标题
+       无 id，页内 #锚点链接与 PDF 内部跳转全部失效。 */
+    var _hseenE = {};
+    var _docH = currentDocHeadings();   // [{text, slug}]，与下方 id 同规则
     for (var i = 0; i < state.raw.length; i++) {
       var bh = document.createElement('div');
       bh.innerHTML = blockHTML(state.raw[i]);
+      /* v3.45.3（EXPORT-LINK）：标题写 id（块内多标题按文档级 seen 去重） */
+      var hsE = bh.querySelectorAll('h1,h2,h3,h4');
+      for (var hi = 0; hi < hsE.length; hi++) {
+        var _ht = (hsE[hi].textContent || '').trim();
+        var _hb = slugify(_ht) || 'section';
+        var _hs2;
+        if (_hb in _hseenE) { _hseenE[_hb] += 1; _hs2 = _hb + '-' + _hseenE[_hb]; }
+        else { _hseenE[_hb] = 1; _hs2 = _hb; }
+        hsE[hi].setAttribute('id', _hs2);
+      }
+      /* v3.45.3（EXPORT-LINK）：[[双链]] → 可点击 href（此前渲染态 <a> 无
+         href，导出 PDF / HTML 里双链全是死链）。优先级：
+         ① 本文档标题 → #slug（PDF 内部跳转）
+         ② 本书章节 → 章节文件相对路径（整书 PDF 合并后再改写为内部页跳转）
+         ③ 都无法解析 → 退化为纯文本（与 EPUB 导出同口径，不出死链）
+         v3.45.6（PDF-LINK-3）匹配放宽：
+         - [[#锚点]] 形态（target 空、anchor 非空）补按锚点匹配标题 —— 旧版
+           ① 只按 target 匹配，锚点双链恒退化为纯文本（PDF 里完全不显示链接）；
+         - 章节匹配放宽为「标题 / 基名去扩展名 / 相对路径 / 大小写不敏感」
+           （_wlMatch）—— 用户手写 [[ch2]] / [[./ch2.md]] 旧版全落空。 */
+      var wlsE = bh.querySelectorAll('a.wikilink');
+      for (var wi = 0; wi < wlsE.length; wi++) {
+        var _wt2 = wlsE[wi].getAttribute('data-target') || '';
+        var _wa2 = wlsE[wi].getAttribute('data-anchor') || '';
+        var _hrefE = null;
+        var _wbase = slugify(_wt2) || 'section';
+        for (var dj = 0; dj < _docH.length; dj++) {
+          if (_docH[dj].slug === _wbase || _docH[dj].text === _wt2) {
+            _hrefE = '#' + _docH[dj].slug;
+            break;
+          }
+        }
+        /* v3.45.6：[[#锚点]] —— target 为空时按锚点文本匹配标题 */
+        if (_hrefE === null && !_wt2 && _wa2) {
+          var _abase = slugify(_wa2) || 'section';
+          for (var dj2 = 0; dj2 < _docH.length; dj2++) {
+            if (_docH[dj2].slug === _abase || _docH[dj2].text === _wa2) {
+              _hrefE = '#' + _docH[dj2].slug;
+              break;
+            }
+          }
+        }
+        if (_hrefE === null) {
+          var _links = window.__bookLinks || [];
+          for (var lj = 0; lj < _links.length; lj++) {
+            if (_wlMatch(_wt2, _links[lj])) {
+              var _rel = relFromDocDir(_links[lj].path);
+              if (_rel) _hrefE = _rel + (_wa2 ? ('#' + _wa2) : '');
+              break;
+            }
+          }
+        }
+        if (_hrefE !== null) {
+          wlsE[wi].setAttribute('href', _hrefE);
+        } else {
+          /* 无目标可解析：剥掉 <a> 外壳只留内容，避免导出死链 */
+          var _sp = document.createElement('span');
+          _sp.innerHTML = wlsE[wi].innerHTML;
+          wlsE[wi].parentNode.replaceChild(_sp, wlsE[wi]);
+        }
+      }
       /* v3.30.13（缺陷2）：跨表头合并的表格同步归一（thead 行并入 tbody），
          否则导出 HTML 在不解析 thead 跨 section rowspan 的引擎里布局错位 */
       var tbNs = bh.querySelectorAll('table');
@@ -8607,6 +10208,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       if (state.editIdx < 0) enterEdit(state.raw.length - 1, 1e9);
     }
     switch (name) {
+      case 'selnext': mcSelectNext(); return;
       case 'undo': undo(); return;
       case 'redo': redo(); return;
       case 'bold': case 'italic': case 'code': case 'strike':
@@ -8809,6 +10411,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
        3) 应用后回到渲染态（focusWysiwyg），不再停在源码态；
      表格 / 图片 / 图表 / 公式 / 分割线 / 代码块跳过，避免破坏其源码结构 */
   function applyHeadingLevel(level) {
+    scheduleSnapshot(true);   /* v3.48.21（IMPERCEPT-L3）：标题级别切换是语义边界 */
     var a = -1, b = -1;
     var sel = getSelection();
     if (sel && sel.rangeCount && !sel.isCollapsed) {
@@ -8912,6 +10515,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     var cp = document.getElementById('cappop'); fadeOutPop(cp);
     BH.style.display = 'none';
     closeEmojiPop();   /* P1-8：emoji 候选一并收起 */
+    if (wikiMenu) wikiMenu.style.display = 'none'; wikiActive = false;
     activePop = null; slashState = null; subCtx = null; hintState = null;
     tblSizeCtx = null; langCtx = null;
     linkCtx = null; cpCtx = null;   /* v3.30.18（F4）：链接 / 图注弹层上下文一并清理 */
@@ -9719,6 +11323,27 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   }
 
   function applyFloatAction(action) {
+    scheduleSnapshot(true);   /* v3.48.21（IMPERCEPT-L3）：浮动 / 链接格式是语义边界 */
+    /* v3.48.15（MC-2）：多光标激活 —— 标记类格式作用于全部选区；
+       链接 / 清除格式 / 对齐 / 删块等仅作用于主光标（先收敛再走原逻辑） */
+    if (mcActive()) {
+      var _MKMC = { bold: '**', italic: '*', strike: '~~', code: '`', mark: '==' };
+      if (_MKMC[action] && editEl()) {
+        mcApplyAll(_MKMC[action], 'marker');
+        hidePops();
+        return;
+      }
+      if (action === 'underline' && editEl()) {
+        mcApplyAll('<u>', 'tag', '</u>');
+        hidePops();
+        return;
+      }
+      mcCollapsePrimary();
+      toastStatus('该操作仅作用于主光标，已退出多光标');
+    }
+    /* v3.48.0（F3-a）：浮动栏「问 AI」按钮已移除，AI 入口统一收敛到右键「AI」子菜单
+       （mainwindow._show_ctx_menu）。此处不再处理 ai-ask；navPush('ai') 链路保留供
+       右键子菜单经 Python 侧 ai_pane 复用。 */
     /* v3.38（FMTB-2）：FMT-1 码内守卫上移到单元格分支之前 —— 守卫本身按
        「选区与块内 <code> 相交」判定，与块型无关，单元格内的行内码同样适用
        （旧序 cell 分支先 return，格内 `码甲` 上加粗写出 ** 字面标记，与 FMT-1
@@ -10350,28 +11975,312 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   var LP2 = document.getElementById('linkpop');
   var LK_INPUT = document.getElementById('link-url');
   var linkCtx = null;
+  /* v3.45（LINKMERGE）：链接合并与插入 —— 普通链接与本书链接统一到同一输入框。
+     插入选项优先级：① 本文档标题锚点；② 整本书章节 / 锚点。
+     点击任一插入项即把目标写入输入框（自动替换），确定时按内容判定格式：
+       #slug               → [文本](#slug)（页内锚点）
+       本书章节(标题[#锚点]) → [[章节#锚点|文本]]（本书链接）
+       其余                 → [文本](url)（普通链接） */
+  function currentDocHeadings() {
+    var seen = {}, out = [];
+    for (var i = 0; i < state.raw.length; i++) {
+      var b = blockInfo(state.raw[i]);
+      if (!b || !/^h[1-4]$/.test(b.type)) continue;
+      var t = headingPlainOf(state.raw[i]).trim();
+      var base = slugify(t) || 'section';
+      var s;
+      if (base in seen) { seen[base] += 1; s = base + '-' + seen[base]; }
+      else { seen[base] = 1; s = base; }
+      out.push({ text: t, slug: s });
+    }
+    return out;
+  }
+  function linkKind(addr) {
+    addr = (addr || '').trim();
+    if (!addr) return 'empty';
+    if (addr.charAt(0) === '[' && addr.charAt(1) === '[') return 'book';
+    if (addr.charAt(0) === '#') return 'anchor';
+    var links = window.__bookLinks || [];
+    var base = addr, p = addr.indexOf('#');
+    if (p >= 0) base = addr.slice(0, p);
+    for (var i = 0; i < links.length; i++) {
+      if (links[i].title === base) return 'book';
+    }
+    return 'url';
+  }
+  function buildLinkSuggest(mode) {
+    var box = document.getElementById('link-suggest');
+    if (!box) return;
+    box.innerHTML = '';
+    if (mode === 'none') { box.style.display = 'none'; return; }
+    box.style.display = '';
+    var isCell = (mode === 'cell');
+    /* ① 本文档锚点（优先级最高，页内跳转） */
+    var docH = currentDocHeadings();
+    if (docH.length) {
+      var g1 = document.createElement('div'); g1.className = 'lsg'; g1.textContent = '本文档锚点';
+      box.appendChild(g1);
+      docH.forEach(function (h) {
+        var it = document.createElement('div'); it.className = 'lsi';
+        it.innerHTML = '<span class="lic">§</span><span class="ltxt"></span>';
+        it.querySelector('.ltxt').textContent = h.text;
+        it.title = '#' + h.slug;
+        it.addEventListener('mousedown', function (e) {
+          e.preventDefault(); e.stopPropagation();
+          LK_INPUT.value = '#' + h.slug; LK_INPUT.focus(); LK_INPUT.select();
+        });
+        box.appendChild(it);
+      });
+    }
+    /* ② 整本书链接 / 锚点（单元格内不提供，HTML 单元格不支持 [[ ]]） */
+    var links = window.__bookLinks || [];
+    if (!isCell && links.length) {
+      var g2 = document.createElement('div'); g2.className = 'lsg'; g2.textContent = '本书链接';
+      box.appendChild(g2);
+      links.forEach(function (ch) {
+        var title = ch.title || ch.path || '';
+        var it = document.createElement('div'); it.className = 'lsi';
+        it.innerHTML = '<span class="lic">📄</span><span class="ltxt"></span>';
+        it.querySelector('.ltxt').textContent = title;
+        it.title = '[[' + title + ']]';
+        it.addEventListener('mousedown', function (e) {
+          e.preventDefault(); e.stopPropagation();
+          LK_INPUT.value = '[[' + title + ']]'; LK_INPUT.focus(); LK_INPUT.select();
+        });
+        box.appendChild(it);
+        (ch.headings || []).forEach(function (h) {
+          var sub = document.createElement('div'); sub.className = 'lsi sub';
+          sub.innerHTML = '<span class="lic">§</span><span class="ltxt"></span>';
+          sub.querySelector('.ltxt').textContent = h.text;
+          sub.title = '[[' + title + '#' + (h.slug || '') + ']]';
+          sub.addEventListener('mousedown', function (e) {
+            e.preventDefault(); e.stopPropagation();
+            LK_INPUT.value = '[[' + title + '#' + (h.slug || '') + ']]';
+            LK_INPUT.focus(); LK_INPUT.select();
+          });
+          box.appendChild(sub);
+        });
+      });
+    }
+    if (!box.children.length) {
+      var empty = document.createElement('div'); empty.className = 'lsg';
+      empty.textContent = '（本文档暂无标题，或未打开书籍）';
+      box.appendChild(empty);
+    }
+  }
+
   function openLinkPop(info, rawOff, rawLen) {
     linkCtx = { idx: info.idx, off: rawOff, len: rawLen };
-    LK_INPUT.value = 'https://';
+    LK_INPUT.value = 'http://';
     LP2._okOnce = false;
     LK_INPUT.style.borderColor = '';
     LK_INPUT.title = '';
     activePop = 'link';
     placePop(LP2, info.rect ? info.rect.left : 40, info.rect ? info.rect.top + 8 : 90);
+    buildLinkSuggest('doc');
     LK_INPUT.focus();
     LK_INPUT.select();
   }
   function closeLinkPop() { LP2.classList.remove('show'); linkCtx = null; cellLinkCtx = null; }
   /* 把 raw 区间 [off, off+len) 替换成 [文本](url) */
-  function applyLinkTo(ctx, url) {
-    if (!ctx || !url) return false;
+  function applyLinkTo(ctx, addrRaw) {
+    if (!ctx) return false;
+    var addr = (addrRaw || '').trim();
+    if (!addr) return false;
     var raw = state.raw[ctx.idx] || '';
     var txt = raw.substr(ctx.off, ctx.len);
-    state.raw[ctx.idx] = raw.slice(0, ctx.off) + '[' + txt + '](' + url + ')' +
-                        raw.slice(ctx.off + ctx.len);
+    var kind = linkKind(addr);
+    if (kind === 'book') {
+      var inner, m = addr.match(/^\[\[(.*)\]\]$/);
+      if (m) {
+        inner = m[1];
+      } else {
+        var head = addr;
+        inner = (txt && txt !== head) ? (head + '|' + txt) : head;
+      }
+      state.raw[ctx.idx] = raw.slice(0, ctx.off) + '[[' + inner + ']]' + raw.slice(ctx.off + ctx.len);
+      toastStatus('已插入本书链接：' + addr);
+    } else {
+      state.raw[ctx.idx] = raw.slice(0, ctx.off) + '[' + txt + '](' + addr + ')' + raw.slice(ctx.off + ctx.len);
+    }
     markDirty(); scheduleSnapshot(); rebuild();
     return true;
   }
+
+  /* ---------- v3.45.5（LINK-EDIT）：右键链接 → 编辑 / 复制 / 打开地址 ----------
+     渲染态：右键 <a>（普通链接 / [[双链]]）反查 Markdown 原文区间；
+     源码态：选区（或光标）与 srcText 中的链接节点相交时同理。
+     编辑弹层复用 linkpop（LP2），预填当前地址；提交时按输入形态改写：
+       · [[Target#anchor]] → 双链（保留原 |别名；无别名且文本与目标相同则省略）
+       · 其它地址          → [文本](地址)（可与双链互转） */
+  var linkEditCtx = null;   // {idx?, rs, re, kind:'plain'|'wiki'|'auto', addr, text, alias, src?}
+
+  /* 渲染态：从 <a> 反查原文区间。
+     签名 = 类型 + 地址 + 内部 HTML；同块内多个同款链接按 DOM 文档序取第几个。
+     fnref（#fn-…）不是链接节点，签名不会误命中。 */
+  function linkRawInfoAtEl(aEl) {
+    try {
+      var blk = aEl.closest('.blk');
+      if (!blk) return null;
+      var bi = blockIndexOf(blk);
+      if (bi < 0) return null;
+      var raw = state.raw[bi] || '';
+      if (!raw) return null;
+      var isWiki = aEl.classList.contains('wikilink');
+      var addr = isWiki
+        ? ((aEl.getAttribute('data-target') || '') +
+           (aEl.getAttribute('data-anchor') ? ('#' + aEl.getAttribute('data-anchor')) : ''))
+        : (aEl.getAttribute('href') || '');
+      var inner = aEl.innerHTML;
+      var hits = [];
+      (function walk(ns) {
+        for (var k = 0; k < ns.length; k++) {
+          var n = ns[k];
+          if (n.type === 'wikilink' || n.type === 'link') {
+            var nAddr = (n.type === 'wikilink')
+              ? (n.target + (n.anchor ? ('#' + n.anchor) : ''))
+              : n.url;
+            if (nAddr === addr && renderNodes(n.ch) === inner) hits.push(n);
+          }
+          if (n.ch) walk(n.ch);
+        }
+      })(parseInline(raw, 0, raw.length));
+      if (!hits.length) return null;
+      /* 同签名多个 → 按文档序取第几个 */
+      var ord = 0, all = blk.querySelectorAll('a');
+      for (var q = 0; q < all.length; q++) {
+        if (all[q] === aEl) break;
+        var _o = all[q];
+        var _oa = _o.classList.contains('wikilink')
+          ? ((_o.getAttribute('data-target') || '') +
+             (_o.getAttribute('data-anchor') ? ('#' + _o.getAttribute('data-anchor')) : ''))
+          : (_o.getAttribute('href') || '');
+        if (_oa === addr && _o.innerHTML === inner) ord++;
+      }
+      var nd = hits[Math.min(ord, hits.length - 1)];
+      var ctx = { idx: bi, rs: nd.rs, re: nd.re };
+      if (nd.type === 'wikilink') {
+        var innerRaw = raw.slice(nd.cs, nd.ce);
+        var pipe = innerRaw.indexOf('|');
+        ctx.kind = 'wiki';
+        ctx.alias = pipe === -1 ? '' : innerRaw.slice(pipe + 1);
+        ctx.addr = '[[' + (pipe === -1 ? innerRaw : innerRaw.slice(0, pipe)) + ']]';
+        ctx.text = aEl.textContent || '';
+      } else {
+        ctx.kind = (nd.cs === nd.rs && nd.ce === nd.re) ? 'auto' : 'plain';
+        ctx.addr = nd.url;
+        ctx.text = raw.slice(nd.cs, nd.ce);
+      }
+      return ctx;
+    } catch (e) { return null; }
+  }
+
+  /* 源码态：选区 / 光标与 srcText 中的链接节点求交（嵌套取最内层） */
+  function srcLinkInfoAtSel() {
+    try {
+      if (!srcEl || !srcEl.classList.contains('t-src')) return null;
+      var rng = selRawRange(srcEl);
+      if (!rng) return null;
+      var s = Math.min(rng.start, rng.end), e = Math.max(rng.start, rng.end);
+      var hits = [];
+      (function walk(ns) {
+        for (var k = 0; k < ns.length; k++) {
+          var n = ns[k];
+          if (n.type === 'wikilink' || n.type === 'link') {
+            if (s < n.re && e > n.rs) hits.push(n);
+          }
+          if (n.ch) walk(n.ch);
+        }
+      })(parseInline(srcText, 0, srcText.length));
+      if (!hits.length) return null;
+      var nd = null;
+      for (var q = 0; q < hits.length; q++) {
+        var h = hits[q];
+        if (h.rs <= s && s < h.re) { if (!nd || h.rs > nd.rs) nd = h; }
+      }
+      if (!nd) nd = hits[0];
+      var ctx = { src: true, rs: nd.rs, re: nd.re };
+      if (nd.type === 'wikilink') {
+        var innerRaw = srcText.slice(nd.cs, nd.ce);
+        var pipe = innerRaw.indexOf('|');
+        ctx.kind = 'wiki';
+        ctx.alias = pipe === -1 ? '' : innerRaw.slice(pipe + 1);
+        ctx.addr = '[[' + (pipe === -1 ? innerRaw : innerRaw.slice(0, pipe)) + ']]';
+        ctx.text = pipe === -1 ? innerRaw : innerRaw.slice(pipe + 1);
+      } else {
+        ctx.kind = (nd.cs === nd.rs && nd.ce === nd.re) ? 'auto' : 'plain';
+        ctx.addr = nd.url;
+        ctx.text = srcText.slice(nd.cs, nd.ce);
+      }
+      return ctx;
+    } catch (e) { return null; }
+  }
+
+  /* 弹出编辑地址层（预填当前地址，全选便于直接改） */
+  function openLinkEditPop(ctx, x, y) {
+    linkEditCtx = ctx;
+    LK_INPUT.value = ctx.addr || '';
+    LP2._okOnce = false;
+    LK_INPUT.style.borderColor = '';
+    LK_INPUT.title = '';
+    activePop = 'link';
+    placePop(LP2, x, y);
+    buildLinkSuggest('doc');
+    LK_INPUT.focus();
+    LK_INPUT.select();
+  }
+  function applyLinkEditOk() {
+    var ctx = linkEditCtx;
+    var url = (LK_INPUT.value || '').trim();
+    if (!ctx || !url) { closeLinkPop(); return; }
+    /* 编辑态只拦空格（原地址本就是已认可的合法值，不再做 scheme 预检） */
+    if (/\s/.test(url) && !LP2._okOnce) {
+      LP2._okOnce = true;
+      LK_INPUT.style.borderColor = '#e6a23c';
+      LK_INPUT.title = '地址不能包含空格';
+      LK_INPUT.focus(); LK_INPUT.select();
+      return;
+    }
+    LP2._okOnce = false;
+    LK_INPUT.style.borderColor = '';
+    LK_INPUT.title = '';
+    closeLinkPop();
+    applyLinkEdit(ctx, url);
+  }
+  /* 提交：按输入形态改写原文（渲染态改 state.raw + rebuild；源码态改 srcText + 重渲染高亮） */
+  function applyLinkEdit(ctx, addrRaw) {
+    if (!ctx) return false;
+    var addr = (addrRaw || '').trim();
+    if (!addr) return false;
+    var wm = addr.match(/^\[\[([\s\S]*)\]\]$/);
+    var out;
+    if (wm) {
+      /* 双链形态：输入自带别名优先；否则沿用原别名；普通链接转双链时
+         把原可见文本收为别名（不丢内容） */
+      var inner = wm[1].trim();
+      var pipe = inner.indexOf('|');
+      var head = pipe === -1 ? inner : inner.slice(0, pipe);
+      var alias = pipe === -1 ? '' : inner.slice(pipe + 1);
+      if (!alias && ctx.alias) alias = ctx.alias;
+      if (!alias && ctx.text && ctx.text !== head) alias = ctx.text;
+      out = '[[' + head + (alias ? ('|' + alias) : '') + ']]';
+    } else {
+      out = '[' + (ctx.text || '') + '](' + addr + ')';
+    }
+    if (ctx.src) {
+      srcText = srcText.slice(0, ctx.rs) + out + srcText.slice(ctx.re);
+      if (srcEl) srcEl.textContent = srcText;
+      updateSrcGutter(); scheduleSrcHl();
+      markDirty(); scheduleSnapshot();
+    } else {
+      var raw = state.raw[ctx.idx] || '';
+      state.raw[ctx.idx] = raw.slice(0, ctx.rs) + out + raw.slice(ctx.re);
+      markDirty(); scheduleSnapshot(); rebuild();
+    }
+    toastStatus('链接地址已更新');
+    return true;
+  }
+
   /* v3.30.10：单元格内链接 / 图片的 URL 输入弹层（复用 linkpop）。
      kind: 'link' = 选区文字加链接（cellMutateSrc 改写该格源码）；
            'img'  = 向单元格插入 <img>（单元格块级插入用）。
@@ -10385,16 +12294,18 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     if (idx < 0 || !tbl) return;
     cellLinkCtx = { idx: idx, rc: cellRC(tbl, cell), text: cf.text || '',
                     occ: cf.occ || 0, kind: kind };   /* v3.38（FMTB-1）序数透传 */
-    LK_INPUT.value = 'https://';
+    LK_INPUT.value = 'http://';
     LP2._okOnce = false;
     LK_INPUT.style.borderColor = '';
     LK_INPUT.title = '';
     activePop = 'link';
     var r = cell.getBoundingClientRect();
     placePop(LP2, r.left, r.top + 8);
+    buildLinkSuggest(kind === 'img' ? 'none' : 'cell');
     LK_INPUT.focus();
     LK_INPUT.select();
   }
+
   /* v3.30.11（MATH-5）：单元格公式编辑 —— 双击 cell-math 弹小输入框回写
      data-tex（此前单元格内公式插入后无任何修改入口）。留空提交 = 移除公式 */
   var MPOP = document.getElementById('mathpop');
@@ -10532,7 +12443,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   function applyCellLinkOk() {
     var cctx = cellLinkCtx;
     var url = (LK_INPUT.value || '').trim();
-    if (!cctx || !url || url === 'https://') { closeLinkPop(); return; }
+    if (!cctx || !url || url === 'https://' || url === 'http://') { closeLinkPop(); return; }
     /* 与正文链接同款宽松校验（图片额外放行 data:image/） */
     var suspicious = /\s/.test(url) ||
       !/^(https?:\/\/|ftp:\/\/|mailto:|\/|#|\.\.?\/|data:image\/)/i.test(url);
@@ -10560,25 +12471,29 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   document.getElementById('link-ok').addEventListener('click', function (e) {
     e.stopPropagation();
     if (cellLinkCtx) { applyCellLinkOk(); return; }   /* v3.30.10：单元格链接 / 图片 */
+    if (linkEditCtx) { applyLinkEditOk(); return; }   /* v3.45.5（LINK-EDIT）：右键编辑地址 */
     var ctx = linkCtx;
     var url = (LK_INPUT.value || '').trim();
-    if (!ctx || !url || url === 'https://') { closeLinkPop(); return; }
-    /* v3.29d（S5）：宽松校验 —— 含空格，或既非 http(s)/ftp/mailto、又非相对
-       路径 / 锚点时黄牌提示并保留弹层；用户确认无误再点一次确定即放行 */
-    var suspicious = /\s/.test(url) ||
-      !/^(https?:\/\/|ftp:\/\/|mailto:|\/|#|\.\.?\/)/i.test(url);
-    if (suspicious && !LP2._okOnce) {
-      LP2._okOnce = true;
-      LK_INPUT.style.borderColor = '#e6a23c';
-      LK_INPUT.title = '链接格式可能不正确（通常应为 https://… 或相对路径）';
-      LK_INPUT.focus(); LK_INPUT.select();
-      return;
+    if (!ctx || !url || url === 'http://' || url === 'https://') { closeLinkPop(); return; }
+    /* v3.45（LINKMERGE）：本书链接 / 页内锚点直接放行，普通链接才做格式校验 */
+    var kind = linkKind(url);
+    if (kind === 'url') {
+      var suspicious = /\s/.test(url) ||
+        !/^(https?:\/\/|ftp:\/\/|mailto:|\/|#|\.\.?\/)/i.test(url);
+      if (suspicious && !LP2._okOnce) {
+        LP2._okOnce = true;
+        LK_INPUT.style.borderColor = '#e6a23c';
+        LK_INPUT.title = '链接格式可能不正确（通常应为 https://… 或相对路径）';
+        LK_INPUT.focus(); LK_INPUT.select();
+        return;
+      }
     }
     LP2._okOnce = false;
     LK_INPUT.style.borderColor = '';
     LK_INPUT.title = '';
     closeLinkPop();
     applyLinkTo(ctx, url);
+
   });
   LK_INPUT.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); document.getElementById('link-ok').click(); }
@@ -11379,6 +13294,13 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     };
   }
   document.addEventListener('keydown', function (e) {
+    /* v3.48.15（MC-3）：Esc 退出多光标，回到主光标 */
+    if (e.key === 'Escape' && mcActive()) {
+      mcCollapsePrimary();
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     if (editorLocked()) {
       /* v3.29d（C1）：源码 / 分屏模式下浮层入口给状态栏提示，不再静默失效 */
       if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey)
@@ -11803,6 +13725,38 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     return false;
   }
   function applyBlockAct(act) {
+    scheduleSnapshot(true);   /* v3.48.21（IMPERCEPT-L3）：块操作（标题 / 列表 / 引用 / 表格等）是语义边界 */
+    /* v3.45.5（LINK-EDIT）：链接右键菜单三动作。置于 handleIdx 守卫之前 ——
+       源码态没有有效块索引（blockIndexOf(srcEl) = -1），链接上下文自带位置。 */
+    if (act === 'linkedit' || act === 'linkcopy' || act === 'linkopen') {
+      if (!linkEditCtx) { hidePops(); return; }
+      var _lc = linkEditCtx;
+      if (act === 'linkedit') {
+        hidePops();
+        openLinkEditPop(_lc, BM._mx || 120, BM._my || 120);
+      } else if (act === 'linkcopy') {
+        hidePops();
+        copyTextToClipboard(String(_lc.addr || '').replace(/^\[\[|\]\]$/g, ''));
+      } else {
+        hidePops();
+        if (_lc.kind === 'wiki') {
+          var _wm = String(_lc.addr || '').match(/^\[\[([\s\S]*)\]\]$/);
+          navPush('wiki', _wm ? _wm[1] : _lc.addr);
+        } else {
+          var _hl = String(_lc.addr || '').toLowerCase();
+          if (_hl.indexOf('://') >= 0 || _hl.indexOf('mailto:') === 0
+              || _hl.indexOf('data:') === 0 || _hl.indexOf('blob:') === 0
+              || _hl.indexOf('file:') === 0) {
+            navPush('ext', _lc.addr);
+          } else if (_lc.addr.charAt(0) === '#') {
+            navPush('anchor', _lc.addr.slice(1));
+          } else {
+            navPush('md', _lc.addr);
+          }
+        }
+      }
+      return;
+    }
     var i = handleIdx;
     if (i < 0 || i >= state.raw.length) return;
     var keepEdit = state.editIdx === i;
@@ -12286,7 +14240,9 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   });
   BM.addEventListener('click', function (e) {
     var t = e.target.closest ? e.target.closest('.mi') : null;
-    if (!t || handleIdx < 0) { hidePops(); return; }
+    /* v3.45.5（LINK-EDIT）：链接菜单项不依赖 handleIdx —— 源码态无有效块索引 */
+    var _lkAct = !!(t && /^link(edit|copy|open)$/.test(t.getAttribute('data-act') || ''));
+    if (!t || (handleIdx < 0 && !_lkAct)) { hidePops(); return; }
     var act = t.getAttribute('data-act');
     /* v3.38（IMG-12）：「转存本地（请先保存文档）」置灰条 —— 点击只说明原因，不执行 */
     if (act === 'imgstorewait') {

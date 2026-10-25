@@ -13,12 +13,17 @@
 """
 
 import ctypes
+import platform
 
 from PySide6.QtCore import QPoint, QSize, Qt
 from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QMenu, QSizePolicy, QToolButton, QVBoxLayout,
     QWidget,
 )
+
+# v3.47（P0 跨平台）：本模块含 Win32 无边框窗口逻辑，仅在 Windows 激活；
+# 非 Windows 下所有 Win32 调用降级为空操作，保证模块可安全导入。
+_IS_WIN = (platform.system() == "Windows")
 
 from icons import (
     icon_find, icon_history, icon_new, icon_open, icon_redo, icon_save,
@@ -52,23 +57,33 @@ class MSG(ctypes.Structure):
                 ("time", ctypes.c_uint), ("pt", POINT)]
 
 
-_user32 = ctypes.windll.user32
+if _IS_WIN:
+    _user32 = ctypes.windll.user32
+else:
+    _user32 = None
 
 
 def frame_thickness():
-    """隐形缩放边宽（Win10/11 通常 8px）。"""
+    """隐形缩放边宽（Win10/11 通常 8px）；非 Windows 返回 0。"""
+    if not _IS_WIN or _user32 is None:
+        return 0
     return _user32.GetSystemMetrics(SM_CXSIZEFRAME) + _user32.GetSystemMetrics(SM_CXPADDEDBORDER)
 
 
 def force_frame_recalc(hwnd):
-    """窗口形态标记变化后强制重算非客户区（不闪烁）。"""
+    """窗口形态标记变化后强制重算非客户区（不闪烁）；非 Windows 空操作。"""
+    if not _IS_WIN or _user32 is None:
+        return
     _user32.SetWindowPos(hwnd, None, 0, 0, 0, 0,
                          SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED)
 
 
 def handle_native_event(w, message_param, win):
-    """MainWindow.nativeEvent 分发器。返回 (handled, result) 或 None（不处理）。"""
-    if not getattr(w, "_mac_frame_on", False):
+    """MainWindow.nativeEvent 分发器。返回 (handled, result) 或 None（不处理）。
+
+    非 Windows 或窗口未启用无边框形态时直接透传（None），保证 macOS / Linux
+    走系统原生窗口（含原生标题栏 / 拖拽 / 缩放）。"""
+    if not _IS_WIN or not getattr(w, "_mac_frame_on", False):
         return None
     msg = MSG.from_address(int(message_param))
     if msg.message == WM_NCCALCSIZE and msg.wParam:

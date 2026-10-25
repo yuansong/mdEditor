@@ -224,6 +224,9 @@ QSplitter::handle:hover {{ background: {accent_soft}; }}
    选中页签强调色指示条按设计稿放「底部」（与编辑区卡片连成一体），
    不再压顶边——即标题栏下缘不再出现蓝色线条 */
 #contentArea {{ background: {bg}; }}
+#tocBar {{ background: {chrome2}; border-top: 1px solid {chrome_line}; }}
+#btnInsertToc {{ background: {accent}; color: #ffffff; border: none;
+  padding: 5px 14px; border-radius: 6px; font-size: 12.5px; font-weight: 600; }}
 #tabstrip {{ background: {chrome2}; border-bottom: 1px solid {chrome_line}; }}
 #tabstrip QTabBar {{
   background: transparent; font-size: 12.5px;
@@ -272,6 +275,33 @@ QDialog QSpinBox {{
   border: 1px solid {input_border}; border-radius: 6px; padding: 4px 8px;
   background: {input_bg}; color: {text};
 }}
+/* v3.47.3（AI 面板美化 + Ollama 引导）：统一主题观感 —— 卡片化边框、协调间距 */
+#aiPane {{ background: {bg}; }}
+#aiPane #aiStatusText {{ color: {text_soft}; font-size: 12.5px; background: transparent; }}
+#aiPane #aiThinkBtn {{ padding: 4px 10px; font-size: 12px; }}
+#aiPane #aiThinkBtn:checked {{ background: {accent_soft}; border-color: {accent}; color: {accent}; }}
+#aiPane QPushButton {{ background: {btn_bg}; border: 1px solid {btn_border}; border-radius: 7px;
+  padding: 5px 12px; color: {text}; font-size: 12.5px; }}
+#aiPane QPushButton:hover {{ background: {btn_hover_bg}; border-color: {btn_hover_border}; }}
+#aiPane QPushButton:disabled {{ background: {bg_soft}; color: {text_muted}; border-color: {sep}; }}
+#aiPane QPushButton:default {{ background: {accent}; color: #ffffff; border-color: {accent}; }}
+#aiPane #aiSendBtn {{ padding: 3px 16px; }}   /* v3.48.14：发送按钮上下留白压缩 */
+#aiPane #aiChat {{ background: {bg_soft}; border: 1px solid {border}; border-radius: 10px;
+  padding: 8px 10px; color: {text}; }}
+#aiPane #aiInput {{ background: {input_bg}; border: 1px solid {input_border}; border-radius: 8px;
+  padding: 5px 8px; color: {text}; font-size: 13px; }}
+#aiPane #aiSplit::handle {{ background: {sep}; border-radius: 3px; }}
+/* 本地 Ollama 引导框（主面板与设置页通用） */
+#aiOllamaBox {{ border: 1px solid {border}; border-radius: 9px; margin-top: 10px;
+  background: {bg_soft}; padding-top: 4px; }}
+#aiOllamaBox::title {{ subcontrol-origin: border; subcontrol-position: top left;
+  left: 12px; top: -7px; padding: 0 5px; background: {bg}; color: {accent};
+  font-size: 12px; font-weight: 600; }}
+#aiLink {{ color: {accent}; background: transparent; }}
+/* 顶栏「AI 助手」图标按钮（v3.47.5 REQ3）：扁平、低调，与左侧线性图标一致；
+   替代原文字按钮以节省空间，自身不再带强调底色 */
+#aiCornerBtn {{ border: none; background: transparent; padding: 3px; }}
+#aiCornerBtn:hover {{ background: {accent_soft}; border-radius: 6px; }}
 """
 
 SIDEBAR_QSS_TPL = """
@@ -492,6 +522,23 @@ DIALOG_QSS_TPL = """
 #historyDlg QPushButton:disabled {{
   background: {bg_soft}; color: {text_muted}; border-color: {sep};
 }}
+/* v3.47.4（REQ3）：合并版本对话框 —— 对照双栏只读 + 可编辑合并结果 */
+#mergeDlg {{ background: {bg}; }}
+#mergeDlg QLabel {{ color: {text_soft}; font-size: 12.5px; background: transparent; }}
+#mergeDlg #pageTitle {{ font-size: 16px; font-weight: 600; color: {text}; }}
+#mergeDlg #pageHint {{ color: {text_muted}; font-size: 12px; }}
+#mergeDlg #mergeViewA, #mergeDlg #mergeViewB, #mergeDlg #mergeEdit {{
+  border: 1px solid {input_border}; border-radius: 8px; padding: 8px;
+  background: {input_bg}; color: {text}; font-size: 13px;
+  font-family: 'Consolas', 'Microsoft YaHei', monospace;
+}}
+#mergeDlg #mergeEdit {{ background: {bg_soft}; }}
+#mergeDlg QPushButton {{
+  background: {btn_bg}; border: 1px solid {btn_border}; border-radius: 6px;
+  padding: 6px 14px; color: {text}; font-size: 12.5px;
+}}
+#mergeDlg QPushButton:hover {{ background: {btn_hover_bg}; border-color: {btn_hover_border}; }}
+#mergeDlg QPushButton:default {{ background: {accent}; color: #ffffff; border-color: {accent}; }}
 """
 
 

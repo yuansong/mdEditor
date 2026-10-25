@@ -140,6 +140,24 @@ def icon_redo(size: int = 20) -> QIcon:
     return QIcon(pm)
 
 
+def icon_nav_back(size: int = 20) -> QIcon:
+    """导航后退：左向双箭头（区别于撤销的弯箭头）。"""
+    pm, p = _painter(size)
+    p.drawPath(_path([(13, 6), (7, 12), (13, 18)]))
+    p.drawPath(_path([(19, 6), (13, 12), (19, 18)]))
+    p.end()
+    return QIcon(pm)
+
+
+def icon_nav_forward(size: int = 20) -> QIcon:
+    """导航前进：右向双箭头。"""
+    pm, p = _painter(size)
+    p.drawPath(_path([(11, 6), (17, 12), (11, 18)]))
+    p.drawPath(_path([(5, 6), (11, 12), (5, 18)]))
+    p.end()
+    return QIcon(pm)
+
+
 def icon_settings(size: int = 20) -> QIcon:
     """设置：齿轮（外圈齿 + 中心圆）。"""
     import math
@@ -239,6 +257,85 @@ def icon_up(size: int = 16) -> QIcon:
     pm, p = _painter(size)
     p.drawPath(_path([(12, 16), (12, 9)]))
     p.drawPath(_path([(8, 12.5), (12, 9), (16, 12.5)]))
+    p.end()
+    return QIcon(pm)
+
+
+def icon_book(size: int = 20) -> QIcon:
+    """书籍：封皮 + 书脊 + 两行书页线（线性风格，与整体图标一致）。
+
+    用于书籍目录顶层「整本书」节点。
+    """
+    pm, p = _painter(size)
+    # 封皮轮廓（略带书脊的左侧竖边）
+    p.drawPath(_path([
+        (5.5, 4), (18.5, 4), (18.5, 20), (5.5, 20),
+    ], close=True))
+    # 书脊
+    p.drawPath(_path([(8.4, 4), (8.4, 20)]))
+    # 两行书页线
+    p.drawPath(_path([(10.6, 8.5), (16.5, 8.5)]))
+    p.drawPath(_path([(10.6, 12.2), (16.5, 12.2)]))
+    p.end()
+    return QIcon(pm)
+
+
+def icon_ai(size: int = 20) -> QIcon:
+    """AI 助手：对话气泡 + 内部星芒（线性，与整体图标一致）。
+
+    v3.47.5（REQ3）：替代顶栏文字「AI 助手」按钮，以紧凑图标节省空间，
+    语义上用「气泡 + 火花」表达 AI 对话；与侧栏 / 工具条展开图标同一套线宽规范。
+    """
+    pm, p = _painter(size)
+    # 气泡主体（圆角矩形）
+    p.drawRoundedRect(QRectF(3.4, 4.4, 13.4, 11.2), 3.0, 3.0)
+    # 气泡小尾（左下指向）
+    p.drawPath(_path([(7.6, 15.6), (7.6, 19.2), (12.2, 15.6)]))
+    # 星芒（AI 火花）：围绕中心 (16.4, 8.4) 的八点星
+    cx, cy, R, r = 16.4, 8.4, 3.0, 1.15
+    star = []
+    import math
+    for k in range(8):
+        ang = math.pi * k / 4 - math.pi / 2
+        rad = R if k % 2 == 0 else r
+        star.append((cx + rad * math.cos(ang), cy + rad * math.sin(ang)))
+    p.drawPath(_path(star, close=True))
+    p.end()
+    return QIcon(pm)
+
+
+# v3.45.8（REQ2）：书籍目录状态色（绿=完好 / 红=失效 / 蓝=结构/类别）
+BOOK_COLOR_OK = "#28a745"     # 章节文件存在（状态健康）
+BOOK_COLOR_BAD = "#dc2626"    # 章节文件缺失/无效（状态异常）
+BOOK_COLOR_CAT = "#3b82f6"    # 书籍根 / 分区（结构性类别）
+
+
+def book_state_icon(color: str = BOOK_COLOR_CAT, size: int = 18) -> QIcon:
+    """书籍目录节点状态图标：彩色圆盘 + 📚 emoji，可着色区分状态/类别。
+
+    - 蓝色  BOOK_COLOR_CAT：书籍根 / 分区（结构性类别）
+    - 绿色  BOOK_COLOR_OK ：章节且对应 .md 文件存在（状态完好）
+    - 红色  BOOK_COLOR_BAD：章节但文件缺失 / 无效（状态异常）
+
+    圆盘本身即状态色信号（即便 emoji 字形不可用，颜色仍表达状态）。
+    """
+    pm = QPixmap(size, size)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    # 彩色圆盘
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor(color))
+    r = size / 2.0
+    p.drawEllipse(QPointF(r, r), r - 0.5, r - 0.5)
+    # 📚 emoji 字形（白字叠在圆盘上）
+    p.setPen(QColor("#ffffff"))
+    f = p.font()
+    f.setPixelSize(int(size * 0.6))
+    # 优先使用 Windows 彩色 emoji 字体，缺失时回退系统字体（仍显示 📚 文本）
+    f.setFamily("Segoe UI Emoji")
+    p.setFont(f)
+    p.drawText(QRectF(0, 0, size, size), Qt.AlignCenter, "\U0001F4DA")
     p.end()
     return QIcon(pm)
 

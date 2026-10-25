@@ -13,13 +13,13 @@ Python + PySide6 (QtWebEngine) 外壳 + 单文件 JS 编辑内核 `src/editor.ht
 ### 方式 1：直接运行打包产物（推荐，无需装环境）
 
 ```
-dist61\mdEditor\mdEditor.exe                 # 双击运行
-dist61\mdEditor\mdEditor.exe D:\docs\note.md # 命令行带文件打开
+dist143\mdEditor\mdEditor.exe                # 双击运行
+dist143\mdEditor\mdEditor.exe D:\docs\note.md # 命令行带文件打开
 ```
 
 - 采用 PyInstaller **onedir** 模式：整个 `mdEditor` 文件夹缺一不可，只拷 exe 无法运行。
-- `build61\` / `spec61\` 是打包中间产物，**其中的 exe 不能直接运行**，属正常现象。
-- dist61 为最近一次成功打包的产物；v3.38 批次（2026-10-01 08:00 之后的改动）**尚未打包**，`build_exe.ps1` 已指向 `dist62`。要体验最新代码请用方式 2 从源码运行。
+- `build143\` / `spec143\` 是打包中间产物，**其中的 exe 不能直接运行**，属正常现象。
+- dist143 为最近一次成功打包的产物；`build_exe.ps1` 已指向 `dist143`。要体验最新代码请用方式 2 从源码运行。
 
 ### 方式 2：从源码运行
 

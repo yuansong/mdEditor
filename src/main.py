@@ -26,6 +26,7 @@ import json
 import logging
 import logging.handlers
 import os
+import platform
 import sys
 import traceback
 
@@ -149,6 +150,24 @@ def _load_translators(app):
                     break
 
 
+def _default_app_font():
+    """跨平台默认 UI 字体（v3.47，P0 跨平台）。
+
+    - Windows：Microsoft YaHei UI（中文 UI 字体）
+    - macOS  ：PingFang SC（系统中文界面字体）
+    - 其它   ：不强制族名，交给 Qt 选用系统默认（Linux 多为 DejaVu / Noto）
+    """
+    fam = "Microsoft YaHei UI"
+    size = 9
+    if platform.system() == "Darwin":
+        fam = "PingFang SC"
+        size = 13
+    elif platform.system() != "Windows":
+        fam = ""          # 用 Qt 默认族，避免在非中文 Linux 上误指定不存在的字体
+        size = 10
+    return QFont(fam, size)
+
+
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
@@ -157,7 +176,7 @@ def main():
     if icon_path:
         app.setWindowIcon(QIcon(icon_path))  # 标题栏 / 任务栏统一图标
     app.setStyle("Fusion")
-    app.setFont(QFont("Microsoft YaHei UI", 9))
+    app.setFont(_default_app_font())
     _load_translators(app)
     app.setStyleSheet(app_qss("light"))
 
