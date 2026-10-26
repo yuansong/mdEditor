@@ -573,9 +573,10 @@ class Sidebar(QWidget):
         self.btn_files = QToolButton(tabcap, text="文件")   # v3.44.3（DESIGN01）：设计稿页签名
         self.btn_book = QToolButton(tabcap, text="书籍")     # v3.44.34（BOOK-1）+ 书籍目录页签
         self.btn_outline = QToolButton(tabcap, text="大纲")      # v3.43.0
-        # v3.48.13（BACKLINK-4）：反向链接页签
-        self.btn_backlinks = QToolButton(tabcap, text="反链")
-        for b in (self.btn_files, self.btn_book, self.btn_outline, self.btn_backlinks):
+        # v3.48.30（TAB-FIX）：顶部导航固定三项（文件/书籍/大纲）——
+        # 反链页签按钮移除（224px 侧栏挤不下四个页签，实测全部被省略成「…」）；
+        # 反链面板与数据层保留（select_tab(TAB_BACKLINKS) 仍可用，暂无入口）
+        for b in (self.btn_files, self.btn_book, self.btn_outline):
             b.setCheckable(True)
             b.setCursor(Qt.PointingHandCursor)
             b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -585,12 +586,10 @@ class Sidebar(QWidget):
         self._tabs.addButton(self.btn_files)
         self._tabs.addButton(self.btn_book)
         self._tabs.addButton(self.btn_outline)
-        self._tabs.addButton(self.btn_backlinks)
         self.btn_files.setChecked(True)
         self.btn_files.clicked.connect(lambda: self.select_tab(self.TAB_FILES))
         self.btn_book.clicked.connect(lambda: self.select_tab(self.TAB_BOOK))
         self.btn_outline.clicked.connect(lambda: self.select_tab(self.TAB_OUTLINE))
-        self.btn_backlinks.clicked.connect(lambda: self.select_tab(self.TAB_BACKLINKS))
         cap_row = QHBoxLayout()
         # HEAD-1：左右 10px 与文件列表/大纲面板基准线一致；HEAD-2 行高 40 同步
         cap_row.setContentsMargins(10, 3, 10, 3)
@@ -995,11 +994,23 @@ class Sidebar(QWidget):
         menu.addAction("在资源管理器中显示", lambda: self._win.show_in_explorer(p))
         if kind == "file":
             menu.addAction("用外部程序打开", lambda: self._win.open_external(p))
+            # v3.48.31（MENU-AI）：「AI优化」—— 对该文件整篇发起预设改写
+            # （原正文选区右键的「整篇优化」迁到此处：语义由「当前活动文档」
+            #  变为「右键所指文件」，未打开的文件先打开，就绪后再发起）。
+            ai_menu = menu.addMenu("AI优化")
+            for _label, _key in (
+                ("润色", "polish"), ("精简", "condense"), ("扩写", "expand"),
+                ("纠错", "correct"), ("翻译", "translate"), ("改语气", "tone"),
+            ):
+                ai_menu.addAction(
+                    _label,
+                    lambda k=_key, pp=p: self._win._ai_doc_action_for_path(k, pp))
             # v3.35（TPL-D）：把该文档收编为自定义模板（追加到 / 菜单与悬浮模板菜单）
             menu.addAction("设为模板…", lambda: self._win.make_template_from_file(p))
-            # v3.46（TOC-SEL）：从文件列表选择单个文件 → 仅对该文件插入/删除标题大纲目录
-            menu.addAction("插入目录", lambda: self._win.insert_toc_for_file(p))
-            menu.addAction("删除目录", lambda: self._win.remove_toc_for_file(p))
+            # v3.48.31：原「插入目录 / 删除目录」两项已从文件列表移除 ——
+            # 它们是**书籍**功能（给整本书生成 / 移除「目录」页），挂在文件
+            # 列表上会误触且常因目标文档异步未就绪而无反应；书籍入口保留在
+            # 书籍树右键菜单（插入目录 / 删除目录）。
         menu.addSeparator()
         menu.addAction("重命名", lambda: self._file_rename(p))
         menu.addAction("删除（移入回收站）", lambda: self._file_delete(p))
@@ -1399,11 +1410,18 @@ class Sidebar(QWidget):
             "QLabel{{ color:{fgc}; font-size:12px; font-family:'Microsoft YaHei';"
             " padding:0; }}".format(bg=bg, ac=ac, fgc=fgc))
         # 当前段高亮：把完整路径按 › 拆开，段名着主色
+        # v3.48.22（LINUX-FIX1）：旧模板在 .format 里遗留 {ac} 命名占位符而只传了
+        # 位置参数 → KeyError: 'ac'（真机 Wayland 悬停面包屑必崩，Windows 同样可触发）。
+        # 改为循环显式组装，颜色经 %s 传入。
         segs = self._crumb_full.split(" › ")
-        html = " <span style='color:{ac};'>›</span> ".format(ac=ac).join(
-            "<span style='color:{ac};font-weight:600;'>{}</span>".format(
-                self._esc_html(s)) if i == len(segs) - 1
-            else self._esc_html(s) for i, s in enumerate(segs))
+        parts = []
+        for i, s in enumerate(segs):
+            if i == len(segs) - 1:
+                parts.append("<span style='color:%s;font-weight:600;'>%s</span>"
+                             % (ac, self._esc_html(s)))
+            else:
+                parts.append(self._esc_html(s))
+        html = (" <span style='color:%s;'>›</span> " % ac).join(parts)
         self._crumb_hover_lbl.setText(html)
         self._crumb_hover_lbl.setTextFormat(Qt.RichText)
         self._crumb_hover.adjustSize()
@@ -1524,7 +1542,6 @@ class Sidebar(QWidget):
         self.btn_files.setChecked(tab == self.TAB_FILES)
         self.btn_book.setChecked(tab == self.TAB_BOOK)
         self.btn_outline.setChecked(tab == self.TAB_OUTLINE)
-        self.btn_backlinks.setChecked(tab == self.TAB_BACKLINKS)
         self.stack.setCurrentIndex(tab)
         if tab == self.TAB_BACKLINKS:
             # v3.48.13（BACKLINK-4）：进入反链页签即时刷新（冷扫描可能耗时，WaitCursor 兜底）
@@ -2201,6 +2218,27 @@ class Sidebar(QWidget):
         # 强制重建（内容签名未变但展开级别变了）
         self._outline_sig = None
         self.set_outline(self._last_headings)
+
+    def refresh_after_save(self, path=None):
+        """v3.48.30（FILE-SAVE）：保存后自动刷新文件列表。
+
+        保存文件所在目录与当前浏览目录一致 → 重建列表（新保存的文件立即可见、
+        按修改时间排序实时更新、当前文件高亮）；用户正浏览其他目录 → 不抢导航，
+        仅记录当前文件。手动刷新（重新进入目录）不再必要。"""
+        try:
+            if path and os.path.isfile(path):
+                path = os.path.abspath(path)
+                self._cur_file = path
+                d = os.path.dirname(path)
+                if self._cur_dir and os.path.normcase(
+                        os.path.abspath(self._cur_dir)) != os.path.normcase(
+                        os.path.abspath(d)):
+                    return   # 正浏览其他目录：不打断
+                self._cur_dir = d
+            self._refresh_files()
+            self._update_file_header()
+        except Exception:          # noqa: BLE001 刷新失败不影响保存主流程
+            pass
 
     def set_file_mode(self, mode):
         """设置文件列表显示模式：current=跟随当前文档（默认）/ blank=空白项。"""

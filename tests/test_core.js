@@ -28,6 +28,10 @@ global.document = {
   addEventListener: () => {},
 };
 global.window = global;
+// v3.48.11：editor.html 新增 window.addEventListener('mouseup'/'scroll')
+// （F2 跨块选区叠加层）—— Node 的 global 无该 API，补空实现供 IIFE 加载
+global.addEventListener = () => {};
+global.removeEventListener = () => {};
 global.NodeFilter = { SHOW_TEXT: 1, SHOW_ELEMENT: 2 };
 global.getSelection = () => ({ rangeCount: 0 });
 
@@ -65,9 +69,16 @@ eq(core.blockInfo('plain').type, 'p', 'info: paragraph');
 eq(core.blockHTML('# 你好'), '<h1>你好</h1>', 'html: h1');
 eq(core.blockHTML('**b** *i*'), '<p><strong>b</strong> <em>i</em></p>', 'html: bold+italic');
 eq(core.blockHTML('~~del~~ `c`'), '<p><del>del</del> <code>c</code></p>', 'html: del+code');
-eq(core.blockHTML('[x](https://a.b)'), '<p><a href="https://a.b" target="_blank" rel="noopener">x</a></p>', 'html: link');
+eq(core.blockHTML('[x](https://a.b)'), '<p><a href="https://a.b" title="https://a.b" target="_blank" rel="noopener">x</a></p>', 'html: link');
 eq(core.blockHTML('![alt](img.png)'), '<p><img src="img.png" alt="alt"></p>', 'html: image');
 eq(core.blockHTML('<b>&x</b>'), '<p>&lt;b&gt;&amp;x&lt;/b&gt;</p>', 'html: escaping');
+// v3.45（BOOKLINK-A）：[[Target#anchor|alias]] 解析 + 渲染 data-anchor
+eq(core.blockHTML('[[章#锚点|显示文本]]'),
+   '<p><a class="wikilink" title="章#锚点" data-target="章" data-anchor="锚点">显示文本</a></p>', 'html: wikilink with anchor');
+eq(core.blockHTML('[[章|显示文本]]'),
+   '<p><a class="wikilink" title="章" data-target="章">显示文本</a></p>', 'html: wikilink no anchor');
+eq(core.blockHTML('[[#锚点|显示文本]]'),
+   '<p><a class="wikilink" title="#锚点" data-target="" data-anchor="锚点">显示文本</a></p>', 'html: wikilink anchor only');
 eq(core.blockHTML('```py\nprint(1)\n```'), '<pre class="fence" data-lang="py"><code>print(1)\n</code></pre>', 'html: fence');
 eq(core.blockHTML('- a\n- b'), '<ul><li>a</li><li>b</li></ul>', 'html: list');
 eq(core.blockHTML('- [x] done\n- [ ] todo'), '<ul><li><input type="checkbox" checked>done</li><li><input type="checkbox">todo</li></ul>', 'html: task list');

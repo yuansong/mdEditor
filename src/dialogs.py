@@ -21,6 +21,8 @@ from config import BUILTIN_TEMPLATES, CODE_STYLES, FMTLOG_DIR, MMD_LEGACY, MMD_T
 from sidebar import GlobalSearchPanel
 from styles import THEMES, palette
 import uistyles
+from diffmerge import (TwoPaneMergeMixin, build_hunks, build_rows,
+                       build_sent_rows, esc_html)
 from ai_connection import AIConnectionForm
 
 
@@ -1960,69 +1962,46 @@ class DiffDialog(_ThemedDialog):
         if self._rows is not None:
             self._render()
 
-    # ---------- v3.38（DIFF-1）：词级配对 ----------
-    @staticmethod
-    def _esc(ln):
-        return (str(ln).replace("&", "&amp;").replace("<", "&lt;")
-                .replace(">", "&gt;").replace(" ", "&nbsp;") or "&nbsp;")
+    # ---------- 转义（v3.48.25 热修：重构补丁误删 _esc，补回并统一委托
+    # diffmerge.esc_html —— _render 十余处 self._esc 调用依赖本方法） ----------
+    def _esc(self, s):
+        return esc_html(s)
 
-    @classmethod
-    def _word_pair(cls, old_ln, new_ln, c_wdel, c_wadd):
-        """replace 配对行的词级高亮：返回 (旧行 HTML, 新行 HTML)；
-        超 WORD_MAX 或行内容一致（配对余量）返回 None 退整行着色。"""
-        old_ln, new_ln = str(old_ln), str(new_ln)
-        if len(old_ln) > cls.WORD_MAX or len(new_ln) > cls.WORD_MAX:
+    # ---------- v3.38（DIFF-1）：词级配对（v3.48.25 MERGE-CORE 起算法由
+    # 统一差异引擎 diffmerge 提供，与 MergeDialog / AIFragmentDialog 同一套） ----------
+    def _pair_html(self, text, ops, color, side):
+        """配对行按字符级 opcodes 生成词级高亮 HTML（side: "a"|"b"）；
+        ops 为 None 时返回 None（退整行着色）。"""
+        if not ops:
             return None
-        sm = difflib.SequenceMatcher(a=old_ln, b=new_ln, autojunk=False)
-        ops = sm.get_opcodes()
-        if all(t == "equal" for t, _, _, _, _ in ops):
-            return None
-
-        def _mark(s, color, new_side):
-            out = []
-            for tag, i1, i2, j1, j2 in ops:
-                a, b = (j1, j2) if new_side else (i1, i2)
-                seg = cls._esc(s[a:b])
-                out.append(f'<span style="background:{color};">{seg}</span>'
-                           if tag != "equal" else seg)
-            return "".join(out)
-
-        return _mark(old_ln, c_wdel, False), _mark(new_ln, c_wadd, True)
+        out = []
+        for tag, i1, i2, j1, j2 in ops:
+            a, b = (j1, j2) if side == "b" else (i1, i2)
+            seg = self._esc(text[a:b])
+            out.append('<span style="background:%s;">%s</span>' % (color, seg)
+                       if tag != "equal" else seg)
+        return "".join(out)
 
     def _build_rows(self, old_lines, new_lines, c_wdel, c_wadd):
-        """公共行流：[(kl, tl, hl, kr, tr, hr)]（hl/hr=词级 HTML 或 None）；
-        replace 块 del/add 行按顺序 1:1 配对做词级，余量侧退整行。"""
-        rows = []
+        """公共行流：行级差异与 replace 块 1:1 行配对由统一引擎
+        diffmerge.build_hunks + build_rows 提供，本方法只做词级 HTML 投影
+        与计数，保持 (kl, tl, hl, kr, tr, hr) 元组格式与返回值不变。"""
+        # v3.48.31：历史版本对比按**原文行**显示（不按句号人工折行 ——
+        # 用户实测要求）；精细化差异由 build_rows 内的 word_ops_deep 给出
+        rows = build_rows(build_hunks(old_lines, new_lines))
+        out = []
         add = dele = same = 0
-        sm = difflib.SequenceMatcher(a=old_lines, b=new_lines, autojunk=False)
-        for tag, i1, i2, j1, j2 in sm.get_opcodes():
-            if tag == "equal":
-                for k in range(i2 - i1):
-                    rows.append(("ctx", old_lines[i1 + k], None,
-                                 "ctx", new_lines[j1 + k], None))
-                same += i2 - i1
-            elif tag == "replace":
-                dl, al = old_lines[i1:i2], new_lines[j1:j2]
-                for k in range(max(len(dl), len(al))):
-                    lft = dl[k] if k < len(dl) else ""
-                    rgt = al[k] if k < len(al) else ""
-                    hl = hr = None
-                    if k < len(dl) and k < len(al):
-                        pair = self._word_pair(lft, rgt, c_wdel, c_wadd)
-                        if pair:
-                            hl, hr = pair
-                    rows.append(("del", lft, hl, "add", rgt, hr))
-                dele += len(dl)
-                add += len(al)
-            elif tag == "delete":
-                for k in range(i2 - i1):
-                    rows.append(("del", old_lines[i1 + k], None, "spacer", "", None))
-                dele += i2 - i1
-            else:   # insert
-                for k in range(j2 - j1):
-                    rows.append(("spacer", "", None, "add", new_lines[j1 + k], None))
-                add += j2 - j1
-        return rows, add, dele, same
+        for r in rows:
+            hl = self._pair_html(r["lt"], r["lw"], c_wdel, "a")
+            hr = self._pair_html(r["rt"], r["lw"], c_wadd, "b")
+            out.append((r["lk"], r["lt"], hl, r["rk"], r["rt"], hr))
+            if r["lk"] == "ctx":
+                same += 1
+            elif r["lk"] == "del":
+                dele += 1
+            if r["rk"] == "add":
+                add += 1
+        return out, add, dele, same
 
     def show_diff(self, title, old_text, new_text, old_label, new_label):
         self.title_lbl.setText(title)
@@ -2078,7 +2057,8 @@ class DiffDialog(_ThemedDialog):
                               f'border-bottom:1px dashed {c_sp};color:{c_ctx};">&nbsp;</div>')
                 elif kl == "del":
                     body = hl if hl else self._esc(tl)
-                    pl.append(f'<div style="background:{c_del};">{body}</div>')
+                    st_l = '' if hl else f'background:{c_del};'
+                    pl.append(f'<div style="{st_l}">{body}</div>')
                 else:
                     pl.append(f'<div style="color:{c_ctx};">{self._esc(tl)}</div>')
                 if kr == "spacer":
@@ -2086,7 +2066,8 @@ class DiffDialog(_ThemedDialog):
                               f'border-bottom:1px dashed {c_sp};color:{c_ctx};">&nbsp;</div>')
                 elif kr == "add":
                     body = hr if hr else self._esc(tr)
-                    pr.append(f'<div style="background:{c_add};">{body}</div>')
+                    st_r = '' if hr else f'background:{c_add};'
+                    pr.append(f'<div style="{st_r}">{body}</div>')
                 else:
                     pr.append(f'<div style="color:{c_ctx};">{self._esc(tr)}</div>')
             tail = f'<div style="color:{c_ctx};">… 其余 {len(rows) - self.MAX_ROWS} 行省略</div>'
@@ -2106,24 +2087,30 @@ class DiffDialog(_ThemedDialog):
                 # 各占一行；投影只取左列会丢失 add 侧内容）
                 if kl == "del" and kr == "add":
                     body = hl if hl else self._esc(tl)
-                    parts.append(f'<div style="background:{c_del};">{body}</div>')
+                    st_d = '' if hl else f'background:{c_del};'
+                    parts.append(f'<div style="{st_d}">{body}</div>')
                     body2 = hr if hr else self._esc(tr)
-                    parts.append(f'<div style="background:{c_add};">{body2}</div>')
+                    st_r2 = '' if hr else f'background:{c_add};'
+                    parts.append(f'<div style="{st_r2}">{body2}</div>')
                     continue
                 if kl == "spacer":
                     body2 = hr if hr else self._esc(tr)
-                    parts.append(f'<div style="background:{c_add};">{body2}</div>')
+                    st_r2 = '' if hr else f'background:{c_add};'
+                    parts.append(f'<div style="{st_r2}">{body2}</div>')
                     continue
                 if kr == "spacer":
                     body = hl if hl else self._esc(tl)
-                    parts.append(f'<div style="background:{c_del};">{body}</div>')
+                    st_d = '' if hl else f'background:{c_del};'
+                    parts.append(f'<div style="{st_d}">{body}</div>')
                     continue
                 if kl == "add":
                     body = hl if hl else self._esc(tl)
-                    parts.append(f'<div style="background:{c_add};">{body}</div>')
+                    st_a = '' if hl else f'background:{c_add};'
+                    parts.append(f'<div style="{st_a}">{body}</div>')
                 elif kl == "del":
                     body = hl if hl else self._esc(tl)
-                    parts.append(f'<div style="background:{c_del};">{body}</div>')
+                    st_d = '' if hl else f'background:{c_del};'
+                    parts.append(f'<div style="{st_d}">{body}</div>')
                 else:
                     parts.append(f'<div style="color:{c_ctx};">{self._esc(tl)}</div>')
             if len(rows) > self.MAX_ROWS:
@@ -2575,19 +2562,23 @@ class HistoryDialog(_ThemedDialog):
         self._apply_theme_qss(getattr(self._win, "_theme", "light"))
 
 
-class MergeDialog(_ThemedDialog):
-    """v3.48.2（F1 重构）：Beyond Compare 式三区域版本合并。
+class MergeDialog(_ThemedDialog, TwoPaneMergeMixin):
+    """v3.48.25（MERGE-CORE 重构）：Beyond Compare 式三区域版本合并。
 
-    上方左右两个对比框为行级比较视图（每差异段独占一个文档块，定位可靠）：
-    左（A=旧）差异行红底、右（B=新）差异行绿底、空白侧灰底占位、相同段无底色；
-    当前采用的侧打 ✓。交互（作用于差异段）：
-      · **双击**某差异行 → 采用该侧该行（选中多行后双击则整组采纳）；
-      · 选中若干行 → **右键「采用所选」**（按所选覆盖的差异段整组采纳）；
-      · 右键「恢复默认」→ 该段回到默认取舍（最新版本）。
-    下方合并框**默认即最新版本全文**：未裁决差异段黄底（默认取最新 B）、
-    采用左侧红底、采用右侧绿底；可直接手动编辑，采纳操作按段原位替换、
-    不影响其余手工修改。点「应用到当前文档」以合并框当前文本整段替换目标段落。
-    仅保留按钮：全部采用左/右、应用到当前文档、另存为、关闭。"""
+    差异计算 / 对比视图 / 选区合并全部由统一引擎 diffmerge 提供
+    （与版本对比 DiffDialog、AI 片段替换 AIFragmentDialog 同一套实现）。
+    v3.48.27 语义：仅对**有差异的文字**着色（左红右绿，相同文字无底色）；
+    合并入口 —— 选中文字后双击或右键「合并所选内容」（按字符级对齐原位
+    替换到下方结果框，可跨行、可反复叠加，其余不动）；右键「全部采用
+    左 / 右」整行裁决。下方合并框默认即最新版本全文：仅冲突文字黄底
+    （与对侧逐字比较，相同文字无底色），红/绿底=合并自左/右侧的内容
+    （整行被完整合并为某侧时整行着该侧色）；左/右栏选中联动浅蓝高亮、
+    三框滚动同步；可直接手动编辑，按行原位替换、不影响其余手工修改。点
+    「应用到当前文档」以合并框当前文本整段替换目标段落。
+    仅保留功能性按钮：应用到当前文档、另存为、关闭。"""
+
+    mp_all_left_text = "全部采用左(A)"
+    mp_all_right_text = "全部采用右(B)"
 
     def __init__(self, win):
         super().__init__(win)
@@ -2597,406 +2588,58 @@ class MergeDialog(_ThemedDialog):
         self.setModal(False)
         self.resize(980, 680)
         self._apply_theme_qss(getattr(win, "_theme", "light"))
-        self._a_text = ""
-        self._b_text = ""
-        self._a_label = ""
-        self._b_label = ""
-        self._segs = []
-        self._same = 0            # 相同行数（状态栏展示用）
-        self._seg_cur = []        # 各段起点游标（末位=文档尾哨兵），采纳时原位替换
-        self._press_seg = None    # 鼠标按下时所在差异段
-        self._press_sel = None    # 鼠标按下时的选区范围（多行选择）
-        self._build_ui()
-
-    def _build_ui(self):
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(14, 14, 14, 12)
-        lay.setSpacing(8)
         self.title_lbl = QLabel("", self)
         self.title_lbl.setObjectName("pageTitle")
-        lay.addWidget(self.title_lbl)
-        self.stat_lbl = QLabel("", self)
-        self.stat_lbl.setObjectName("pageHint")
-        self.stat_lbl.setWordWrap(True)
-        lay.addWidget(self.stat_lbl)
+        self._mp_build_ui(
+            top_widgets=[self.title_lbl],
+            result_hint=("合并结果（默认最新版本 · 可编辑）：仅差异文字有底色 ——"
+                         " 黄=未合并的冲突文字（相同文字无底色），红=合并自左侧（快照），"
+                         " 绿=合并自右侧（最新）。任意一框选中文字，另两框对应内容浅蓝"
+                         " 高亮（无对应内容时高亮空白占位行）、三框滚动同步。选中后双击"
+                         " 或右键「合并所选内容」仅合并所选；右键「选中采用（左/右）」把"
+                         " 所选范围替换为另一侧对应内容；右键可「全部采用左 / 右」。"))
+        self.stat_lbl = self.mp_stat      # 另存为等提示复用状态行
+        self._a_label = ""
+        self._b_label = ""
 
-        # ---- 上方：左右两个对比框（A=旧红底 / B=新绿底），行级比较视图 ----
-        self.pane_a = QTextBrowser(self)
-        self.pane_a.setObjectName("mergePaneA")
-        self.pane_a.setReadOnly(True)
-        self.pane_a.setOpenLinks(False)
-        self.pane_b = QTextBrowser(self)
-        self.pane_b.setObjectName("mergePaneB")
-        self.pane_b.setReadOnly(True)
-        self.pane_b.setOpenLinks(False)
-        # v3.48.2（F1）：事件过滤器 —— 双击采用该侧 / 右键「采用所选」
-        # v3.48.3（F1 修）：QTextBrowser 是 QAbstractScrollArea，鼠标/右键事件
-        # 实际投递给 viewport()（装在 pane 本体上收不到，表现为「双击/右键无反应」）
-        self.pane_a.viewport().installEventFilter(self)
-        self.pane_b.viewport().installEventFilter(self)
-        top = QSplitter(Qt.Horizontal, self)
-        top.setHandleWidth(6)
-        top.setChildrenCollapsible(False)
-        top.addWidget(self.pane_a)
-        top.addWidget(self.pane_b)
-        top.setStretchFactor(0, 1)
-        top.setStretchFactor(1, 1)
-        lay.addWidget(top, 3)
-
-        # ---- 下方：合并结果（默认最新版本，可编辑，差异按背景色标记）----
-        self.merge_hint = QLabel(
-            "合并结果（默认最新版本 · 可编辑）：黄底=未裁决差异（默认取最新），"
-            "红底=采用左侧，绿底=采用右侧。上方双击差异行或右键「采用所选」即可合并。",
-            self)
-        self.merge_hint.setObjectName("pageHint")
-        self.merge_hint.setWordWrap(True)
-        lay.addWidget(self.merge_hint)
-        self.pane_merge = QTextEdit(self)
-        self.pane_merge.setObjectName("mergePaneMerge")
-        self.pane_merge.setAcceptRichText(False)
-        lay.addWidget(self.pane_merge, 2)
-
-        # ---- 按钮行（v3.48.2：去掉「合并所选差异」按钮，交互收敛到双击/右键）----
-        brow = QHBoxLayout()
+    def _mp_tail_buttons(self, brow):
         brow.addStretch(1)
-        self.b_all_left = QPushButton("全部采用左(A)", self)
-        self.b_all_right = QPushButton("全部采用右(B)", self)
         self.b_apply = QPushButton("应用到当前文档", self)
         self.b_save = QPushButton("另存为…", self)
         b_close = QPushButton("关闭", self)
-        self.b_all_left.clicked.connect(lambda _=False: self._adopt("A", range(len(self._segs))))
-        self.b_all_right.clicked.connect(lambda _=False: self._adopt("B", range(len(self._segs))))
         self.b_apply.clicked.connect(self._apply)
         self.b_save.clicked.connect(self._save)
         b_close.clicked.connect(self.close)
-        for b in (self.b_all_left, self.b_all_right, self.b_apply, self.b_save, b_close):
+        for b in (self.b_apply, self.b_save, b_close):
             brow.addWidget(b)
-        lay.addLayout(brow)
 
-    # ---------- 段拆分（2-way）----------
-    @staticmethod
-    def _build_segs(a_lines, b_lines):
-        """返回 (段列表, 相同行数, 差异块数)。段：
-        · kind=equal：两版一致文本（text）。
-        · kind=diff：a / b 两侧文本与当前取舍 choice —— v3.48.2 起初始一律
-          None（未裁决）：结果框默认取最新(B)内容，B 无内容（仅旧版有的行）则排除。"""
-        sm = difflib.SequenceMatcher(a=a_lines, b=b_lines, autojunk=False)
-        segs, same, conflicts = [], 0, 0
-        for tag, i1, i2, j1, j2 in sm.get_opcodes():
-            if tag == "equal":
-                segs.append({"kind": "equal", "text": "\n".join(a_lines[i1:i2])})
-                same += i2 - i1
-            else:
-                a_txt = "\n".join(a_lines[i1:i2])
-                b_txt = "\n".join(b_lines[j1:j2])
-                segs.append({"kind": "diff", "a": a_txt, "b": b_txt,
-                             "choice": None})
-                conflicts += 1
-        return segs, same, conflicts
-
-    def _result_text(self):
-        """合并框以可编辑文本框为唯一来源；apply / save 直接读取其内容。"""
-        return self.pane_merge.toPlainText().rstrip("\n")
-
-    @staticmethod
-    def _esc_block(s):
-        return (str(s).replace("&", "&amp;").replace("<", "&lt;")
-                .replace(">", "&gt;"))
-
-    def _seg_at(self, obj, pos):
-        """把文档内位置映射到段索引（按块号收敛；v3.48.5 起仅作 anchorAt
-        失效时的回退 —— 块号与段索引在空 equal 段 / 多行段下不保证对齐）。"""
-        blk = obj.document().findBlock(pos)
-        i = blk.blockNumber() if blk.isValid() else 0
-        if i < 0:
-            i = 0
-        if i >= len(self._segs):
-            i = len(self._segs) - 1
-        return i
-
-    def _seg_from_pos(self, pane, pos):
-        """v3.48.5（SEGMAP）：viewport 坐标 → 段索引。优先 anchorAt 反查
-        该段渲染时埋下的 cmd://seg/{idx}/{side} href（与块结构无关，绝对
-        可靠）；无锚点（点在 padding 等垫底区域）时回退块号映射。"""
-        try:
-            href = pane.anchorAt(pos)
-        except Exception:
-            href = ""
-        if href and href.startswith("cmd://seg/"):
-            try:
-                return int(href[len("cmd://seg/"):].split("/")[0])
-            except (ValueError, IndexError):
-                pass
-        try:
-            return self._seg_at(pane, pane.cursorForPosition(pos).position())
-        except Exception:
-            return 0
-
-    def _render_panes(self):
-        """v3.48.2（F1 重构）：Beyond Compare 式行级比较视图 ——
-        左（A=旧）差异行红底、右（B=新）差异行绿底、空白侧灰底占位；
-        当前采用的侧打 ✓。段内换行用 <br> 折行。
-        v3.48.5（SEGMAP）：每段内容包进 <a href="cmd://seg/{idx}/{side}">，
-        点击/右键经 anchorAt 反查段索引 —— 旧的「块号=段索引」映射在
-        「空 equal 段不产块」「<br> 产块数≠段数」时必然漂移（用户实测
-        《我的中国.md》：点第三段却合并了第二段）。空 equal 段渲染
-        &nbsp; 占位，保留空行视觉。"""
-        for side, pane in (("A", self.pane_a), ("B", self.pane_b)):
-            parts = ['<div style="font-family:Microsoft YaHei,sans-serif;'
-                     'font-size:13px;line-height:1.55;">']
-            for idx, s in enumerate(self._segs):
-                href = "cmd://seg/%d/%s" % (idx, side)
-                if s["kind"] == "equal":
-                    body = (self._esc_block(s["text"]).replace("\n", "<br>")
-                            if s["text"] else "&nbsp;")
-                    parts.append(
-                        '<div style="padding:1px 8px;margin:0;'
-                        'white-space:pre-wrap;">'
-                        '<a href="%s" style="text-decoration:none;'
-                        'color:#1f2328;">%s</a></div>' % (href, body))
-                    continue
-                txt = s["a"] if side == "A" else s["b"]
-                chosen = (s["choice"] == side)
-                if txt:
-                    bg = "#ffe5e5" if side == "A" else "#e6ffec"
-                    bd = "#cf222e" if side == "A" else "#1a7f37"
-                    color = "#1f2328"
-                    style = ""
-                else:
-                    bg, bd = "#f2f4f7", "#d0d7de"
-                    txt = "（此侧无内容）"
-                    color, style = "#8c959f", "font-style:italic;"
-                mark = (' <span style="color:#1a7f37;font-weight:bold;">✓</span>'
-                        if chosen else "")
-                parts.append(
-                    '<div style="padding:2px 8px;margin:1px 0;'
-                    'border-left:3px solid %s;background:%s;'
-                    'white-space:pre-wrap;%s">'
-                    '<a href="%s" style="text-decoration:none;color:%s;">%s%s</a></div>'
-                    % (bd, bg, style, href, color,
-                       self._esc_block(txt).replace("\n", "<br>"), mark))
-            parts.append("</div>")
-            pane.setHtml("".join(parts))
-
-    def _adopt(self, side, segs):
-        """v3.48.2：把 segs 中各差异段的取舍置为 side，并按段原位替换结果框内容
-        （QTextCursor 锚点随编辑自动平移，其余段的手工修改不受影响）。"""
-        changed = []
-        for k in segs:
-            if not (0 <= k < len(self._segs)):
-                continue
-            s = self._segs[k]
-            if s["kind"] != "diff":
-                continue
-            if s["choice"] != side:
-                s["choice"] = side
-                changed.append(k)
-        if changed:
-            self._render_panes()
-            for k in changed:
-                self._replace_result_seg(k)
-            self._update_stat()
-
-    def _reset_seg(self, k):
-        """右键「恢复默认」：该段回到默认取舍（最新版本）。"""
-        if not (0 <= k < len(self._segs)):
-            return
-        s = self._segs[k]
-        if s["kind"] != "diff" or s["choice"] is None:
-            return
-        s["choice"] = None
-        self._render_panes()
-        self._replace_result_seg(k)
-        self._update_stat()
-
-    def _segs_from_selection(self, obj):
-        """当前选区覆盖到的段索引列表；无选区返回 None。
-        v3.48.5（SEGMAP）：选区两端经 cursorRect 定位后走 anchorAt 反查，
-        不再依赖块号。"""
-        cur = obj.textCursor()
-        if not cur.hasSelection():
-            return None
-        c1 = QTextCursor(cur)
-        c1.setPosition(cur.selectionStart())
-        c2 = QTextCursor(cur)
-        c2.setPosition(cur.selectionEnd())
-        lo = self._seg_from_pos(obj, obj.cursorRect(c1).center())
-        hi = self._seg_from_pos(obj, obj.cursorRect(c2).center())
-        if lo > hi:
-            lo, hi = hi, lo
-        return list(range(lo, hi + 1))
-
-    def _segs_from_event(self, obj):
-        """右键/双击目标段：有选区取选区覆盖段，否则取按下位置所在段。"""
-        sel = self._segs_from_selection(obj)
-        if sel:
-            return sel
-        return [self._press_seg] if self._press_seg is not None else []
-
-    def _ctx_menu(self, obj, side, ev):
-        """v3.48.2（F1）：对比框右键菜单 ——「采用所选」/「恢复默认」。"""
-        gpos = (ev.globalPos() if hasattr(ev, "globalPos")
-                else ev.globalPosition().toPoint())
-        menu = QMenu(self)
-        act_adopt = menu.addAction("采用所选（%s）" % ("左侧" if side == "A" else "右侧"))
-        act_reset = menu.addAction("恢复默认（采用最新）")
-        chosen = menu.exec(gpos)
-        if chosen is act_adopt:
-            self._adopt(side, self._segs_from_event(obj))
-        elif chosen is act_reset:
-            for k in self._segs_from_event(obj):
-                self._reset_seg(k)
-
-    def _update_stat(self):
-        diffs = [s for s in self._segs if s["kind"] == "diff"]
-        n = len(diffs)
-        resolved = sum(1 for s in diffs if s["choice"] is not None)
-        if n == 0:
-            self.stat_lbl.setText("两个版本内容完全一致，无需合并。")
-        else:
-            self.stat_lbl.setText(
-                f"相同 {self._same} 行 · 差异 {n} 处（已裁决 {resolved}）　—　"
-                f"双击左/右差异行采用该侧；或选中多行右键「采用所选」。")
-
-    def _replace_result_seg(self, k):
-        """按段原位替换结果框内容：红底=采用左、绿底=采用右、黄底=未裁决（默认最新）。
-        段外手工内容不受影响。QTextCursor 在插入点会被推着走（且被删区间内的
-        游标会收敛到区间起点），故编辑后按旧位置显式复位所有段游标。"""
-        if not (0 <= k < len(self._segs)) or not self._seg_cur:
-            return
-        s = self._segs[k]
-        if s["kind"] != "diff":
-            return
-        if s["choice"] == "A":
-            txt, bg = s["a"], "#ffe5e5"
-        elif s["choice"] == "B":
-            txt, bg = s["b"], "#e6ffec"
-        else:
-            txt, bg = s["b"], "#fff3cd"   # 未裁决：默认取最新(B)
-        doc = self.pane_merge.document()
-        old_pos = [c.position() for c in self._seg_cur]
-        start = old_pos[k]
-        end = old_pos[k + 1] if k + 1 < len(self._seg_cur) else doc.characterCount()
-        cur = QTextCursor(doc)
-        cur.setPosition(start)
-        cur.setPosition(end, QTextCursor.KeepAnchor)
-        if txt:
-            fmt = QTextCharFormat()
-            fmt.setBackground(QColor(bg))
-            cur.insertText(txt + "\n", fmt)
-        else:
-            cur.removeSelectedText()
-        # 复位段游标：k → start；k 之后各段 → start + 新长度 + (旧位置 - end)
-        newlen = (len(txt) + 1) if txt else 0
-        for j in range(k, len(self._seg_cur)):
-            if j == k:
-                self._seg_cur[j].setPosition(start)
-            else:
-                self._seg_cur[j].setPosition(
-                    start + newlen + max(0, old_pos[j] - end))
-
-    # ---------- 合并结果框（默认最新版本 + 按段背景色标记）----------
-    def _refresh_result(self):
-        """v3.48.2（F1 重构）：结果框初始即最新版本全文 ——
-        相同段原样（无底色）；差异段按取舍写入并标色（黄=未裁决/默认最新，
-        红=采用左，绿=采用右）。
-        v3.48.3（修「相同部分也被染色」）：不再边插边着色 —— QTextEdit 的
-        insertText 无格式参数时会**继承游标处字符格式**，彩色段之后的相同段
-        会连带染上底色。改为先用 setPlainText 写入纯文本全文，再按段区间
-        setCharFormat 精确着色，杜绝格式继承。每段记录起点游标（末位=文档尾
-        哨兵），供采纳时按段原位替换。"""
-        doc = self.pane_merge.document()
-        starts = []      # 各段起点（纯字符位置；"\n" 记 1 字符，与块结构一致）
-        colors = []      # 与 starts 对齐的底色（None=相同段不着色）
-        pos = 0
-        parts = []
-        for s in self._segs:
-            starts.append(pos)
-            if s["kind"] == "equal":
-                txt, bg = s["text"], None
-            elif s["choice"] == "A":
-                txt, bg = s["a"], "#ffe5e5"
-            elif s["choice"] == "B":
-                txt, bg = s["b"], "#e6ffec"
-            else:
-                txt, bg = s["b"], "#fff3cd"   # 未裁决：默认取最新(B)
-            colors.append(bg)
-            if txt:
-                parts.append(txt + "\n")
-                pos += len(txt) + 1
-        doc.setPlainText("".join(parts))   # 全文纯文本写入（零格式继承）
-        cur = QTextCursor(doc)
-        for i, bg in enumerate(colors):
-            if not bg:
-                continue
-            # 该段写入长度 = 下一非空段起点 - 本段起点（空段与下段同起点）
-            j = i + 1
-            while j < len(starts) and starts[j] == starts[i]:
-                j += 1
-            end = starts[j] if j < len(starts) else doc.characterCount()
-            cur.setPosition(starts[i])
-            cur.setPosition(end, QTextCursor.KeepAnchor)
-            fmt = QTextCharFormat()
-            fmt.setBackground(QColor(bg))
-            cur.setCharFormat(fmt)
-        # 段起点游标（末位哨兵 = 文档尾），随后续编辑自动平移
-        self._seg_cur = []
-        for p in starts:
-            c = QTextCursor(doc)
-            c.setPosition(min(p, doc.characterCount()))
-            self._seg_cur.append(c)
-        c = QTextCursor(doc)
-        c.movePosition(QTextCursor.End)
-        self._seg_cur.append(c)
-
-    # ---------- 事件过滤：双击采纳 / 单击空白侧清除 ----------
     def eventFilter(self, obj, ev):
-        """v3.48.2（F1）：左键双击差异行=采用该侧；右键弹「采用所选 / 恢复默认」。
-        v3.48.3：事件经 viewport() 投递（QAbstractScrollArea），obj 比对 viewport。"""
-        pa, pb = self.pane_a.viewport(), self.pane_b.viewport()
-        if obj is pa or obj is pb:
-            side = "A" if obj is pa else "B"
-            pane = self.pane_a if obj is pa else self.pane_b
-            if ev.type() == QEvent.MouseButtonPress and ev.button() == Qt.LeftButton:
-                # v3.48.5（SEGMAP）：按压位置 anchorAt 反查段索引（块号映射不可靠）
-                self._press_seg = self._seg_from_pos(pane, ev.position().toPoint())
-                sel = pane.textCursor()
-                self._press_sel = ((sel.selectionStart(), sel.selectionEnd())
-                                   if sel.hasSelection() else None)
-                return False
-            if ev.type() == QEvent.MouseButtonDblClick and ev.button() == Qt.LeftButton:
-                self._adopt(side, self._segs_from_event(pane))
-                self._press_sel = None
-                return True
-            if ev.type() == QEvent.ContextMenu:
-                self._ctx_menu(pane, side, ev)
-                return True
+        handled = self._mp_event_filter(obj, ev)
+        if handled is not None:
+            return handled
         return super().eventFilter(obj, ev)
 
     def show_merge(self, title, a_text, b_text, a_label, b_label):
         self.title_lbl.setText(title)
-        self._a_text, self._b_text = str(a_text or ""), str(b_text or "")
         self._a_label, self._b_label = a_label, b_label
-        a_lines = self._a_text.split("\n")
-        b_lines = self._b_text.split("\n")
-        self._segs, self._same, conflicts = self._build_segs(a_lines, b_lines)
-        self._render_panes()
-        self._refresh_result()
-        self._update_stat()
+        self._mp_set_labels(a_label, b_label)
+        self._mp_load(a_text, b_text,
+                      theme=getattr(self._win, "_theme", "light"))
         self.show()
         self.raise_()
         self.activateWindow()
 
     # ---------- 行为 ----------
     def _apply(self):
-        text = self._result_text()
+        text = self._mp_get_result_text()
         if self._win.apply_merged_text(text):
             self.close()
 
     def _save(self):
-        text = self._result_text()
+        text = self._mp_get_result_text()
         path, _ = QFileDialog.getSaveFileName(
-            self, "另存为合并结果", "", "Markdown 文件 (*.md);;文本文件 (*.txt);;所有文件 (*)")
+            self, "另存为合并结果", "",
+            "Markdown 文件 (*.md);;文本文件 (*.txt);;所有文件 (*)")
         if not path:
             return
         try:

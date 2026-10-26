@@ -3776,6 +3776,22 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     rebuild();
     return { ran: ED.innerHTML !== a, guard: window.__rebuildGuard() };
   };
+  /* v3.48.21（IMPERCEPT-L3/L4）：无感化 L3/L4 探针专用钩子 —— 仅暴露撤销栈长度与
+     跨块选区叠层的真实内联样式，生产路径零副作用；供 _probe_impercept_l3l4l5.py 验证。 */
+  window.__undoInfo = function () { return { u: undoStack.length, r: redoStack.length }; };
+  window.__xselPeek = function () {
+    var blocks = document.querySelectorAll('#editor .blk');
+    if (blocks.length < 2) return null;
+    var a = document.createRange();
+    try { a.selectNodeContents(blocks[0]); a.collapse(true); } catch (e) { return null; }
+    var b = document.createRange();
+    try { b.selectNodeContents(blocks[1]); b.collapse(false); } catch (e) { return null; }
+    _xselStartRng = a; _xselEndRng = b;
+    _xselDraw();
+    var rect = document.querySelector('.xsel-rect');
+    if (!rect) return null;
+    return JSON.stringify({ bg: rect.style.background, radius: rect.style.borderRadius });
+  };
   /* v3.48.21（IMPERCEPT-L3）：语义边界监听 —— 把「回车 / 失焦」这类结构性动作
      强制压栈为独立撤销步（连续打字仍走 350ms 防抖合并，符合预期）。
      1) 回车是拆块 / 新段落的结构性边界，顶层拦截避免飞快连打 + 回车被合并成一步；

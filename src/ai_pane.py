@@ -35,6 +35,7 @@ from ai_core import (AIStreamWorker, load_connection, read_api_key,
     connection_status, ai_log, save_connection, detect_ollama_models,
     resolve_ollama_model)
 from styles import palette
+from diffmerge import TwoPaneMergeMixin, line_key_md
 
 # 状态点配色（与主面板一致）
 _DOT = {"connected": "#2ecc71", "configured": "#f1c40f",
@@ -120,6 +121,7 @@ class AIPane(QWidget):
         self._stream_msg = None       # 正在流式渲染的 AI 消息（暂未定稿）
         self._streaming = False
         self._pending_transform = None   # v3.48.0（F3-c）：待挂「片段替换」的原文
+        self._pending_whole_doc = None    # v3.48.24（AI-DOC）：整篇 AI 优化的原文整篇
         # v3.48.6（AI-LAG）：Ollama 模型列表缓存 —— 旧版每次发送都同步探测
         # （urllib timeout=3s，阻塞 UI 线程），Ollama 未运行时表现为
         # 「回车后消息迟迟不出现」。30s 内复用缓存；探测失败回退上次结果。
@@ -159,7 +161,7 @@ class AIPane(QWidget):
         split = QSplitter(Qt.Vertical, self)
         split.setObjectName("aiSplit")
         split.setChildrenCollapsible(False)
-        split.setHandleWidth(6)
+        split.setHandleWidth(4)   # v3.48.23（AI-UI）：对话/输入分隔更细
 
         self._chat = QTextBrowser()
         self._chat.setObjectName("aiChat")
@@ -172,11 +174,11 @@ class AIPane(QWidget):
         bottom = QWidget()
         bl = QVBoxLayout(bottom)
         bl.setContentsMargins(0, 0, 0, 0)
-        bl.setSpacing(5)   # v3.48.14：底部区纵向间距压缩
+        bl.setSpacing(3)   # v3.48.23（AI-UI）：底部区纵向间距进一步压缩（状态/输入/发送更紧凑）
 
         # ---- 状态条：状态点 + 文本 + 「显示思考过程」开关 + 清空/连接 ----
         strow = QHBoxLayout()
-        strow.setSpacing(8)
+        strow.setSpacing(5)   # v3.48.23（AI-UI）：状态条内横向间距压缩
         self._dot = QLabel()
         self._dot.setFixedSize(11, 11)
         self._dot.setStyleSheet("border-radius:5.5px;background:%s" % _DOT["unconfigured"])
@@ -203,14 +205,6 @@ class AIPane(QWidget):
         strow.addWidget(self._status_text)
         strow.addWidget(self._think_btn)
         strow.addStretch(1)
-        # v3.48.14（AI-BATCH）：可审查的批量操作入口（全文 / 选中文本，先审后应用）
-        self._batch_btn = QPushButton("批量处理")
-        self._batch_btn.setObjectName("aiBatchBtn")
-        self._batch_btn.setToolTip(
-            "对整篇或选中内容按同一提示词逐块处理，先预览差异再决定是否应用"
-            "（应用后 Ctrl+Z 可撤销）")
-        self._batch_btn.clicked.connect(self._open_batch)
-        strow.addWidget(self._batch_btn)
         strow.addWidget(self._clear_btn)
         strow.addWidget(self._conn_btn)
         bl.addLayout(strow)
@@ -227,7 +221,7 @@ class AIPane(QWidget):
 
         # 发送行（仅「发送」；中止改由 ESC 键，见 eventFilter）
         ibrow = QHBoxLayout()
-        ibrow.setSpacing(5)   # v3.48.14
+        ibrow.setSpacing(4)   # v3.48.23（AI-UI）：发送行横向间距压缩
         ibrow.addStretch(1)
         self._send_btn = QPushButton("发送")
         self._send_btn.setObjectName("aiSendBtn")
@@ -244,22 +238,6 @@ class AIPane(QWidget):
         # 取代原先持久化的按钮；锚点点击交由 _on_anchor 按消息索引路由。
         self._chat.anchorClicked.connect(self._on_anchor)
         self._send_btn.clicked.connect(self._on_send)
-
-    def _open_batch(self):
-        """v3.48.14（AI-BATCH）：打开可审查的批量操作对话框。
-
-        先异步取当前选中文本（作为「选中文本」范围的口径），再建对话框——
-        对话框非模态，构造时选中态已确定，无需后续补同步。
-        """
-        if self._worker and self._worker.isRunning():
-            QMessageBox.information(self, "提示",
-                "请等待上一次请求完成（或按 Esc 中止生成）。")
-            return
-        self.bridge.get_selection(self._open_batch_with_sel)
-
-    def _open_batch_with_sel(self, sel):
-        dlg = AIBatchDialog(self, self.bridge, sel_text=sel or "")
-        dlg.show()
 
     def _on_think_toggled(self, on):
         """v3.48.11（AI-THINK）：「显示思考过程」开关 —— 切换后整体重渲染，
@@ -303,7 +281,8 @@ class AIPane(QWidget):
                              r=_esc(reasoning))
 
     def _bubble_html(self, role, text, time, idx=None, transform=False,
-                     pending=False, reasoning="", reasoning_only=False):
+                     pending=False, reasoning="", reasoning_only=False,
+                     whole_doc=False):
         c = _colors(getattr(getattr(self.bridge, "_mw", None), "_theme", "light")
                     if hasattr(self.bridge, "_mw") else "light")
         esc = _esc(text)
@@ -375,13 +354,20 @@ class AIPane(QWidget):
             if idx is not None:
                 links = ['<a href="cmd://copy/{idx}">复制</a>'.format(idx=idx)]
                 if not warn:
-                    links.append('<a href="cmd://insert/{idx}">插入</a>'.format(idx=idx))
                     # v3.48.0（F3-c）：改写类结果额外提供「片段替换」—— 选取回复片段
                     # 与原文对比后替换原文选区（而非整段插入）。
                     if transform:
                         links.append(
                             ' · <a href="cmd://fragreplace/{idx}">片段替换</a>'
                             .format(idx=idx))
+                    # v3.48.24（AI-DOC）：整篇 AI 优化结果额外提供「整篇应用」——
+                    # 把 AI 结果整体替换当前文档（Ctrl+Z 可撤销）。
+                    elif whole_doc:
+                        links.append(
+                            ' · <a href="cmd://apply_whole/{idx}">整篇应用</a>'
+                            .format(idx=idx))
+                    else:
+                        links.append('<a href="cmd://insert/{idx}">插入</a>'.format(idx=idx))
                 anchors = ('<div style="margin:4px 0 0 4px;font-size:12px;">'
                            '{links}</div>').format(links=" · ".join(links))
             return (
@@ -424,7 +410,8 @@ class AIPane(QWidget):
             parts.append(self._bubble_html(
                 m["role"], m["text"], m["time"], aidx,
                 m.get("transform", False), m.get("pending", False),
-                m.get("reasoning", ""), m.get("reasoning_only", False)))
+                m.get("reasoning", ""), m.get("reasoning_only", False),
+                m.get("whole_doc", False)))
         parts.append("</div>")
         self._chat.setHtml("".join(parts))
         self._chat.moveCursor(QTextCursor.End)
@@ -563,13 +550,14 @@ class AIPane(QWidget):
             return "", None
 
     def _start_request(self, messages, transform=False, orig_text="",
-                       target=""):
+                       target="", skip_ctx=False):
         """取文档上下文 → 组包 → 发起请求。
 
         bridge 未提供 get_document_context 时（测试桩 / 旧桥）直接走原路径，
-        保证向后兼容。"""
+        保证向后兼容。skip_ctx=True 时跳过自适应上下文前置（整篇 AI 优化需要
+        把完整文档作为依据，不容上下文降级摘要替代）。"""
         getter = getattr(self.bridge, "get_document_context", None)
-        if getter is None:
+        if getter is None or skip_ctx:
             self._run(messages, transform=transform, orig_text=orig_text)
             return
         state = {"done": False}
@@ -669,6 +657,11 @@ class AIPane(QWidget):
                 _m["transform"] = True
                 _m["orig_text"] = self._pending_transform
                 self._pending_transform = None
+            # v3.48.24（AI-DOC）：整篇 AI 优化结果挂「整篇应用」锚点
+            if self._pending_whole_doc:
+                _m["whole_doc"] = True
+                _m["orig_doc"] = self._pending_whole_doc
+                self._pending_whole_doc = None
             self._render_msgs.append(_m)
             self._stream_msg = None
             self._last_reply = _m["text"]
@@ -701,6 +694,7 @@ class AIPane(QWidget):
             self._stream_msg.pop("pending", None)
         self._render_msgs.append({"role": "system", "text": "已停止生成。", "time": _now()})
         self._stream_msg = None
+        self._pending_whole_doc = None
         self._render()
 
     # ---------------- 交互入口 ----------------
@@ -715,6 +709,7 @@ class AIPane(QWidget):
                 "请等待上一次请求完成（或按 Esc 中止生成）。")
             return
         self._pending_transform = None   # v3.48.0（F3-c）：普通发送不作片段替换
+        self._pending_whole_doc = None    # v3.48.24（AI-DOC）：普通发送不作整篇替换
         self._input.clear()
         self._render_msgs.append({"role": "user", "text": q, "time": _now()})
         self._render()
@@ -769,6 +764,9 @@ class AIPane(QWidget):
         elif act == "fragreplace":
             # v3.48.0（F3-c）：选取 AI 回复片段与原文对比，确认后替换原文选区
             self._fragment_replace(msg)
+        elif act == "apply_whole":
+            # v3.48.24（AI-DOC）：把 AI 整篇优化结果整体替换当前文档
+            self._apply_whole_doc(msg)
 
     def _on_clear(self):
         """v3.47.7：清空当前会话内容（带二次确认，防误删）。"""
@@ -865,6 +863,112 @@ class AIPane(QWidget):
         return ("请将下面的英文文本翻译成中文，要求准确、自然、通顺。"
                 "只输出译文本身，不要附加任何解释、引号或前后缀。")
 
+    # ================= v3.48.24（AI-DOC）：整篇 AI 优化 =================
+    def ai_action_doc(self, action_key):
+        """整篇 AI 优化入口：取当前文档全文，按预设提示词整篇改写。
+
+        与选中改写（ai_action）不同，本路径整篇送单一请求（长文档经
+        ai_context 自适应降级），返回后挂「整篇应用」锚点，确认后整体替换。"""
+        if self._worker and self._worker.isRunning():
+            QMessageBox.information(self, "提示",
+                "请等待上一次请求完成（或按 Esc 中止生成）。")
+            return
+        self.bridge.get_markdown(
+            lambda md: self._got_doc_for_action(md, action_key))
+
+    def _got_doc_for_action(self, md, action_key):
+        if not md or not md.strip():
+            self._render_msgs.append({
+                "role": "system",
+                "text": "未检测到文档内容，请先打开或编写一篇文档，再使用「整篇 AI 优化」。",
+                "time": _now()})
+            self._render()
+            return
+        prompt = self._doc_prompt(action_key, md)
+        if not prompt:
+            self._render_msgs.append({
+                "role": "system", "text": "未知的整篇优化类型。", "time": _now()})
+            self._render()
+            return
+        user_msg = prompt + "\n\n\"\"\"\n" + md + "\n\"\"\""
+        self._render_msgs.append({"role": "user", "text": user_msg, "time": _now()})
+        self._render()
+        self._history.append({"role": "user", "content": user_msg})
+        self._history = self._history[-10:]
+        # v3.48.6（AI-LAG）：渲染先行、请求延后一拍（与 ai_action 同序）
+        self._pending_whole_doc = md
+        QTimer.singleShot(
+            0, lambda: self._start_request(list(self._history), skip_ctx=True))
+
+    def _doc_prompt(self, action_key, md):
+        """整篇改写提示词：在原有意图基础上要求输出「完整的 Markdown 文档」。"""
+        # 翻译方向按整篇语种动态决定（中→英 / 英→中），需先看原文
+        if action_key == "translate":
+            cjk = sum(1 for _ch in md if "一" <= _ch <= "鿿")
+            if cjk > len(md.strip()) * 0.3:
+                return ("请将下面这篇中文 Markdown 文档整篇翻译成英文，要求准确、自然、"
+                        "符合英文表达习惯。直接输出翻译后的**整篇文档**（保留全部标题、"
+                        "列表、表格、代码块、引用、链接等结构与格式），不要附加任何解释、"
+                        "引号或前后缀。")
+            return ("请将下面这篇英文 Markdown 文档整篇翻译成中文，要求准确、自然、通顺。"
+                    "直接输出翻译后的**整篇文档**（保留全部结构与格式），不要附加任何"
+                    "解释、引号或前后缀。")
+        intents = {
+            "polish": "润色，使其更通顺、专业、自然，保持原意与信息不变",
+            "condense": "精简，去除冗余表述，保留核心信息，使其更简洁有力",
+            "expand": "扩写，补充必要的细节、背景或例证，使内容更丰富完整（不偏离原意）",
+            "correct": "纠正错别字、语法错误和标点使用问题，保持原意与风格不变",
+            "tone": "改写语气与风格，使其更得体、更贴合表达场景（在正式与口语化之间权衡），保持原意",
+        }
+        intent = intents.get(action_key)
+        if not intent:
+            return None
+        return ("请对下面这篇完整的 Markdown 文档进行%s。"
+                "直接输出优化后的**整篇文档**本身（保留全部标题、列表、表格、代码块、"
+                "引用、链接等结构与格式），不要只输出改动部分；若文档内容不需要改动，"
+                "则原样输出。不要附加任何解释、引号或前后缀。"
+                % intent)
+
+    def _apply_whole_doc(self, msg):
+        """v3.48.24（AI-DOC）：确认后整体替换当前文档（可撤销）。
+
+        复用 AIFragmentDialog 预览/编辑（左=原文整篇 / 右=AI 整篇结果），
+        确认后经 bridge.apply_whole_doc 走 window.aiApplyInsert 整体替换。"""
+        if msg.get("role") != "assistant":
+            return
+        new_text = msg.get("text", "")
+        if not new_text.strip():
+            self._render_msgs.append({
+                "role": "system",
+                "text": "整篇应用已取消：AI 结果为空。", "time": _now()})
+            self._render()
+            return
+        dlg = AIFragmentDialog(
+            self, self.bridge, orig_text=msg.get("orig_doc", ""),
+            reply_text=new_text, title="AI 整篇替换",
+            hint=("将用「下方合并结果」整体替换当前文档。左为原文整篇、右为 AI 回复，"
+                  "双击某侧差异行即采用该侧内容；合并结果可直接编辑，确认后整体替换"
+                  "文档（Ctrl+Z 可撤销）。"))
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            result = dlg.get_result_text()
+            if not result.strip():
+                self._render_msgs.append({
+                    "role": "system",
+                    "text": "整篇应用已取消：合并结果为空。", "time": _now()})
+                self._render()
+                return
+
+            def _done(ok, err):
+                self._render_msgs.append({
+                    "role": "system",
+                    "text": ("已用 AI 优化结果整体替换文档（Ctrl+Z 可撤销）。" if ok else
+                             "整篇替换失败（%s）：请重试，或复制结果后手动粘贴覆盖。"
+                             % (err or "unknown")),
+                    "time": _now()})
+                self._render()
+
+            self.bridge.apply_whole_doc(result, _done)
+
     # v3.48.0（F3-c）：片段对比替换
     def _fragment_replace(self, msg):
         if msg.get("role") != "assistant":
@@ -917,875 +1021,78 @@ class AIPane(QWidget):
 
 
 
-class AIFragmentDialog(QDialog):
-    """v3.48.11（AI-MERGE2）：「AI 片段替换」—— 参照历史版本「合并两个版本」
-    （MergeDialog）的双栏差异合并交互（用户要求按既有方式实现）。
+class AIFragmentDialog(QDialog, TwoPaneMergeMixin):
+    """v3.48.25（MERGE-CORE 重构）：AI 片段替换 / 整篇 AI 优化预览。
 
-    左栏=原文选区（A=旧，差异行红底），右栏=AI 回复（B=新，差异行绿底）；
-    行级 diff（difflib）分段渲染，每段内容包进 cmd://seg/{idx}/{side} 锚点，
-    双击 / 右键经 anchorAt 反查段索引（与文档块结构无关，杜绝块号漂移）。
-    交互（作用于差异段）：
-      · **双击**某侧差异行 → 采用该侧该段（选中多行后双击则整组采纳）；
-      · 选中若干行 → **右键「采用所选」**；
-      · 右键「恢复默认」→ 该段回到默认取舍（采用 AI 回复）。
-    下方合并结果**默认为 AI 回复全文**：未裁决差异段黄底（默认取 AI）、
-    采用左侧（原文）红底、采用右侧（AI）绿底；可直接手动编辑，采纳操作
-    按段原位替换、不影响其余手工修改。
-    「确认替换」经 bridge.replace_selection 写回（原文一致性预检 +
-    v3.48.10 全文重新定位兜底，杜绝「替换失败、没有真正修改原文」）。
-    v3.48.11：insert 模式取消（AI 插入改一键直达，见 AIPane._on_anchor），
-    本对话框只服务片段替换；「选中片段」按钮 / 送入下方交互全部移除。"""
+    差异计算 / 行级对比视图 / 逐行合并全部由统一引擎 diffmerge 提供
+    （与历史版本对比 DiffDialog、历史版本合并 MergeDialog 同一套实现）：
+    左栏=原文选区（A）、右栏=AI 回复（B），每差异行独立红 / 绿底 +
+    行内仅对**有差异的文字**着色（左红右绿，相同文字无底色）。
+    合并入口 —— 选中文字后双击或右键「合并所选内容」（按字符级对齐原位
+    替换到下方结果框，可跨行、可反复叠加，其余不动）；右键「全部采用
+    左 / 右」整行裁决。
+    行键按 Markdown 可见文本归一（diffmerge.line_key_md，v3.48.18 结论：
+    渲染态选区不含 **/`/# 标记而 AI 回复通常带标记，按可见文本比较，
+    仅格式不同的行收敛为 equal、输出统一取 B 侧保留 AI 格式）。
+    下方合并结果**默认为 AI 回复全文**：仅冲突文字黄底（与对侧逐字比较，
+    相同文字无底色），红底=合并自左侧（原文），绿底=合并自右侧（AI）；
+    左/右栏选中联动浅蓝高亮、三框滚动同步；可直接手动编辑。「确认
+    替换」后由 AIPane 经 bridge.replace_selection 写回（原文一致性预检
+    + v3.48.10 全文重新定位兜底）。
+    整篇 AI 优化（v3.48.24）经 title / hint 形参复用本对话框。"""
 
-    def __init__(self, parent, bridge, orig_text="", reply_text=""):
+    mp_key_fn = staticmethod(line_key_md)
+    mp_side_a_label = "原文选区（A）"
+    mp_side_b_label = "AI 回复（B）"
+    mp_all_left_text = "全部采用左(原文)"
+    mp_all_right_text = "全部采用右(AI)"
+
+    def __init__(self, parent, bridge, orig_text="", reply_text="",
+                 title=None, hint=None):
         super().__init__(parent)
         self.setObjectName("aiFragDlg")
-        self.setWindowTitle("AI 片段替换")
+        self.setWindowTitle(title or "AI 片段替换")
         self._bridge = bridge
-        self._orig_text = orig_text or ""
-        self._reply_text = reply_text or ""
-        self._segs = []
-        self._same = 0            # 相同行数（状态行展示用）
-        self._seg_cur = []        # 各段起点游标（末位=文档尾哨兵），采纳时原位替换
-        self._press_seg = None    # 鼠标按下时所在差异段
-        self._press_sel = None    # 鼠标按下时的选区范围（多行选择）
         self.setModal(True)
         self.resize(940, 680)
-
-        root = QVBoxLayout(self)
-        root.setContentsMargins(14, 14, 14, 12)
-        root.setSpacing(8)
-
-        tip = QLabel(
-            "将用「下方合并结果」替换你选中的原文。左为原文选区、右为 AI 回复，"
-            "双击某侧差异行即采用该侧内容；右键「采用所选 / 恢复默认」。"
-            "合并结果可直接编辑，确认后替换原文选区。", self)
+        tip = QLabel(hint or (
+            "将用「下方合并结果」替换你选中的原文。左为原文选区、右为 AI 回复。"
+            "选中文字后双击或右键「合并所选内容」，仅合并所选部分；右键可"
+            "「全部采用左 / 右」。合并结果可直接编辑，确认后替换原文选区。"), self)
         tip.setObjectName("pageHint")
         tip.setWordWrap(True)
-        root.addWidget(tip)
+        self._mp_build_ui(
+            top_widgets=[tip],
+            result_hint=("合并结果（默认 AI 回复 · 可编辑）：仅差异文字有底色 ——"
+                         " 黄=未合并的冲突文字（相同文字无底色），红=合并自左侧（原文），"
+                         " 绿=合并自右侧（AI）。任意一框选中文字，另两框对应内容浅蓝"
+                         " 高亮（无对应内容时高亮空白占位行）、三框滚动同步。选中后双击"
+                         " 或右键「合并所选内容」仅合并所选；右键「选中采用（左/右）」把"
+                         " 所选范围替换为另一侧对应内容；右键可「全部采用左 / 右」。"))
+        self._mp_load(orig_text, reply_text)
 
-        # ---- 栏目标题（与左右对比框对齐）----
-        hdr = QHBoxLayout()
-        hdr.setSpacing(6)
-        la = QLabel("原文选区（A）", self)
-        la.setObjectName("pageHint")
-        lb = QLabel("AI 回复（B）", self)
-        lb.setObjectName("pageHint")
-        hdr.addWidget(la, 1)
-        hdr.addWidget(lb, 1)
-        root.addLayout(hdr)
-
-        # ---- 上方：左右两个对比框（A=原文红底 / B=AI 绿底），行级比较视图 ----
-        self.pane_a = QTextBrowser(self)
-        self.pane_a.setObjectName("aiFragPaneA")
-        self.pane_a.setReadOnly(True)
-        self.pane_a.setOpenLinks(False)
-        self.pane_b = QTextBrowser(self)
-        self.pane_b.setObjectName("aiFragPaneB")
-        self.pane_b.setReadOnly(True)
-        self.pane_b.setOpenLinks(False)
-        # v3.48.3（F1 修）：QTextBrowser 是 QAbstractScrollArea，鼠标 / 右键
-        # 事件实际投递给 viewport()（装在 pane 本体上收不到，表现为无反应）
-        self.pane_a.viewport().installEventFilter(self)
-        self.pane_b.viewport().installEventFilter(self)
-        top = QSplitter(Qt.Horizontal, self)
-        top.setHandleWidth(6)
-        top.setChildrenCollapsible(False)
-        top.addWidget(self.pane_a)
-        top.addWidget(self.pane_b)
-        top.setStretchFactor(0, 1)
-        top.setStretchFactor(1, 1)
-        root.addWidget(top, 3)
-
-        # ---- 状态行 ----
-        self._stat = QLabel("", self)
-        self._stat.setObjectName("pageHint")
-        self._stat.setWordWrap(True)
-        root.addWidget(self._stat)
-
-        # ---- 下方：合并结果（默认 AI 回复，可编辑，差异按背景色标记）----
-        mh = QLabel(
-            "合并结果（默认 AI 回复 · 可编辑）：黄底=未裁决差异（默认取 AI），"
-            "红底=采用左侧（原文），绿底=采用右侧（AI）。", self)
-        mh.setObjectName("pageHint")
-        mh.setWordWrap(True)
-        root.addWidget(mh)
-        self.pane_merge = QTextEdit(self)
-        self.pane_merge.setObjectName("aiFragMerge")
-        self.pane_merge.setAcceptRichText(False)
-        root.addWidget(self.pane_merge, 2)
-
-        # ---- 按钮行 ----
-        brow = QHBoxLayout()
+    def _mp_tail_buttons(self, brow):
         brow.addStretch(1)
-        self.b_all_left = QPushButton("全部采用左(原文)", self)
-        self.b_all_right = QPushButton("全部采用右(AI)", self)
         b_cancel = QPushButton("取消", self)
         b_ok = QPushButton("确认替换", self)
         b_ok.setObjectName("primaryBtn")
         b_ok.setDefault(True)
-        self.b_all_left.clicked.connect(
-            lambda _=False: self._adopt("A", range(len(self._segs))))
-        self.b_all_right.clicked.connect(
-            lambda _=False: self._adopt("B", range(len(self._segs))))
         b_cancel.clicked.connect(self.reject)
         b_ok.clicked.connect(self.accept)
-        for b in (self.b_all_left, self.b_all_right, b_cancel, b_ok):
-            brow.addWidget(b)
-        root.addLayout(brow)
+        brow.addWidget(b_cancel)
+        brow.addWidget(b_ok)
 
-        self._prepare_diff()
+    def _mp_stat_extra(self):
+        if not self._mp_a.strip():
+            return "　⚠ 未捕获到原文选区：确认替换时会要求你重新选中原文。"
+        return ""
 
     def get_result_text(self):
         """确认写回所用文本（合并结果框当前内容）。"""
-        return self.pane_merge.toPlainText().rstrip("\n")
+        return self._mp_get_result_text()
 
-    # ---------- 段拆分（2-way，行级，Markdown 容错）----------
-    @staticmethod
-    def _md_key(line):
-        """行级归一键：剥离 Markdown 标记与全部空白。
-
-        v3.48.18（FRAG-MD）：渲染态选区文本不含 ** / ` / # 等标记，而 AI 回复
-        通常带标记；直接逐字 diff 会把「仅格式不同」的行全判为差异 ——
-        用户看到的是一片红绿、且默认全部取 AI 侧，等价于「整段覆盖」，
-        反复采纳还会出现重复内容。改为按可见文本比较，格式差异收敛为
-        相同的 equal 段（输出统一取 B=AI 侧，保留其 Markdown 格式）。"""
-        from mdrender import md_to_plain
-        return re.sub(r"\s+", "", md_to_plain(line or ""))
-
-    @classmethod
-    def _build_segs(cls, a_lines, b_lines):
-        """返回 (段列表, 相同行数, 差异块数)。段：
-        · kind=equal：两版**可见内容**一致（可能 Markdown 标记不同）；
-          text 取 B（AI）侧，text_a / text_b 保留两侧原文备查。
-        · kind=diff：a / b 两侧文本与当前取舍 choice —— 初始一律 None
-          （未裁决）：结果框默认取 AI 回复(B)，B 无内容（仅原文有的行）
-          则默认排除。"""
-        a_keys = [cls._md_key(l) for l in a_lines]
-        b_keys = [cls._md_key(l) for l in b_lines]
-        sm = difflib.SequenceMatcher(a=a_keys, b=b_keys, autojunk=False)
-        segs, same, conflicts = [], 0, 0
-        for tag, i1, i2, j1, j2 in sm.get_opcodes():
-            if tag == "equal":
-                segs.append({
-                    "kind": "equal",
-                    "text": "\n".join(b_lines[j1:j2]),
-                    "text_a": "\n".join(a_lines[i1:i2]),
-                    "text_b": "\n".join(b_lines[j1:j2]),
-                })
-                same += i2 - i1
-            else:
-                a_txt = "\n".join(a_lines[i1:i2])
-                b_txt = "\n".join(b_lines[j1:j2])
-                segs.append({"kind": "diff", "a": a_txt, "b": b_txt,
-                             "choice": None})
-                conflicts += 1
-        return segs, same, conflicts
-
-    def _prepare_diff(self):
-        a_lines = self._orig_text.split("\n")
-        b_lines = self._reply_text.split("\n")
-        self._segs, self._same, conflicts = self._build_segs(a_lines, b_lines)
-        self._render_panes()
-        self._refresh_result()
-        self._update_stat()
-
-    @staticmethod
-    def _esc_block(s):
-        return (str(s).replace("&", "&amp;").replace("<", "&lt;")
-                .replace(">", "&gt;"))
-
-    def _seg_at(self, obj, pos):
-        """把文档内位置映射到段索引（按块号收敛；仅作 anchorAt 失效时的
-        回退 —— 块号与段索引在空 equal 段 / 多行段下不保证对齐）。"""
-        blk = obj.document().findBlock(pos)
-        i = blk.blockNumber() if blk.isValid() else 0
-        if i < 0:
-            i = 0
-        if i >= len(self._segs):
-            i = len(self._segs) - 1
-        return i
-
-    def _seg_from_pos(self, pane, pos):
-        """viewport 坐标 → 段索引。优先 anchorAt 反查该段渲染时埋下的
-        cmd://seg/{idx}/{side} href（与块结构无关，绝对可靠）；无锚点时
-        回退块号映射。"""
-        try:
-            href = pane.anchorAt(pos)
-        except Exception:
-            href = ""
-        if href and href.startswith("cmd://seg/"):
-            try:
-                return int(href[len("cmd://seg/"):].split("/")[0])
-            except (ValueError, IndexError):
-                pass
-        try:
-            return self._seg_at(pane, pane.cursorForPosition(pos).position())
-        except Exception:
-            return 0
-
-    def _render_panes(self):
-        """Beyond Compare 式行级比较视图 —— 左（A=原文）差异行红底、
-        右（B=AI）差异行绿底、空白侧灰底占位；当前采用的侧打 ✓。
-        段内换行用 <br> 折行。每段内容包进 cmd://seg/{idx}/{side} 锚点，
-        点击 / 右键经 anchorAt 反查段索引（块号映射在「空 equal 段不产块」
-        「<br> 产块数≠段数」时必然漂移）；空 equal 段渲染 &nbsp; 占位。"""
-        for side, pane in (("A", self.pane_a), ("B", self.pane_b)):
-            parts = ['<div style="font-family:Microsoft YaHei,sans-serif;'
-                     'font-size:13px;line-height:1.55;">']
-            for idx, s in enumerate(self._segs):
-                href = "cmd://seg/%d/%s" % (idx, side)
-                if s["kind"] == "equal":
-                    body = (self._esc_block(s["text"]).replace("\n", "<br>")
-                            if s["text"] else "&nbsp;")
-                    parts.append(
-                        '<div style="padding:1px 8px;margin:0;'
-                        'white-space:pre-wrap;">'
-                        '<a href="%s" style="text-decoration:none;'
-                        'color:#1f2328;">%s</a></div>' % (href, body))
-                    continue
-                txt = s["a"] if side == "A" else s["b"]
-                chosen = (s["choice"] == side)
-                if txt:
-                    bg = "#ffe5e5" if side == "A" else "#e6ffec"
-                    bd = "#cf222e" if side == "A" else "#1a7f37"
-                    color = "#1f2328"
-                    style = ""
-                else:
-                    bg, bd = "#f2f4f7", "#d0d7de"
-                    txt = "（此侧无内容）"
-                    color, style = "#8c959f", "font-style:italic;"
-                mark = (' <span style="color:#1a7f37;font-weight:bold;">\u2713</span>'
-                        if chosen else "")
-                parts.append(
-                    '<div style="padding:2px 8px;margin:1px 0;'
-                    'border-left:3px solid %s;background:%s;'
-                    'white-space:pre-wrap;%s">'
-                    '<a href="%s" style="text-decoration:none;color:%s;">%s%s</a></div>'
-                    % (bd, bg, style, href, color,
-                       self._esc_block(txt).replace("\n", "<br>"), mark))
-            parts.append("</div>")
-            pane.setHtml("".join(parts))
-
-    def _adopt(self, side, segs):
-        """把 segs 中各差异段的取舍置为 side，并按段原位替换结果框内容
-        （QTextCursor 锚点随编辑自动平移，其余段的手工修改不受影响）。"""
-        changed = []
-        for k in segs:
-            if not (0 <= k < len(self._segs)):
-                continue
-            s = self._segs[k]
-            if s["kind"] != "diff":
-                continue
-            if s["choice"] != side:
-                s["choice"] = side
-                changed.append(k)
-        if changed:
-            self._render_panes()
-            for k in changed:
-                self._replace_result_seg(k)
-            self._update_stat()
-
-    def _reset_seg(self, k):
-        """右键「恢复默认」：该段回到默认取舍（采用 AI 回复）。"""
-        if not (0 <= k < len(self._segs)):
-            return
-        s = self._segs[k]
-        if s["kind"] != "diff" or s["choice"] is None:
-            return
-        s["choice"] = None
-        self._render_panes()
-        self._replace_result_seg(k)
-        self._update_stat()
-
-    def _segs_from_selection(self, obj):
-        """当前选区覆盖到的段索引列表；无选区返回 None。
-        选区两端经 cursorRect 定位后走 anchorAt 反查，不依赖块号。"""
-        cur = obj.textCursor()
-        if not cur.hasSelection():
-            return None
-        c1 = QTextCursor(cur)
-        c1.setPosition(cur.selectionStart())
-        c2 = QTextCursor(cur)
-        c2.setPosition(cur.selectionEnd())
-        lo = self._seg_from_pos(obj, obj.cursorRect(c1).center())
-        hi = self._seg_from_pos(obj, obj.cursorRect(c2).center())
-        if lo > hi:
-            lo, hi = hi, lo
-        return list(range(lo, hi + 1))
-
-    def _segs_from_event(self, obj):
-        """右键 / 双击目标段：有选区取选区覆盖段，否则取按下位置所在段。"""
-        sel = self._segs_from_selection(obj)
-        if sel:
-            return sel
-        return [self._press_seg] if self._press_seg is not None else []
-
-    def _ctx_menu(self, obj, side, ev):
-        """对比框右键菜单 ——「采用所选（该侧）/ 恢复默认（采用 AI）」。"""
-        gpos = (ev.globalPos() if hasattr(ev, "globalPos")
-                else ev.globalPosition().toPoint())
-        menu = QMenu(self)
-        act_adopt = menu.addAction(
-            "采用所选（%s）" % ("左侧=原文" if side == "A" else "右侧=AI"))
-        act_reset = menu.addAction("恢复默认（采用 AI）")
-        chosen = menu.exec(gpos)
-        if chosen is act_adopt:
-            self._adopt(side, self._segs_from_event(obj))
-        elif chosen is act_reset:
-            for k in self._segs_from_event(obj):
-                self._reset_seg(k)
-
-    def _update_stat(self):
-        diffs = [s for s in self._segs if s["kind"] == "diff"]
-        n = len(diffs)
-        resolved = sum(1 for s in diffs if s["choice"] is not None)
-        if n == 0:
-            txt = "原文与 AI 回复内容完全一致，无需合并。"
-        else:
-            txt = ("相同 %d 行 · 差异 %d 处（已裁决 %d）　—　"
-                   "双击左/右差异行采用该侧；或选中多行右键「采用所选」。"
-                   % (self._same, n, resolved))
-        if not self._orig_text.strip():
-            txt += ("　⚠ 未捕获到原文选区：确认替换时会要求你重新选中原文。")
-        self._stat.setText(txt)
-
-    def _replace_result_seg(self, k):
-        """按段原位替换结果框内容：红底=采用左、绿底=采用右、黄底=未裁决
-        （默认 AI）。段外手工内容不受影响。QTextCursor 在插入点会被推着走
-        （且被删区间内的游标会收敛到区间起点），故编辑后按旧位置显式复位
-        所有段游标。"""
-        if not (0 <= k < len(self._segs)) or not self._seg_cur:
-            return
-        s = self._segs[k]
-        if s["kind"] != "diff":
-            return
-        if s["choice"] == "A":
-            txt, bg = s["a"], "#ffe5e5"
-        elif s["choice"] == "B":
-            txt, bg = s["b"], "#e6ffec"
-        else:
-            txt, bg = s["b"], "#fff3cd"   # 未裁决：默认取 AI(B)
-        doc = self.pane_merge.document()
-        old_pos = [c.position() for c in self._seg_cur]
-        start = old_pos[k]
-        end = old_pos[k + 1] if k + 1 < len(self._seg_cur) else doc.characterCount()
-        cur = QTextCursor(doc)
-        cur.setPosition(start)
-        cur.setPosition(end, QTextCursor.KeepAnchor)
-        if txt:
-            fmt = QTextCharFormat()
-            fmt.setBackground(QColor(bg))
-            cur.insertText(txt + "\n", fmt)
-        else:
-            cur.removeSelectedText()
-        # 复位段游标：k → start；k 之后各段 → start + 新长度 + (旧位置 - end)
-        newlen = (len(txt) + 1) if txt else 0
-        for j in range(k, len(self._seg_cur)):
-            if j == k:
-                self._seg_cur[j].setPosition(start)
-            else:
-                self._seg_cur[j].setPosition(
-                    start + newlen + max(0, old_pos[j] - end))
-
-    # ---------- 合并结果框（默认 AI 回复 + 按段背景色标记）----------
-    def _refresh_result(self):
-        """结果框初始即 AI 回复全文 —— 相同段原样（无底色）；差异段按取舍
-        写入并标色（黄=未裁决/默认 AI，红=采用左，绿=采用右）。
-        先 setPlainText 写入纯文本全文，再按段区间 setCharFormat 精确着色，
-        杜绝 QTextEdit insertText 的格式继承染色（v3.48.3 修）。每段记录
-        起点游标（末位=文档尾哨兵），供采纳时按段原位替换。"""
-        doc = self.pane_merge.document()
-        starts = []      # 各段起点（纯字符位置）
-        colors = []      # 与 starts 对齐的底色（None=相同段不着色）
-        pos = 0
-        parts = []
-        for s in self._segs:
-            starts.append(pos)
-            if s["kind"] == "equal":
-                txt, bg = s["text"], None
-            elif s["choice"] == "A":
-                txt, bg = s["a"], "#ffe5e5"
-            elif s["choice"] == "B":
-                txt, bg = s["b"], "#e6ffec"
-            else:
-                txt, bg = s["b"], "#fff3cd"   # 未裁决：默认取 AI(B)
-            colors.append(bg)
-            if txt:
-                parts.append(txt + "\n")
-                pos += len(txt) + 1
-        doc.setPlainText("".join(parts))   # 全文纯文本写入（零格式继承）
-        cur = QTextCursor(doc)
-        for i, bg in enumerate(colors):
-            if not bg:
-                continue
-            # 该段写入长度 = 下一非空段起点 - 本段起点（空段与下段同起点）
-            j = i + 1
-            while j < len(starts) and starts[j] == starts[i]:
-                j += 1
-            end = starts[j] if j < len(starts) else doc.characterCount()
-            cur.setPosition(starts[i])
-            cur.setPosition(end, QTextCursor.KeepAnchor)
-            fmt = QTextCharFormat()
-            fmt.setBackground(QColor(bg))
-            cur.setCharFormat(fmt)
-        # 段起点游标（末位哨兵 = 文档尾），随后续编辑自动平移
-        self._seg_cur = []
-        for p in starts:
-            c = QTextCursor(doc)
-            c.setPosition(min(p, doc.characterCount()))
-            self._seg_cur.append(c)
-        c = QTextCursor(doc)
-        c.movePosition(QTextCursor.End)
-        self._seg_cur.append(c)
-
-    # ---------- 事件过滤：双击采纳 / 右键菜单 ----------
     def eventFilter(self, obj, ev):
-        """左键双击差异行=采用该侧；右键弹「采用所选 / 恢复默认」。
-        事件经 viewport() 投递（QAbstractScrollArea），obj 比对 viewport。"""
-        pa, pb = self.pane_a.viewport(), self.pane_b.viewport()
-        if obj is pa or obj is pb:
-            side = "A" if obj is pa else "B"
-            pane = self.pane_a if obj is pa else self.pane_b
-            if ev.type() == QEvent.MouseButtonPress and ev.button() == Qt.LeftButton:
-                self._press_seg = self._seg_from_pos(pane, ev.position().toPoint())
-                sel = pane.textCursor()
-                self._press_sel = ((sel.selectionStart(), sel.selectionEnd())
-                                   if sel.hasSelection() else None)
-                return False
-            if ev.type() == QEvent.MouseButtonDblClick and ev.button() == Qt.LeftButton:
-                self._adopt(side, self._segs_from_event(pane))
-                self._press_sel = None
-                return True
-            if ev.type() == QEvent.ContextMenu:
-                self._ctx_menu(pane, side, ev)
-                return True
+        handled = self._mp_event_filter(obj, ev)
+        if handled is not None:
+            return handled
         return super().eventFilter(obj, ev)
-
-
-# ================= v3.48.14（AI-BATCH）：可审查的批量操作 =================
-BATCH_MAX_BLOCKS = 60
-
-# 批量处理预设（复用右键「AI」子菜单的提示词，保证口径一致）
-_BATCH_PRESETS = [
-    ("润色（更通顺专业）", "polish"),
-    ("精简（去除冗余）", "condense"),
-    ("扩写（补充细节）", "expand"),
-    ("纠错（错别字 / 标点）", "correct"),
-    ("改语气（更得体）", "tone"),
-]
-
-# 空行分隔符（保留原分隔符文本，应用时可原样拼回，避免改动文档空行风格）
-_BATCH_SEP = re.compile(r"(\n[ \t]*\n)")
-
-
-def _batch_split_blocks(text):
-    """把 Markdown 按空行切成 [内容, 分隔符, 内容, ...]（偶数下标为内容）。
-
-    返回 (parts, candidates)：candidates = 需要送模型的内容下标。
-    跳过：围栏代码块内部（``` / ~~~，成对切换）、去空白后不足 8 字的块。
-    分隔符原样保留在奇数下标，重组时 "".join(parts) 即得新全文。
-    """
-    parts = _BATCH_SEP.split(text)
-
-    def _has_fence(body):
-        return any(l.lstrip().startswith(("```", "~~~")) for l in body.split("\n"))
-
-    candidates = []
-    in_fence = False
-    for i in range(0, len(parts), 2):
-        body = parts[i]
-        if _has_fence(body):
-            in_fence = not in_fence      # 开围栏 / 闭围栏成对切换
-            continue
-        if in_fence:
-            continue
-        if len(body.strip()) < 8:
-            continue
-        candidates.append(i)
-    return parts, candidates
-
-
-def _batch_diff_html(a, b):
-    """行级 diff → HTML（只读预览用）。删行红底 / 增行绿底，与片段替换同口径。"""
-    la, lb = a.split("\n"), b.split("\n")
-    out = []
-    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, la, lb).get_opcodes():
-        if tag == "equal":
-            for l in la[i1:i2]:
-                out.append('<div>%s</div>' % _esc(l))
-            continue
-        for l in la[i1:i2]:
-            out.append('<div style="background:#fdecea;color:#a33;">- %s</div>'
-                       % _esc(l))
-        for l in lb[j1:j2]:
-            out.append('<div style="background:#eaf7ee;color:#1d7a3a;">+ %s</div>'
-                       % _esc(l))
-    return "".join(out) or '<div style="color:#888;">（无内容）</div>'
-
-
-class AIBatchDialog(QDialog):
-    """v3.48.14（AI-BATCH，SoloMD 对标 P2-1）：可审查的 AI 批量操作。
-
-    三页栈：配置 → 执行 → 审查。执行页逐块复用 AIStreamWorker（与问答同一条
-    流式链路，可中止）；审查页只列「有变化」的块，勾选后经
-    bridge.apply_ai_insert 写回（快照压栈，Ctrl+Z 可撤销）。
-    """
-
-    def __init__(self, parent, bridge, sel_text=""):
-        super().__init__(parent)
-        self.bridge = bridge
-        self.setObjectName("aiBatchDlg")
-        self.setWindowTitle("AI 批量处理")
-        self.setModal(False)
-        self.resize(780, 620)
-
-        self._sel_text = sel_text or ""
-        self._parts = []        # 分片（偶数=内容，奇数=分隔符）
-        self._cands = []        # 待处理内容下标
-        self._items = []        # 有变化的块 [{idx, orig, new}]
-        self._cur = 0           # 已处理到 _cands 的第几个
-        self._worker = None
-        self._stopped = False
-        self._chars = 0         # 当前块已收字符数（流式进度）
-        self._same_n = 0        # 与原文相同的块数
-        self._fail_n = 0        # 失败的块数
-        self._scope_full = True
-
-        root = QVBoxLayout(self)
-        root.setContentsMargins(14, 14, 14, 12)
-        root.setSpacing(8)
-        self.stack = QStackedWidget(self)
-        root.addWidget(self.stack, 1)
-        self._build_p0()
-        self._build_p1()
-        self._build_p2()
-        self.stack.setCurrentIndex(0)
-
-    # ---------------- 页 0：配置 ----------------
-    def _build_p0(self):
-        p = QWidget(self)
-        f = QVBoxLayout(p)
-        f.setContentsMargins(16, 14, 16, 12)
-        f.setSpacing(10)
-        tip = QLabel(
-            "对整篇（或选中）内容按空行分块，逐块送同一模型处理；"
-            "结果先审查再应用，应用后 Ctrl+Z 可撤销。代码块与过短块自动跳过。", p)
-        tip.setObjectName("pageHint")
-        tip.setWordWrap(True)
-        f.addWidget(tip)
-
-        f.addWidget(QLabel("提示词（对所有块生效）", p))
-        self._prompt_box = QComboBox(p)
-        self._prompt_box.setEditable(True)
-        for label, key in _BATCH_PRESETS:
-            self._prompt_box.addItem(label, AI_PRESET_PROMPTS[key])
-        self._prompt_box.addItem("自定义指令…", "")
-        self._prompt_box.setCurrentIndex(0)
-        f.addWidget(self._prompt_box)
-
-        grp = QGroupBox("处理范围", p)
-        gl = QVBoxLayout(grp)
-        self._rb_full = QRadioButton("整篇文档", grp)
-        self._rb_sel = QRadioButton("选中文本", grp)
-        self._rb_full.setChecked(True)
-        if not self._sel_text.strip():
-            self._rb_sel.setEnabled(False)
-            self._rb_sel.setToolTip("编辑器中当前没有选中文本")
-        gl.addWidget(self._rb_full)
-        gl.addWidget(self._rb_sel)
-        f.addWidget(grp)
-
-        self._p0_info = QLabel(p)
-        self._p0_info.setObjectName("pageHint")
-        self._p0_info.setWordWrap(True)
-        f.addWidget(self._p0_info)
-        f.addStretch(1)
-
-        row = QHBoxLayout()
-        row.addStretch(1)
-        self._start_btn = QPushButton("开始处理", p)
-        self._start_btn.setDefault(True)
-        self._start_btn.clicked.connect(self._on_start)
-        cancel = QPushButton("取消", p)
-        cancel.clicked.connect(self.reject)
-        row.addWidget(self._start_btn)
-        row.addWidget(cancel)
-        f.addLayout(row)
-        self.stack.addWidget(p)
-
-    # ---------------- 页 1：执行 ----------------
-    def _build_p1(self):
-        p = QWidget(self)
-        g = QVBoxLayout(p)
-        g.setContentsMargins(16, 16, 16, 14)
-        g.setSpacing(10)
-        g.addWidget(QLabel("正在逐块处理…", p))
-        self._bar = QProgressBar(p)
-        self._bar.setRange(0, 100)
-        self._bar.setValue(0)
-        g.addWidget(self._bar)
-        self._run_info = QLabel(p)
-        self._run_info.setObjectName("pageHint")
-        self._run_info.setWordWrap(True)
-        g.addWidget(self._run_info)
-        g.addStretch(1)
-        row = QHBoxLayout()
-        row.addStretch(1)
-        self._stop_btn = QPushButton("中止", p)
-        self._stop_btn.clicked.connect(self._on_stop)
-        row.addWidget(self._stop_btn)
-        g.addLayout(row)
-        self.stack.addWidget(p)
-
-    # ---------------- 页 2：审查 ----------------
-    def _build_p2(self):
-        p = QWidget(self)
-        h = QVBoxLayout(p)
-        h.setContentsMargins(16, 14, 16, 12)
-        h.setSpacing(8)
-        self._sum = QLabel(p)
-        self._sum.setWordWrap(True)
-        h.addWidget(self._sum)
-        self._list = QListWidget(p)
-        self._list.setObjectName("aiBatchList")
-        self._list.setSelectionMode(QAbstractItemView.SingleSelection)
-        self._list.itemDoubleClicked.connect(self._preview_item)
-        h.addWidget(self._list, 1)
-        row = QHBoxLayout()
-        b_all = QPushButton("全选", p)
-        b_all.clicked.connect(lambda: self._set_all(True))
-        b_none = QPushButton("全不选", p)
-        b_none.clicked.connect(lambda: self._set_all(False))
-        b_prev = QPushButton("预览所选…", p)
-        b_prev.clicked.connect(self._preview_current)
-        row.addWidget(b_all)
-        row.addWidget(b_none)
-        row.addWidget(b_prev)
-        row.addStretch(1)
-        self._apply_btn = QPushButton("应用", p)
-        self._apply_btn.setDefault(True)
-        self._apply_btn.clicked.connect(self._do_apply)
-        b_quit = QPushButton("放弃", p)
-        b_quit.clicked.connect(self.reject)
-        row.addWidget(self._apply_btn)
-        row.addWidget(b_quit)
-        h.addLayout(row)
-        self.stack.addWidget(p)
-
-    # ---------------- 连接参数（复用面板缓存与 Ollama 解析） ----------------
-    def _conn(self):
-        pane = self.parent()
-        if pane is None or not hasattr(pane, "_connection"):
-            return "", "", ""
-        base, model, key = pane._connection()
-        cfg = load_connection(self.bridge.settings())
-        if cfg.get("provider") == "ollama" and not model:
-            inst = []
-            getter = getattr(pane, "_get_ollama_models", None)
-            if getter is not None:
-                try:
-                    inst = getter() or []
-                except Exception:
-                    inst = []
-            model = resolve_ollama_model(self.bridge.settings(), inst) or model
-        return base, model, key
-
-    def _effective_prompt(self):
-        i = self._prompt_box.currentIndex()
-        data = self._prompt_box.itemData(i)
-        if isinstance(data, str) and data.strip() \
-                and self._prompt_box.currentText() == self._prompt_box.itemText(i):
-            return data          # 未编辑的预设行 → 用预设提示词
-        return self._prompt_box.currentText().strip()
-
-    # ---------------- 开始处理 ----------------
-    def _on_start(self):
-        prompt = self._effective_prompt()
-        if not prompt:
-            QMessageBox.information(self, "提示", "请先填写提示词。")
-            return
-        base, model, key = self._conn()
-        if not base or not model:
-            QMessageBox.warning(self, "未配置连接",
-                "尚未配置可用的服务地址与模型。请点 AI 面板的「连接设置」"
-                "选择服务商并填写模型（本地 Ollama 需先安装并启动）。")
-            return
-        self._scope_full = self._rb_full.isChecked()
-        if self._scope_full:
-            self._p0_info.setText("正在读取文档全文…")
-            self.bridge.get_markdown(self._begin)
-        else:
-            self._begin(self._sel_text)
-
-    def _begin(self, text):
-        if not (text or "").strip():
-            QMessageBox.information(self, "提示", "没有可处理的内容。")
-            self.stack.setCurrentIndex(0)
-            return
-        self._parts, cands = _batch_split_blocks(text)
-        self._cands = cands[:BATCH_MAX_BLOCKS]
-        if not self._cands:
-            QMessageBox.information(self, "提示",
-                "没有找到可处理的文本块（代码块与过短块会被跳过）。")
-            self.stack.setCurrentIndex(0)
-            return
-        self._items = []
-        self._cur = 0
-        self._same_n = 0
-        self._fail_n = 0
-        self._stopped = False
-        self._bar.setRange(0, len(self._cands))
-        self._bar.setValue(0)
-        extra = ("（共 %d 块，超出 %d 上限，仅处理前 %d 块）"
-                 % (len(cands), BATCH_MAX_BLOCKS, BATCH_MAX_BLOCKS)) \
-            if len(cands) > BATCH_MAX_BLOCKS else ""
-        self._run_info.setText("共 %d 块待处理%s" % (len(self._cands), extra))
-        self.stack.setCurrentIndex(1)
-        self._start_next()
-
-    def _start_next(self):
-        if self._stopped:
-            return
-        if self._cur >= len(self._cands):
-            self._finish()
-            return
-        idx = self._cands[self._cur]
-        orig = self._parts[idx]
-        base, model, key = self._conn()
-        if not base or not model:
-            self._fail_n += len(self._cands) - self._cur
-            self._finish()
-            return
-        user_msg = (self._effective_prompt() + "\n\n\"\"\"\n"
-                    + orig.strip() + "\n\"\"\"")
-        messages = [
-            {"role": "system",
-             "content": "你是 Markdown 文档编辑助手。按用户指令处理给定的文本块，"
-                        "只输出处理后的文本本身，不要附加任何解释、引号或前后缀，"
-                        "并保持原有的 Markdown 结构。"},
-            {"role": "user", "content": user_msg},
-        ]
-        self._chars = 0
-        self._run_info.setText("第 %d/%d 块 · 正在请求…" % (
-            self._cur + 1, len(self._cands)))
-        self._worker = AIStreamWorker(base, key, model, messages)
-        self._worker.chunk.connect(self._on_chunk)
-        self._worker.done.connect(self._on_block_done)
-        self._worker.start()
-
-    def _on_chunk(self, delta):
-        self._chars += len(delta or "")
-        self._run_info.setText("第 %d/%d 块 · 已收 %d 字" % (
-            self._cur + 1, len(self._cands), self._chars))
-
-    def _on_block_done(self, ok, text):
-        self._worker = None
-        if self._stopped:
-            return
-        idx = self._cands[self._cur]
-        orig = self._parts[idx]
-        if ok and (text or "").strip():
-            new = text.strip()
-            if new != orig.strip():
-                self._items.append({"idx": idx, "orig": orig, "new": new})
-            else:
-                self._same_n += 1
-        else:
-            self._fail_n += 1
-        self._cur += 1
-        self._bar.setValue(self._cur)
-        self._start_next()
-
-    def _on_stop(self):
-        self._stopped = True
-        if self._worker is not None:
-            self._worker.cancel()
-        self._run_info.setText("已中止，正在汇总已完成的结果…")
-
-    # ---------------- 收尾：审查页 ----------------
-    def _finish(self):
-        self._list.clear()
-        n = len(self._items)
-        self._sum.setText(
-            "共 %d 块有变化（默认全部勾选）；%d 块与原文相同，%d 块失败。"
-            "双击某行可查看逐行差异，确认后只应用勾选的修改。"
-            % (n, self._same_n, self._fail_n))
-        for i, rec in enumerate(self._items):
-            o = rec["orig"].strip().replace("\n", " ")
-            nw = rec["new"].strip().replace("\n", " ")
-            if len(o) > 46:
-                o = o[:46] + "…"
-            if len(nw) > 46:
-                nw = nw[:46] + "…"
-            it = QListWidgetItem("第 %d 块\n  原：%s\n  新：%s" % (i + 1, o, nw))
-            it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
-            it.setCheckState(Qt.Checked)
-            it.setData(Qt.UserRole, i)
-            it.setToolTip("原文 %d 字 → 新文 %d 字" % (
-                len(rec["orig"]), len(rec["new"])))
-            self._list.addItem(it)
-        self._apply_btn.setText("应用采纳的 %d 处" % n)
-        self._apply_btn.setEnabled(n > 0)
-        self.stack.setCurrentIndex(2)
-
-    def _set_all(self, on):
-        st = Qt.Checked if on else Qt.Unchecked
-        for i in range(self._list.count()):
-            self._list.item(i).setCheckState(st)
-
-    def _checked_count(self):
-        return sum(1 for i in range(self._list.count())
-                   if self._list.item(i).checkState() == Qt.Checked)
-
-    def _preview_current(self):
-        it = self._list.currentItem()
-        if it is not None:
-            self._preview_item(it)
-
-    def _preview_item(self, item):
-        """只读行级差异预览（自绘，不复用带「确认替换」的 AIFragmentDialog）。"""
-        if item is None:
-            return
-        rec = self._items[item.data(Qt.UserRole)]
-        dlg = QDialog(self)
-        dlg.setObjectName("aiBatchDiff")
-        dlg.setWindowTitle("差异预览 · 第 %d 块" % (item.data(Qt.UserRole) + 1))
-        dlg.resize(860, 560)
-        lay = QVBoxLayout(dlg)
-        lay.setContentsMargins(12, 12, 12, 10)
-        lay.setSpacing(6)
-        view = QTextBrowser(dlg)
-        view.setObjectName("aiBatchDiffView")
-        view.setReadOnly(True)
-        view.setOpenLinks(False)
-        view.setHtml('<div style="font-family:Consolas,monospace;font-size:13px;'
-                     'line-height:1.55;">%s</div>'
-                     % _batch_diff_html(rec["orig"], rec["new"]))
-        lay.addWidget(view, 1)
-        row = QHBoxLayout()
-        row.addStretch(1)
-        ok = QPushButton("关闭", dlg)
-        ok.clicked.connect(dlg.accept)
-        row.addWidget(ok)
-        lay.addLayout(row)
-        dlg.exec()
-
-    # ---------------- 应用 ----------------
-    def _do_apply(self):
-        n = self._checked_count()
-        if n == 0:
-            QMessageBox.information(self, "提示", "没有采纳任何修改，未写回文档。")
-            return
-        for i in range(self._list.count()):
-            it = self._list.item(i)
-            if it.checkState() == Qt.Checked:
-                rec = self._items[it.data(Qt.UserRole)]
-                self._parts[rec["idx"]] = rec["new"]
-        new_text = "".join(self._parts)
-        if self._scope_full:
-            self.bridge.apply_ai_insert(
-                new_text,
-                msg="已应用 AI 批量处理 %d 处 · Ctrl+Z 可撤销 · Ctrl+S 保存" % n)
-        else:
-            self.bridge.replace_selection(new_text, orig_text=self._sel_text)
-        self.accept()

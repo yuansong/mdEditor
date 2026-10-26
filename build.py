@@ -42,7 +42,7 @@ ENTRY = os.path.join(SRC, "main.py")
 SEP = ";" if platform.system() == "Windows" else ":"
 
 # 运行时依赖中在函数体内懒加载、需显式声明的第三方库
-HIDDEN_IMPORTS = ["docx", "pypdf", "fpdf", "openutil", "secretstore", "trash", "mdrender"]
+HIDDEN_IMPORTS = ["docx", "pypdf", "fpdf", "openutil", "secretstore", "trash", "mdrender", "diffmerge"]
 
 
 def _pyside6_translations_dir():

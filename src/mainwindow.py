@@ -168,6 +168,59 @@ MIME_EXT["image/jpg"] = ".jpg"
 # 内嵌图片（data URL）在 Markdown 中的形态：![alt](data:image/png;base64,xxxx)
 IMG_DATA_RE = re.compile(
     r"!\[([^\]]*)\]\(\s*(data:image/([A-Za-z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+))\s*\)")
+
+
+# v3.48.30（IMG-EMBED）：换行拆断的内嵌图片行自动愈合 --------------------
+_IMG_OPEN_RE = re.compile(
+    r"^\s*!\[[^\]\n]*\]\(\s*(data:image/[A-Za-z0-9.+-]+;base64,)"
+    r"[A-Za-z0-9+/=]*\s*$")
+_B64_LINE_RE = re.compile(r"^\s*([A-Za-z0-9+/=\s]*?)\)\s*$")
+_B64_ANY_RE = re.compile(r"^\s*[A-Za-z0-9+/=]*\s*$")
+
+
+def heal_wrapped_images(text):
+    """把被换行拆断的内嵌图片 data URL 并回单行。
+
+    外部编辑器 / AI 输出常把长 base64 按 76 列换行写入 Markdown：
+    `![alt](data:image/png;base64,xxx\nyyy\nzzz)`。拆断后该行不再匹配
+    图片块正则（单行 `![..](..)`），编辑区永远显示 ![](...) 源码、图片
+    不渲染、裁剪被拒（naturalWidth=0）。此处将「内嵌图开头行 + 纯 base64
+    续行 + 以 ) 收尾」重联为一行并剥掉 base64 内部全部空白。
+    仅在行首匹配内嵌图开头且无右括号时触发，正常文档零改动。"""
+    lines = text.split("\n")
+    if len(lines) < 2:
+        return text
+    out = []
+    i, n = 0, len(lines)
+    while i < n:
+        ln = lines[i]
+        m = _IMG_OPEN_RE.match(ln)
+        if m and not ln.rstrip().endswith(")"):
+            parts = [ln.rstrip()]
+            j = i + 1
+            closed = False
+            while j < n and (j - i) <= 4096:
+                nxt = lines[j]
+                if _B64_LINE_RE.match(nxt):
+                    parts.append(nxt)
+                    closed = True
+                    j += 1
+                    break
+                if nxt.strip() and _B64_ANY_RE.match(nxt):
+                    parts.append(nxt)
+                    j += 1
+                    continue
+                break
+            if closed:
+                joined = "".join(parts)
+                k = joined.index(";base64,") + len(";base64,")
+                joined = joined[:k] + re.sub(r"\s+", "", joined[k:])
+                out.append(joined)
+                i = j
+                continue
+        out.append(ln)
+        i += 1
+    return "\n".join(out)
 from dialogs import (
     CommandPaletteDialog, FindDialog, HistoryDialog, InsertImageDialog,
     SettingsDialog, ShortcutDialog, StyleManagerDialog,
@@ -650,9 +703,10 @@ class MainWindow(QMainWindow):
         self._ai_dock = QDockWidget("AI 助手", self)
         self._ai_dock.setObjectName("aiDock")
         self._ai_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
-        # v3.47.4（REQ1）：利用「AI 与状态栏互斥」释放纵向空间，进一步加宽面板
-        # （360 → 460），对话区更舒展、整体布局更大气。
-        self._ai_dock.setMinimumWidth(460)
+        # v3.48.23（AI-UI）：面板宽度缩减 1/4（460 → 345），更紧凑；
+        # 首次展开时按新宽度定型（见 _show_ai_dock），避免沿用旧残留宽度。
+        self._ai_dock.setMinimumWidth(345)
+        self._ai_dock_width_sized = False
         self._ai_pane = ai_pane.AIPane(self._ai_bridge)
         self._ai_dock.setWidget(self._ai_pane)
         self.addDockWidget(Qt.RightDockWidgetArea, self._ai_dock)
@@ -1404,6 +1458,11 @@ class MainWindow(QMainWindow):
         """打开 AI 助手面板（统一入口：视图菜单 / 顶栏按钮 / 选中即问）。"""
         if not self._ai_dock.isVisible():
             self._ai_dock.show()
+        # v3.48.23（AI-UI）：首次展开按 345 定型（宽度已缩减 1/4），
+        # 之后尊重用户手动拖拽的宽度，不再强行重置。
+        if not getattr(self, "_ai_dock_width_sized", False):
+            self.resizeDocks([self._ai_dock], [345], Qt.Horizontal)
+            self._ai_dock_width_sized = True
         self._ai_dock.raise_()
 
     def _hide_ai_dock(self):
@@ -1480,6 +1539,66 @@ class MainWindow(QMainWindow):
             pane.ask_about_selection(sel_text)
         else:
             pane.ai_action(action_key, sel_text)
+
+    # v3.48.24（AI-DOC）：整篇 AI 优化（编辑器 / 标签右键「AI优化 → 整篇优化」）
+    def _ai_doc_action(self, action_key):
+        """整篇 AI 优化：唤起 AI 面板并对当前活动文档整篇发起预设改写。"""
+        self._show_ai_dock()
+        pane = getattr(self, "_ai_pane", None)
+        if pane is None or not hasattr(pane, "ai_action_doc"):
+            return
+        pane.ai_action_doc(action_key)
+
+    def _ai_doc_action_from_tab(self, action_key, idx):
+        """标签右键：先切到该标签（确保活动编辑器为其内容），再整篇优化。
+
+        切换后内容经异步加载，延迟一拍取活动文档全文，避免取到旧文档。"""
+        if not (0 <= idx < len(self._docs)):
+            return
+        if idx != self._cur:
+            self._tabbar.setCurrentIndex(idx)
+        QTimer.singleShot(350, lambda: self._ai_doc_action(action_key))
+
+    # v3.48.31（MENU-AI）：文件列表右键「AI优化」—— 对**该文件**整篇发起预设
+    # 改写（原正文选区右键的「整篇优化」迁到此处，语义由「当前文档」变为
+    # 「右键所指文件」，避免用户以为作用于当前打开的文档）。
+    def _ai_doc_action_for_path(self, action_key, path):
+        path = os.path.abspath(path)
+        norm = os.path.normpath(path)
+        # 已在标签页中打开 → 复用标签右键逻辑（切到该标签 → 整篇优化）
+        for i, d in enumerate(self._docs):
+            dp = d.get("path")
+            if dp and os.path.normpath(dp) == norm:
+                self._ai_doc_action_from_tab(action_key, i)
+                return
+        # 未打开 → 先打开，待「活动文档 == 目标文件」且视图就绪后再发起
+        # （open_file 为异步加载，直接执行会作用到旧文档上）
+        self._ai_doc_pending = (action_key, norm, 0)
+        self.open_file(path)
+        QTimer.singleShot(400, self._flush_ai_doc_pending)
+
+    def _flush_ai_doc_pending(self):
+        """轮询等待目标文件成为活动文档后再发起整篇优化（最多约 6s）。
+
+        open_file 走 _load_path 异步装载，大文件就绪晚于 400ms；只在
+        「活动文档路径 == 目标路径」时执行，杜绝作用到错误文档。"""
+        pend = getattr(self, "_ai_doc_pending", None)
+        if not pend:
+            return
+        key, norm, tries = pend
+        cur = ""
+        if 0 <= self._cur < len(self._docs):
+            cur = self._docs[self._cur].get("path") or ""
+        ready = bool(cur) and os.path.normpath(cur) == norm
+        if not ready and tries < 12:
+            self._ai_doc_pending = (key, norm, tries + 1)
+            QTimer.singleShot(500, self._flush_ai_doc_pending)
+            return
+        self._ai_doc_pending = None
+        if ready:
+            self._ai_doc_action(key)
+        else:
+            self.show_status("AI 优化目标文件未就绪：" + os.path.basename(norm))
 
     # ================= v3.46（SoloMD P2）：Excel/CSV 表格导入 =================
     def import_table(self):
@@ -3172,8 +3291,12 @@ class MainWindow(QMainWindow):
         elif doc_mode != self._mode:
             self._set_mode(doc_mode, force=True)
         else:
-            self._js_active("window.setSourceMode(%s)"
-                            % ("true" if doc_mode == "src" else "false"))
+            # v3.48.22（LINUX-FIX2）：视图未加载完成时 window.setSourceMode 尚未定义，
+            # 直接 runJavaScript 会报 "is not a function"（Linux 真机启动日志实测）。
+            # 与 1569/6018/6034 各点同口径：未加载时跳过，_on_loaded 会按 st["src"] 重新下发。
+            if self._vstate["edit"]["loaded"]:
+                self._js_active("window.setSourceMode(%s)"
+                                % ("true" if doc_mode == "src" else "false"))
             self._dual = False
             self._update_mode_button()
         self._dirty = bool(doc.get("dirty"))   # v3.38（TAB-1）：恢复该文档自己的修改标记
@@ -3343,6 +3466,8 @@ class MainWindow(QMainWindow):
         self._remember_last_session()            # v3.38（OUT-5）
         self._refresh_tab_texts()
         self._update_title()
+        # v3.48.30（FILE-SAVE）：另存为后自动刷新侧栏文件列表
+        self._sidebar.refresh_after_save(path)
         return True
 
     def _perform_batch_close(self, idxs, discard_unnamed=False):
@@ -3460,6 +3585,8 @@ class MainWindow(QMainWindow):
         if idx == self._cur:
             self._dirty = False
         self._refresh_tab_texts()
+        # v3.48.30（FILE-SAVE）：保存后自动刷新侧栏文件列表
+        self._sidebar.refresh_after_save(doc["path"])
         return True
 
     def _clear_tab_multi(self):
@@ -3582,6 +3709,16 @@ class MainWindow(QMainWindow):
         a = m.addAction("复制所在目录")
         a.setEnabled(has_path)
         a.triggered.connect(lambda: self._copy_to_clip(os.path.dirname(doc.get("path") or ""), "所在目录"))
+        # v3.48.24（AI-DOC）：标签右键「整篇 AI 优化」—— 先切到该标签再整篇优化
+        m.addSeparator()
+        ai_menu = m.addMenu("AI优化")
+        for _label, _key in (
+            ("润色", "polish"), ("精简", "condense"), ("扩写", "expand"),
+            ("纠错", "correct"), ("翻译", "translate"), ("改语气", "tone"),
+        ):
+            ai_menu.addAction(
+                _label,
+                lambda k=_key, i=idx: self._ai_doc_action_from_tab(k, i))
         m.exec(self._tabbar.mapToGlobal(pos))
 
     def _copy_to_clip(self, text, what):
@@ -3721,6 +3858,10 @@ class MainWindow(QMainWindow):
         if 0 <= self._cur < len(self._docs):
             self._dirty = bool(self._docs[self._cur].get("dirty"))
         self._refresh_tab_texts()
+        # v3.48.30（FILE-SAVE）：全部保存后自动刷新侧栏文件列表
+        if n:
+            cur_path = self._docs[self._cur].get("path") if 0 <= self._cur < len(self._docs) else None
+            self._sidebar.refresh_after_save(cur_path)
         self._update_title()
         msg = f"已保存 {n} 个文档" if n else "没有需要保存的修改"
         if skipped:
@@ -3755,19 +3896,21 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _read_file(path):
-        """读文件：BOM → UTF-8 → GBK 自动回退，避免中文乱码/打不开。"""
+        """读文件：BOM → UTF-8 → GBK 自动回退，避免中文乱码/打不开。
+        v3.48.30（IMG-EMBED）：读入后自动愈合被换行拆断的内嵌图片 data URL
+        （外部编辑器 / AI 按 76 列换行 base64 会导致图片永远显示源码不渲染）。"""
         with open(path, "rb") as f:
             raw = f.read()
         if raw.startswith(b"\xef\xbb\xbf"):
-            return raw.decode("utf-8-sig", errors="replace")
+            return heal_wrapped_images(raw.decode("utf-8-sig", errors="replace"))
         try:
-            return raw.decode("utf-8")
+            return heal_wrapped_images(raw.decode("utf-8"))
         except UnicodeDecodeError:
             pass
         try:
-            return raw.decode("gbk")
+            return heal_wrapped_images(raw.decode("gbk"))
         except UnicodeDecodeError:
-            return raw.decode("utf-8", errors="replace")
+            return heal_wrapped_images(raw.decode("utf-8", errors="replace"))
 
     def _write_text(self, path, text):
         """v3.29d（B2）：按打开时识别的原编码写盘 —— GBK 文件保存后仍是 GBK、
@@ -4720,6 +4863,8 @@ class MainWindow(QMainWindow):
                 self._refresh_tab_texts()
                 self._update_save_cell()   # v3.40（UI-R7）：✓ 已保存（静默）
                 self.show_status(f"已保存 · {self.file_path}")
+                # v3.48.30（FILE-SAVE）：保存后自动刷新侧栏文件列表
+                self._sidebar.refresh_after_save(self.file_path)
                 self.refresh_wiki()  # v3.44.37（BACKLINK-3）：保存后重建双链索引与反向链接
                 self.refresh_backlinks()  # v3.48.13（BACKLINK-4）：反链页可见时同步刷新
                 # v3.47.1（BOOK-TOC）：若保存的恰是书籍 SUMMARY.md → 同步目录页
@@ -7276,6 +7421,9 @@ class MainWindow(QMainWindow):
                 ("选中提问", "select"),
             ):
                 ai_menu.addAction(_label, lambda k=_key: self._ai_ctx_action(k))
+            # v3.48.31（MENU-AI）：「整篇优化」子菜单已从正文选区右键移除 ——
+            # 选区右键语义是「对所选文字操作」，整篇级入口迁到文件列表右键
+            # 「AI优化」（见 _ai_doc_action_for_path）。
             menu.addSeparator()
         if not readonly:
             menu.addAction("撤销", lambda: page.triggerAction(QWebEnginePage.Undo))
@@ -7483,18 +7631,27 @@ class AIBridge(QObject):
 
     # v3.47.8（AI-PREVIEW）：确认后把合并后全文写回编辑区（与版本合并一致：
     # 经 _push_text 落盘前写入并置脏，不覆盖磁盘；会重置该视图内部撤销栈）
-    def apply_ai_insert(self, text, msg=None):
-        # v3.48.8（AI-UNDO）：改走 aiApplyInsert —— 旧版 _push_text→setMarkdown
-        # 会清空编辑器撤销栈，插入后 Ctrl+Z 无效；新路径把插入前快照压栈，
-        # Ctrl+Z 撤销插入、重做恢复。
+    def apply_whole_doc(self, text, callback=None):
+        """v3.48.24（AI-DOC）：整篇替换当前文档（可撤销）。
+
+        经 window.aiApplyInsert（快照压栈，Ctrl+Z 撤销插入、重做恢复）；
+        返回 'ok' 表示成功。源码/双栏视图无快照栈，走 _push_text 原路径。"""
+        def _cb(v):
+            ok, err = False, "unknown"
+            if isinstance(v, str):
+                ok = (v == "ok")
+                err = "" if ok else v
+            if callback:
+                callback(ok, err)
         if self._dual:
             self._mw._push_text(text)   # 双栏源码视图仍走原路径（源码态无快照栈）
-        else:
-            self._mw._js_view(self._mw._view, f"window.aiApplyInsert({js(text)})")
-        self._mw._dirty = True
-        self._mw._update_title()
-        self._mw.show_status(
-            msg or "已插入 AI 回复到文档 · Ctrl+Z 可撤销 · Ctrl+S 保存")
+            self._mw._dirty = True
+            self._mw._update_title()
+            self._mw.show_status("已用 AI 优化结果整体替换文档 · Ctrl+Z 可撤销 · Ctrl+S 保存")
+            if callback:
+                callback(True, "")
+            return
+        self._mw._js_view(self._mw._view, f"window.aiApplyInsert({js(text)})", _cb)
 
     # v3.47.2（SoloMD 对标）：主面板「连接设置」按钮 → 打开独立连接面板
     def open_connection(self):
