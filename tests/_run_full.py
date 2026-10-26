@@ -170,7 +170,9 @@ for m in ("m29a", "m29b", "m30a", "m30b", "m31", "m33", "m34", "m35", "m39",
           # （expand_diff = 引擎单测、probe_expand_merge = M1~M9 合并 23 项、
           #  probe_edge_insert = T1~T5 贴边插入合并、probe_fragfail = 失败路径）
           "probe_fragfail", "expand_diff", "probe_expand_merge",
-          "probe_edge_insert"):
+          "probe_edge_insert",
+          # v3.48.33（AI-ANCHOR / HINT-ONCE）：位置锚点替换 24 项 + 引导提示一次性 15 项
+          "probe_frag_anchor", "probe_hint_once"):
     try:
         subprocess.run([VENV, "_runner.py", PROBE_SCRIPT.get(m, "_%s.py" % m)],
                        cwd=HERE, capture_output=True, text=True, timeout=SUB_TIMEOUT)

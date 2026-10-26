@@ -7508,6 +7508,99 @@ class AIBridge(QObject):
         self._mw._js_active('window.aiSelText()',
                             lambda v: callback(v if isinstance(v, str) else ''))
 
+    # ---- v3.48.33（AI-ANCHOR）：片段替换「位置锚点」 ----
+    def _doc_identity(self):
+        """当前活动文档标识 (index, path)：识别 AI 往返期间是否切了文档。"""
+        mw = self._mw
+        try:
+            cur = int(mw._cur)
+        except (AttributeError, TypeError, ValueError):
+            return -1, ""
+        try:
+            doc = mw._docs[cur] if 0 <= cur < len(mw._docs) else {}
+            return cur, str(doc.get("path") or "")
+        except (AttributeError, IndexError, TypeError):
+            return cur, ""
+
+    def get_fragment_anchor(self, callback):
+        """生成时记录「原文 + 位置」，供稍后精确写回。
+
+        JS 侧 window.aiSelSnapshot() 返回 {ok, mode, bi/bj, s/e, text,
+        blkA/blkB, blkCount, docGen}；这里补上文档标识（标签页下标 + 路径），
+        回调始终收到 dict（失败为 {} 或 {"ok": False, ...}），不抛异常。"""
+        def _cb(v):
+            anchor = {}
+            if isinstance(v, str) and v.strip():
+                try:
+                    import json as _json
+                    parsed = _json.loads(v)
+                    if isinstance(parsed, dict):
+                        anchor = parsed
+                except ValueError:
+                    anchor = {}
+            idx, path = self._doc_identity()
+            anchor.setdefault("docIndex", idx)
+            anchor.setdefault("docPath", path)
+            if callback:
+                callback(anchor)
+
+        self._mw._js_active("window.aiSelSnapshot()", _cb)
+
+    def replace_at_anchor(self, text, anchor, callback=None):
+        """按生成时记录的位置精确写回；不做全文重新定位。
+
+        callback(ok, code, detail)：code 为 JS 错误码
+        （no-anchor / mode-changed / doc-changed / block-moved /
+         block-changed / text-mismatch / stale-dom / bad-offset /
+         insert-failed / empty），detail 为诊断信息 dict。"""
+        if not isinstance(anchor, dict) or not anchor.get("v"):
+            if callback:
+                callback(False, "no-anchor", {"reason": "empty-anchor"})
+            return
+
+        # 文档身份前置校验：换标签页 / 换文件时不必再进 JS
+        idx, path = self._doc_identity()
+        a_path = str(anchor.get("docPath") or "")
+        a_idx = anchor.get("docIndex")
+        if a_path and path and a_path != path:
+            if callback:
+                callback(False, "doc-changed",
+                         {"want": a_path, "now": path})
+            return
+        if (not a_path and not path and a_idx is not None
+                and int(a_idx) != idx):
+            if callback:
+                callback(False, "doc-changed",
+                         {"want": a_idx, "now": idx})
+            return
+
+        def _cb(v):
+            ok, code = False, "unknown"
+            info = {}
+            if isinstance(v, str) and v.strip():
+                try:
+                    import json as _json
+                    d = _json.loads(v)
+                    if isinstance(d, dict):
+                        ok = bool(d.get("ok"))
+                        code = str(d.get("code") or d.get("err")
+                                   or ("ok" if ok else "unknown"))
+                        info = d
+                except ValueError:
+                    code = "bad-json"
+            if callback:
+                callback(ok, code, info)
+
+        try:
+            import json as _json
+            payload = _json.dumps(anchor, ensure_ascii=False)
+        except (TypeError, ValueError):
+            if callback:
+                callback(False, "no-anchor", {"reason": "unserializable"})
+            return
+        self._mw._js_active(
+            "window.aiReplaceAnchor(" + js(payload) + ", " + js(text) + ")", _cb)
+
     def replace_selection(self, text, callback=None, orig_text=""):
         """v3.48.3（AI-FIX）：aiReplaceSel 返回 JSON {ok, err, hosts, recovered}。
         v3.48.5（AI-REDESIGN）：带 orig_text（发起改写时的原文快照）—— JS 侧

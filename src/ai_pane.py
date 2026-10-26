@@ -121,6 +121,7 @@ class AIPane(QWidget):
         self._stream_msg = None       # 正在流式渲染的 AI 消息（暂未定稿）
         self._streaming = False
         self._pending_transform = None   # v3.48.0（F3-c）：待挂「片段替换」的原文
+        self._pending_anchor = None      # v3.48.33（AI-ANCHOR）：原文位置锚点
         self._pending_whole_doc = None    # v3.48.24（AI-DOC）：整篇 AI 优化的原文整篇
         # v3.48.6（AI-LAG）：Ollama 模型列表缓存 —— 旧版每次发送都同步探测
         # （urllib timeout=3s，阻塞 UI 线程），Ollama 未运行时表现为
@@ -357,9 +358,14 @@ class AIPane(QWidget):
                     # v3.48.0（F3-c）：改写类结果额外提供「片段替换」—— 选取回复片段
                     # 与原文对比后替换原文选区（而非整段插入）。
                     if transform:
+                        # v3.48.33（AI-ANCHOR）：改写类结果同时给「插入」——
+                        # 片段替换失败（原文位置已变）时，这是既定回退路径，
+                        # 入口必须真实存在。
                         links.append(
                             ' · <a href="cmd://fragreplace/{idx}">片段替换</a>'
                             .format(idx=idx))
+                        links.append('<a href="cmd://insert/{idx}">插入</a>'
+                                     .format(idx=idx))
                     # v3.48.24（AI-DOC）：整篇 AI 优化结果额外提供「整篇应用」——
                     # 把 AI 结果整体替换当前文档（Ctrl+Z 可撤销）。
                     elif whole_doc:
@@ -440,7 +446,8 @@ class AIPane(QWidget):
             return self._ollama_cache
         return models
 
-    def _run(self, messages, transform=False, orig_text="", ctx=""):
+    def _run(self, messages, transform=False, orig_text="", ctx="",
+             orig_anchor=None):
         """发起一次流式请求。
 
         v3.48.0（F3-c）：transform=True 时把 orig_text 暂存到 _pending_transform，
@@ -448,6 +455,8 @@ class AIPane(QWidget):
         v3.48.18（AI-CTX）：ctx 为自适应裁剪后的文档上下文，作为 system 消息
         置于对话之前（不进 _history，避免多轮重复膨胀）。"""
         self._pending_transform = orig_text if transform else None
+        # v3.48.33（AI-ANCHOR）：位置锚点与原文同批暂存，定稿时挂到消息上
+        self._pending_anchor = orig_anchor if transform else None
         if self._worker and self._worker.isRunning():
             QMessageBox.information(self, "提示",
                 "请等待上一次请求完成（或按 Esc 中止生成）。")
@@ -550,7 +559,7 @@ class AIPane(QWidget):
             return "", None
 
     def _start_request(self, messages, transform=False, orig_text="",
-                       target="", skip_ctx=False):
+                       target="", skip_ctx=False, orig_anchor=None):
         """取文档上下文 → 组包 → 发起请求。
 
         bridge 未提供 get_document_context 时（测试桩 / 旧桥）直接走原路径，
@@ -558,7 +567,8 @@ class AIPane(QWidget):
         把完整文档作为依据，不容上下文降级摘要替代）。"""
         getter = getattr(self.bridge, "get_document_context", None)
         if getter is None or skip_ctx:
-            self._run(messages, transform=transform, orig_text=orig_text)
+            self._run(messages, transform=transform, orig_text=orig_text,
+                      orig_anchor=orig_anchor)
             return
         state = {"done": False}
 
@@ -568,12 +578,13 @@ class AIPane(QWidget):
             state["done"] = True
             ctx, _meta = self._compose_ctx(info, target)
             self._run(messages, transform=transform, orig_text=orig_text,
-                      ctx=ctx)
+                      ctx=ctx, orig_anchor=orig_anchor)
 
         try:
             getter(_cb)
         except Exception:          # noqa: BLE001
-            self._run(messages, transform=transform, orig_text=orig_text)
+            self._run(messages, transform=transform, orig_text=orig_text,
+                      orig_anchor=orig_anchor)
 
     def _on_tick(self):
         """v3.48.10（AI-PROGRESS）：500ms 刷新进度气泡（点点点动画 + 统计）。"""
@@ -656,7 +667,10 @@ class AIPane(QWidget):
             if self._pending_transform:
                 _m["transform"] = True
                 _m["orig_text"] = self._pending_transform
+                if self._pending_anchor:
+                    _m["orig_anchor"] = self._pending_anchor
                 self._pending_transform = None
+                self._pending_anchor = None
             # v3.48.24（AI-DOC）：整篇 AI 优化结果挂「整篇应用」锚点
             if self._pending_whole_doc:
                 _m["whole_doc"] = True
@@ -695,6 +709,7 @@ class AIPane(QWidget):
         self._render_msgs.append({"role": "system", "text": "已停止生成。", "time": _now()})
         self._stream_msg = None
         self._pending_whole_doc = None
+        self._pending_anchor = None
         self._render()
 
     # ---------------- 交互入口 ----------------
@@ -709,6 +724,7 @@ class AIPane(QWidget):
                 "请等待上一次请求完成（或按 Esc 中止生成）。")
             return
         self._pending_transform = None   # v3.48.0（F3-c）：普通发送不作片段替换
+        self._pending_anchor = None      # v3.48.33（AI-ANCHOR）
         self._pending_whole_doc = None    # v3.48.24（AI-DOC）：普通发送不作整篇替换
         self._input.clear()
         self._render_msgs.append({"role": "user", "text": q, "time": _now()})
@@ -846,12 +862,25 @@ class AIPane(QWidget):
         self._history.append({"role": "user", "content": user_msg})
         self._history = self._history[-10:]
         # transform=True：本次助手消息定稿后挂「片段替换」锚点（orig_text=原文选区）
-        # v3.48.6（AI-LAG）：同 _on_send —— 渲染先行、请求延后一拍。
-        QTimer.singleShot(
-            0, lambda: self._start_request(list(self._history),
-                                           transform=True,
-                                           orig_text=sel_text,
-                                           target=sel_text))
+        # v3.48.33（AI-ANCHOR）：**生成前**记录原文位置（块序号 + 块内偏移
+        # + 块全文指纹 + docGen）。之后无论 AI 往返多久、期间用户怎么改文档，
+        # 替换都只按这份记录走；对不上就明确失败，不再全文搜原文猜位置。
+        def _go(anchor):
+            QTimer.singleShot(
+                0, lambda: self._start_request(list(self._history),
+                                              transform=True,
+                                              orig_text=sel_text,
+                                              target=sel_text,
+                                              orig_anchor=anchor))
+
+        getter = getattr(self.bridge, "get_fragment_anchor", None)
+        if getter is None:
+            _go({})
+        else:
+            try:
+                getter(_go)
+            except Exception:      # noqa: BLE001
+                _go({})
 
     @staticmethod
     def _translate_prompt(text):
@@ -969,16 +998,25 @@ class AIPane(QWidget):
 
             self.bridge.apply_whole_doc(result, _done)
 
-    # v3.48.0（F3-c）：片段对比替换
+    # v3.48.33（AI-ANCHOR）：片段对比替换 —— 按「生成时记录的位置」精确写回
     def _fragment_replace(self, msg):
+        """用合并结果替换原文。
+
+        位置来源优先级：
+          1. 你刚刚重新选中的原文（新锚点文本与 orig 一致）—— 重试场景；
+          2. 生成时记录的锚点（msg['orig_anchor']）。
+        两者都没有 → 明确失败并给回退建议，绝不全文搜原文猜位置。"""
         if msg.get("role") != "assistant":
             return
         orig = msg.get("orig_text", "")
         reply = msg.get("text", "")
-        # v3.48.11（AI-MERGE2）：MergeDialog 式双栏差异合并对话框（replace only）
-        dlg = AIFragmentDialog(self, self.bridge,
-                               orig_text=orig, reply_text=reply)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
+        stored = msg.get("orig_anchor") or {}
+
+        def _go(anchor, hint):
+            dlg = AIFragmentDialog(self, self.bridge, orig_text=orig,
+                                   reply_text=reply, target_hint=hint)
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                return
             new_text = dlg.get_result_text()
             if not new_text.strip():
                 self._render_msgs.append(
@@ -987,39 +1025,104 @@ class AIPane(QWidget):
                 self._render()
                 return
 
-            # v3.48.5（AI-REDESIGN）：带 orig 快照交 JS 预检（AI 往返期间原文
-            # 被改 → stale-selection），并按错误码细分提示，不再笼统报失败。
-            def _done(ok, err=""):
-                # v3.48.18（FRAG-MSG）：错误码细分 —— 每类失败都给「下一步怎么做」
-                # 的明确回退提示，不再笼统一句「替换失败」。
-                if ok:
-                    tip = "已用所选 AI 片段替换原文选区（Ctrl+Z 可撤销）。"
-                elif err in ("not-found", "stale-selection"):
-                    tip = ("替换未执行：未能在当前文档中定位到原文片段。"
-                           "常见原因：原文在生成期间被修改，或选区含源码态格式标记。"
-                           "回退建议：① 在编辑器中重新选中目标段落后再点「片段替换」；"
-                           "② 或直接点该条回复下方的「插入」，把结果插入光标处。")
-                elif err == "stale-dom":
-                    tip = ("替换未执行：原选区所在的文档结构已变动（例如切换了视图）。"
-                           "回退建议：重新选中原文后重试，或改用「插入」。")
-                elif err in ("no-caret", "no-host"):
-                    tip = ("替换未执行：未定位到可编辑正文区。"
-                           "回退建议：先点击正文进入编辑状态，再重试。")
-                elif err == "bad-order":
-                    tip = ("替换未执行：选区跨越了非连续的文档块（可能含表格 / 嵌套块）。"
-                           "回退建议：缩小选区范围，或分多次替换。")
-                elif err == "empty":
-                    tip = "替换未执行：合并结果为空。请在下方结果框补充内容后再确认。"
-                else:
-                    tip = ("替换失败（%s）：可重试；若反复失败，请重新选中原文"
-                           "后再点「片段替换」，或改用「插入」。" % (err or "unknown"))
+            def _done(ok, code="", detail=None):
+                tip = ("已用所选 AI 片段替换原文（Ctrl+Z 可撤销）。" if ok
+                       else self._frag_fail_tip(code, detail))
                 self._render_msgs.append(
                     {"role": "system", "text": tip, "time": _now()})
                 self._render()
 
-            self.bridge.replace_selection(new_text, _done, orig_text=orig)
+            repl = getattr(self.bridge, "replace_at_anchor", None)
+            if repl is None:       # 旧桥兜底（保持向后兼容）
+                self.bridge.replace_selection(new_text, _done, orig_text=orig)
+                return
+            repl(new_text, anchor, _done)
 
+        getter = getattr(self.bridge, "get_fragment_anchor", None)
+        if getter is None:
+            _go(stored, self._frag_target_hint(stored))
+            return
 
+        def _got(fresh):
+            anchor, hint = stored, self._frag_target_hint(stored)
+            if isinstance(fresh, dict) and fresh.get("ok"):
+                if self._same_frag_text(fresh.get("text", ""), orig):
+                    anchor = fresh
+                    hint = self._frag_target_hint(fresh, "当前选区 · ")
+            _go(anchor, hint)
+
+        try:
+            getter(_got)
+        except Exception:      # noqa: BLE001
+            _go(stored, self._frag_target_hint(stored))
+
+    @staticmethod
+    def _same_frag_text(a, b):
+        """新选区文本是否就是原文（忽略空白差异）—— 仅用于选锚点，不用于定位。"""
+        def _n(s):
+            return re.sub(r"\s+", "", str(s or ""))
+        x, y = _n(a), _n(b)
+        return bool(x) and x == y
+
+    @staticmethod
+    def _frag_target_hint(anchor, prefix=""):
+        """对话框提示行：让用户确认「要改的是哪一段」。"""
+        if not isinstance(anchor, dict) or not anchor:
+            return ""
+        try:
+            if anchor.get("mode") == "src":
+                return "%s目标位置：源码态第 %d–%d 字符。" % (
+                    prefix, int(anchor.get("s", 0)) + 1, int(anchor.get("e", 0)))
+            bi = int(anchor.get("bi", -1)) + 1
+            bj = int(anchor.get("bj", -1)) + 1
+            n = int(anchor.get("blkCount", 0))
+            where = ("第 %d 段" % bi) if bi == bj else ("第 %d–%d 段" % (bi, bj))
+            return "%s目标位置：%s（共 %d 段，原文 %d 字）。" % (
+                prefix, where, n, len(str(anchor.get("text") or "")))
+        except (TypeError, ValueError):
+            return ""
+
+    @staticmethod
+    def _frag_fail_tip(code, detail=None):
+        """错误码 → 「明确原因 + 两条可执行回退」，不再笼统一句「替换失败」。"""
+        advice = ("回退建议：① 在编辑器中重新选中目标段落，再点本条回复的"
+                  "「片段替换」（会按新选区位置写入）；② 或点本条回复下方的"
+                  "「插入」，把结果插入当前光标处。")
+        info = detail if isinstance(detail, dict) else {}
+        if code == "no-anchor":
+            return ("替换未执行：这条回复没有记录替换位置（可能来自旧版本消息），"
+                    "当前也没有选中原文。" + advice)
+        if code == "no-selection":
+            return ("替换未执行：当前没有有效选区，该回复也没有位置记录。" + advice)
+        if code == "mode-changed":
+            return ("替换未执行：生成时与现在的视图不同（源码态 / 渲染态被切换），"
+                    "字符位置无法对应。" + advice)
+        if code == "doc-changed":
+            return ("替换未执行：当前文档已不是生成时那一篇（切换过标签页，"
+                    "或文档被整体替换）。" + advice)
+        if code == "block-moved":
+            return ("替换未执行：目标段落的位置已变化（它前面有段落被增删），"
+                    "按记录的位置写会改错地方。" + advice)
+        if code == "block-changed":
+            was = str(info.get("was") or "")[:30]
+            now = str(info.get("now") or "")[:30]
+            extra = ("（记录「%s」／现在是「%s」）" % (was, now)) if was else ""
+            return ("替换未执行：目标段落的内容已被修改，记录的位置不再对应原文。"
+                    + extra + advice)
+        if code == "text-mismatch":
+            want = str(info.get("want") or "")[:30]
+            got = str(info.get("got") or "")[:30]
+            extra = ("（记录「%s」／位置处是「%s」）" % (want, got)) if (want or got) else ""
+            return ("替换未执行：记录位置上的文字与原文不一致。" + extra + advice)
+        if code == "insert-failed":
+            return ("替换未执行：写回编辑器失败，已自动回滚，文档内容没有被改动。"
+                    + advice)
+        if code == "empty":
+            return "替换未执行：合并结果为空。请在结果框补充内容后再确认。"
+        if code in ("bad-offset", "stale-dom", "bad-to", "no-host", "bad-order"):
+            return ("替换未执行：文档结构已变动（段落被重建或视图切换），"
+                    "原位置无法还原。" + advice)
+        return ("替换失败（%s）。" % (code or "unknown")) + advice
 
 class AIFragmentDialog(QDialog, TwoPaneMergeMixin):
     """v3.48.25（MERGE-CORE 重构）：AI 片段替换 / 整篇 AI 优化预览。
@@ -1048,7 +1151,7 @@ class AIFragmentDialog(QDialog, TwoPaneMergeMixin):
     mp_all_right_text = "全部采用右(AI)"
 
     def __init__(self, parent, bridge, orig_text="", reply_text="",
-                 title=None, hint=None):
+                 title=None, hint=None, target_hint=""):
         super().__init__(parent)
         self.setObjectName("aiFragDlg")
         self.setWindowTitle(title or "AI 片段替换")
@@ -1061,6 +1164,9 @@ class AIFragmentDialog(QDialog, TwoPaneMergeMixin):
             "「全部采用左 / 右」。合并结果可直接编辑，确认后替换原文选区。"), self)
         tip.setObjectName("pageHint")
         tip.setWordWrap(True)
+        if target_hint:
+            # v3.48.33（AI-ANCHOR）：把「要改哪一段」直接写在提示行里
+            tip.setText(tip.text() + "\n" + target_hint)
         self._mp_build_ui(
             top_widgets=[tip],
             result_hint=("合并结果（默认 AI 回复 · 可编辑）：仅差异文字有底色 ——"

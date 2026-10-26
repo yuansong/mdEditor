@@ -1248,6 +1248,13 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
    此处无论哪种空块，只要挂了 .slashph 就隐藏通用占位、仅保留斜杠提示。 */
 .blk.ph.slashph::before,
 .blk.raw-edit.slashph::before { content: none; }
+/* ---------- v3.48.33（HINT-ONCE）：输入引导占位只给第一次 ----------
+   用户一旦改动过内容，空块提示（「输入 / 可插入内容」「输入 / 插入表格、
+   图片、图表…」）不再出现；清空内容也不恢复，换文档时由 resetHints() 重置。
+   只影响这两类引导占位，斜杠菜单 / 脚注定义提示 / 表格浮层不受影响。 */
+#editor.hint-used .blk.ph::before,
+#editor.hint-used .blk.raw-edit:empty::before,
+#editor.hint-used .blk.slashph::after { content: none !important; }
 /* ---------- v3.40（UI-R7 R6 补偿②）：首次一次性气泡（3s 自动淡出） ---------- */
 #slashbubble {
   position: fixed; top: 64px; left: 50%; transform: translateX(-50%);
@@ -3669,6 +3676,12 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
        否则 180ms 防抖会把 .slashph 加回仍为空（"/" 被 preventDefault 未插入）的块，
        与浮层菜单文字交错成「重影」。菜单关闭后由 selectionchange 防抖自动恢复 */
     if (activePop === 'slash' || activePop === 'hint') return;
+    /* v3.48.33（HINT-ONCE）：已经动过内容 → 不再给斜杠占位，并把残留类摘掉 */
+    if (hintUsed) {
+      if (slashPhEl && slashPhEl.classList) slashPhEl.classList.remove('slashph');
+      slashPhEl = null;
+      return;
+    }
     if (typeof ED === 'undefined' || !ED || !ED.closest) return;
     var el = null;
     try {
@@ -3819,7 +3832,25 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     for (var j = 0; j < els.length; j++) lazyObserver.observe(els[j]);
   }
   function editEl() { return ED.querySelector('.raw-edit'); }
-  function markDirty() { state.dirty = true; updateStats(); }
+  /* ===== v3.48.33（HINT-ONCE）：输入引导只出现一次 =====
+     hintUsed 是**会话级**标记：本份文档第一次发生内容变更后置位，此后所有
+     空块引导占位（通用占位 / 斜杠占位）一律不再渲染。之所以挂在 markDirty
+     上而不是只监听 input：粘贴、斜杠菜单插入、块操作、AI 写入、撤销重做
+     等路径未必派发 input，但一定置脏 —— 一处收口，行为一致。
+     不做「清空后重新显示」：那会让提示在反复删改时闪回，正是用户要避免的。 */
+  var hintUsed = false;
+  function markHintsUsed() {
+    if (hintUsed) return;
+    hintUsed = true;
+    try { if (ED && ED.classList) ED.classList.add('hint-used'); } catch (eH) {}
+  }
+  function resetHints() {
+    hintUsed = false;
+    try { if (ED && ED.classList) ED.classList.remove('hint-used'); } catch (eH2) {}
+  }
+  window.__hintUsed = function () { return hintUsed; };
+
+  function markDirty() { state.dirty = true; updateStats(); markHintsUsed(); }
 
   function setCaret(el, off) { setCaretSel(el, off, 0); }
   /* ================= v3.48.15（MC）：单块多光标 =================
@@ -7610,6 +7641,202 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
      返回 JSON {ok, err, hosts, recovered, mode}。
      错误码：no-range / stale-dom / not-found / bad-order / no-host /
              insert-failed / empty */
+
+  /* =========================================================
+   * v3.48.33（AI-ANCHOR）：片段替换「位置锚点」体系
+   * ---------------------------------------------------------
+   * 旧版靠 _relocateRange(origText) 在**全文**里重新搜索原文 —— AI 往返
+   * 期间文档被编辑 / 同名段落出现多次时，命中位置不可控。新版改为：
+   *   生成时 aiSelSnapshot() 记录「原文 + 所在块序号 + 块内字符偏移 +
+   *   块全文指纹 + docGen」，替换时 aiReplaceAnchor() 只按记录位置写回；
+   *   任何一环对不上就**明确失败**并给回退建议，绝不猜位置。
+   * 块全文指纹（blkA/blkB）是位置的守卫：块内内容未变 → 偏移必定有效；
+   * 变了 → 直接报 block-changed，而不是到别处找一段相似文字。
+   * ========================================================= */
+  function _aiBlkList() {
+    var list = document.querySelectorAll('#editor .blk');
+    return list && list.length ? list : document.querySelectorAll('#editor > *');
+  }
+  function _aiBlkIndexOf(node, list) {
+    var el = (node && node.nodeType === 1) ? node : (node ? node.parentElement : null);
+    while (el && el !== ED) {
+      if (el.classList && el.classList.contains('blk')) {
+        for (var i = 0; i < list.length; i++) if (list[i] === el) return i;
+        return -1;
+      }
+      el = el.parentElement;
+    }
+    return -1;
+  }
+  /* 块内纯文本 + 逐字符映射（跳过源码高亮叠层，与选区口径一致） */
+  function _blockPlain(blk) {
+    var text = '', map = [], nodes = [], starts = [];
+    if (!blk || !blk.nodeType) return { text: text, map: map, nodes: nodes, starts: starts };
+    var w = document.createTreeWalker(blk, NodeFilter.SHOW_TEXT, null);
+    var tn, acc = 0;
+    while ((tn = w.nextNode())) {
+      if (tn.parentElement && tn.parentElement.closest &&
+          tn.parentElement.closest('.src-hl')) continue;
+      var t = tn.nodeValue || '';
+      nodes.push(tn); starts.push(acc);
+      text += t;
+      acc += t.length;
+      for (var i = 0; i < t.length; i++) map.push([tn, i]);
+    }
+    return { text: text, map: map, nodes: nodes, starts: starts };
+  }
+  function _plainOffsetOf(bp, node, off) {
+    if (!node || !bp || !bp.nodes) return -1;
+    for (var k = 0; k < bp.nodes.length; k++) {
+      if (bp.nodes[k] === node) {
+        var len = (node.nodeValue || '').length;
+        return bp.starts[k] + Math.max(0, Math.min(off, len));
+      }
+    }
+    return -1;
+  }
+  /* 选区边界可能是元素（例如整块选中）→ 归一到文本节点边界，
+     保证偏移可计算、Range 可重建。 */
+  function _boundaryTextNode(node, off, isEnd) {
+    if (!node) return null;
+    if (node.nodeType === 3) return [node, off];
+    if (node.nodeType !== 1) return null;
+    var kids = node.childNodes || [];
+    if (isEnd) {
+      if (off >= kids.length) {
+        var bpE = _blockPlain(node);
+        if (!bpE.nodes.length) return null;
+        var lnE = bpE.nodes[bpE.nodes.length - 1];
+        return [lnE, (lnE.nodeValue || '').length];
+      }
+      if (off > 0) {
+        var bpP = _blockPlain(kids[off - 1]);
+        if (bpP.nodes.length) {
+          var pl = bpP.nodes[bpP.nodes.length - 1];
+          return [pl, (pl.nodeValue || '').length];
+        }
+      }
+      var bpC = _blockPlain(kids[off]);
+      if (bpC.nodes.length) return [bpC.nodes[0], 0];
+      return null;
+    }
+    if (off >= kids.length) {
+      var bpL = _blockPlain(node);
+      if (!bpL.nodes.length) return null;
+      var lnL = bpL.nodes[bpL.nodes.length - 1];
+      return [lnL, (lnL.nodeValue || '').length];
+    }
+    var bpS = _blockPlain(kids[off]);
+    if (bpS.nodes.length) return [bpS.nodes[0], 0];
+    for (var s = off + 1; s < kids.length; s++) {
+      var bpN = _blockPlain(kids[s]);
+      if (bpN.nodes.length) return [bpN.nodes[0], 0];
+    }
+    return null;
+  }
+  function _anchorPoint(blk, bp, off) {
+    if (!bp.nodes.length) return [blk, 0];
+    if (off <= 0) return [bp.nodes[0], 0];
+    if (off >= bp.map.length) {
+      var last = bp.map[bp.map.length - 1];
+      return [last[0], last[1] + 1];
+    }
+    var m = bp.map[off];
+    return [m[0], m[1]];
+  }
+  function _rangeFromOffsets(bA, s, bB, e) {
+    var bpA = _blockPlain(bA), bpB = (bA === bB) ? bpA : _blockPlain(bB);
+    if (s < 0 || e < 0 || e < s) return null;
+    if (s > bpA.text.length || e > bpB.text.length) return null;
+    var p1 = _anchorPoint(bA, bpA, s), p2 = _anchorPoint(bB, bpB, e);
+    var r = document.createRange();
+    try {
+      r.setStart(p1[0], p1[1]);
+      r.setEnd(p2[0], p2[1]);
+    } catch (err) { return null; }
+    return r;
+  }
+  /* 文本比对口径：换行 / 不换行空格 / 连续空白统一（内容差异仍可检出） */
+  function _normTextLite(str) {
+    return String(str == null ? '' : str)
+      .replace(/\r\n?/g, '\n')
+      .replace(/\u00a0/g, ' ')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n{2,}/g, '\n')
+      .trim();
+  }
+  /* 把 Range 内容替换为 text（跨块倒序编辑，失败按快照回滚）。
+     how 仅用于回传命中方式：cached / reloc / anchor / block-fix / src。 */
+  function _replaceRangeWithText(r, text, how) {
+    var all = document.querySelectorAll('#editor .blk');
+    var b1 = _xselBlockOf(r.startContainer);
+    var b2 = _xselBlockOf(r.endContainer);
+    if (!b1 || !b2) {
+      return JSON.stringify({ ok: false, err: 'no-host', code: 'no-host' });
+    }
+    var i1 = -1, i2 = -1;
+    for (var k = 0; k < all.length; k++) {
+      if (all[k] === b1) i1 = k;
+      if (all[k] === b2) { i2 = k; break; }
+    }
+    if (i1 < 0) i1 = 0;
+    if (i2 < 0) i2 = i1;
+    if (i2 < i1) {
+      return JSON.stringify({ ok: false, err: 'bad-order', code: 'bad-order' });
+    }
+    var hosts = [];
+    for (var q = i1; q <= i2; q++) hosts.push(all[q]);
+    if (!hosts.length) hosts = [b1];
+
+    var snap = [], okAll = true, why = '';
+    for (var i = hosts.length - 1; i >= 0; i--) {
+      var h = hosts[i];
+      snap.push([h, h.innerHTML]);
+      var sub = _mkHostRange(h, r.startContainer, r.startOffset,
+                             r.endContainer, r.endOffset);
+      if (!sub) { okAll = false; why = 'no-range'; break; }
+      var hostEl = _xselEditableHost(sub.startContainer) || h;
+      if (!hostEl || !hostEl.isContentEditable) {
+        okAll = false; why = 'no-host'; break;
+      }
+      try { hostEl.focus(); } catch (e2) {}
+      var sel = window.getSelection();
+      try { sel.removeAllRanges(); sel.addRange(sub); }
+      catch (e3) { okAll = false; why = 'no-range'; break; }
+      var ok = true;
+      if (i === 0) {
+        try { ok = document.execCommand('insertText', false, text); }
+        catch (e4) { ok = false; }
+      } else if (!sub.collapsed) {
+        try { ok = document.execCommand('delete'); }
+        catch (e5) { ok = false; }
+      }
+      if (!ok) { okAll = false; why = 'insert-failed'; break; }
+    }
+
+    var recovered = false;
+    if (!okAll) {
+      for (var z = 0; z < snap.length; z++) {
+        try {
+          if (snap[z][0].innerHTML !== snap[z][1]) {
+            snap[z][0].innerHTML = snap[z][1];
+            recovered = true;
+          }
+        } catch (e6) {}
+      }
+      try { if (typeof commitEditSilent === 'function') commitEditSilent(); } catch (e7) {}
+      return JSON.stringify({ ok: false, err: why || 'insert-failed',
+                              code: why || 'insert-failed',
+                              hosts: hosts.length, recovered: recovered });
+    }
+
+    try { if (typeof commitEditSilent === 'function') commitEditSilent(); } catch (e8) {}
+    markDirty(); scheduleSnapshot();
+    _xselHasSel = false; _xselClearOverlay();
+    return JSON.stringify({ ok: true, err: '', code: '', hosts: hosts.length,
+                            recovered: false, mode: how || 'cached' });
+  }
+
   window.aiReplaceSel = function (text, origText) {
     text = String(text == null ? '' : text);
     if (!text) return JSON.stringify({ ok: false, err: 'empty' });
@@ -7648,81 +7875,160 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     if (!r.startContainer.isConnected || !r.endContainer.isConnected)
       return JSON.stringify({ ok: false, err: 'stale-dom' });
 
-    /* ---- 枚举受影响的 .blk（按文档序索引，绝不游走到区间之外） ---- */
-    var all = document.querySelectorAll('#editor .blk');
-    var b1 = _xselBlockOf(r.startContainer);
-    var b2 = _xselBlockOf(r.endContainer);
-    if (!b1 || !b2) return JSON.stringify({ ok: false, err: 'no-host' });
-    var i1 = -1, i2 = -1;
-    for (var k = 0; k < all.length; k++) {
-      if (all[k] === b1) i1 = k;
-      if (all[k] === b2) { i2 = k; break; }
-    }
-    if (i1 < 0) i1 = 0;
-    if (i2 < 0) i2 = i1;
-    if (i2 < i1) return JSON.stringify({ ok: false, err: 'bad-order' });
-    var hosts = [];
-    for (var q = i1; q <= i2; q++) hosts.push(all[q]);
-    if (!hosts.length) hosts = [b1];
+    return _replaceRangeWithText(r, text, how);
 
-    /* ---- 倒序编辑（后面的宿主先处理，前面 DOM 不被扰动） ---- */
-    /* v3.48.19（AI-FRAG4）：跨块替换语义修正 —— i===0（首个宿主）用
-       insertText 写入结果（Chromium 的 insertText 会替换当前选区）；
-       i>0 的后续宿主只需**删除**被选中的原文。旧版对后续宿主插空串，
-       既让「不可编辑宿主」误判失败，也会残留原文造成重复内容。 */
-    var snap = [], okAll = true, failedAt = -1, why = '';
-    for (var i = hosts.length - 1; i >= 0; i--) {
-      var h = hosts[i];
-      snap.push([h, h.innerHTML]);          /* 编辑前快照（用于精确回滚） */
-      var sub = _mkHostRange(h, r.startContainer, r.startOffset,
-                             r.endContainer, r.endOffset);
-      if (!sub) { okAll = false; failedAt = i; why = 'no-range'; break; }
-      var hostEl = _xselEditableHost(sub.startContainer) || h;
-      if (!hostEl || !hostEl.isContentEditable) {
-        okAll = false; failedAt = i; why = 'no-host'; break;
-      }
-      try { hostEl.focus(); } catch (e2) {}
-      var sel = window.getSelection();
-      try { sel.removeAllRanges(); sel.addRange(sub); }
-      catch (e3) { okAll = false; failedAt = i; why = 'no-range'; break; }
-      var ok = true;
-      if (i === 0) {
-        try {
-          ok = document.execCommand('insertText', false, text);
-        } catch (e4) { ok = false; }
-      } else if (!sub.collapsed) {
-        /* 后续宿主：删除被选中的原文段（空选区无需处理） */
-        try {
-          ok = document.execCommand('delete');
-        } catch (e5) { ok = false; }
-      }
-      if (!ok) { okAll = false; failedAt = i; why = 'insert-failed'; break; }
-    }
-
-    /* ---- 失败回滚：按快照原样恢复（不做位置猜测，杜绝错位插入） ---- */
-    var recovered = false;
-    if (!okAll) {
-      for (var z = 0; z < snap.length; z++) {
-        try {
-          if (snap[z][0].innerHTML !== snap[z][1]) {
-            snap[z][0].innerHTML = snap[z][1];
-            recovered = true;
-          }
-        } catch (e5) {}
-      }
-      /* 回滚后仍需把 state.raw 拉回一致 */
-      try { if (typeof commitEditSilent === 'function') commitEditSilent(); } catch (e6) {}
-      return JSON.stringify({ ok: false, err: why || 'insert-failed',
-                              hosts: hosts.length, recovered: recovered });
-    }
-
-    /* ---- 成功：立即把 DOM 变更同步进 state.raw 并置脏 ---- */
-    try { if (typeof commitEditSilent === 'function') commitEditSilent(); } catch (e7) {}
-    markDirty(); scheduleSnapshot();
-    _xselHasSel = false; _xselClearOverlay();
-    return JSON.stringify({ ok: true, err: '', hosts: hosts.length,
-                            recovered: false, mode: how });
   };
+
+  /* =========================================================
+   * v3.48.33（AI-ANCHOR）：生成时记录原文位置
+   * ---------------------------------------------------------
+   * 返回 {ok, v, mode, bi/bj, s/e, text, blkA/blkB, blkCount, docGen}。
+   * - mode='render'：bi/bj 为 .blk 文档序下标，s/e 为**块内字符偏移**；
+   * - mode='src'   ：s/e 为源码文本（textarea.value）的字符下标，len 为总长；
+   * - blkA/blkB    ：首末块全文指纹，替换时校验「位置没挪、内容没改」；
+   * - docGen       ：换文档 / 换源内容时递增，用于识别「已切到其它文档」。
+   * 取不到有效选区时返回 {ok:false, code:'no-selection'}，由调用方提示用户。
+   * ========================================================= */
+  window.aiSelSnapshot = function () {
+    var srcEl = document.querySelector('#editor .t-src');
+    if (srcEl) {
+      var val = srcEl.value != null ? srcEl.value : (srcEl.textContent || '');
+      var ss = srcEl.selectionStart, ee = srcEl.selectionEnd;
+      if (ss == null || ee == null || ss === ee) {
+        return JSON.stringify({ ok: false, code: 'no-selection', mode: 'src' });
+      }
+      return JSON.stringify({ ok: true, v: 1, mode: 'src', s: ss, e: ee,
+                              len: val.length, text: val.slice(ss, ee),
+                              docGen: docGen });
+    }
+    var r = null;
+    try {
+      var live = window.getSelection();
+      if (live && live.rangeCount && !live.isCollapsed) {
+        var lr = live.getRangeAt(0);
+        if (lr.startContainer && ED.contains(lr.startContainer)) r = lr;
+      }
+    } catch (e0) {}
+    if (!r && _aiSelRange && _aiSelRange.startContainer &&
+        _aiSelRange.startContainer.isConnected) r = _aiSelRange;
+    if (!r || r.collapsed) {
+      return JSON.stringify({ ok: false, code: 'no-selection', mode: 'render' });
+    }
+    var list = _aiBlkList();
+    var i1 = _aiBlkIndexOf(r.startContainer, list);
+    var i2 = _aiBlkIndexOf(r.endContainer, list);
+    if (i1 < 0 || i2 < 0) return JSON.stringify({ ok: false, code: 'no-host' });
+    if (i2 < i1) { var t0 = i1; i1 = i2; i2 = t0; }
+    var bA = list[i1], bB = list[i2];
+    var bpA = _blockPlain(bA), bpB = (bA === bB) ? bpA : _blockPlain(bB);
+    var p1 = _boundaryTextNode(r.startContainer, r.startOffset, false);
+    var p2 = _boundaryTextNode(r.endContainer, r.endOffset, true);
+    if (!p1 || !p2) return JSON.stringify({ ok: false, code: 'bad-range' });
+    var s = _plainOffsetOf(bpA, p1[0], p1[1]);
+    var e = _plainOffsetOf(bpB, p2[0], p2[1]);
+    if (s < 0 || e < 0) return JSON.stringify({ ok: false, code: 'bad-range' });
+    var txt = '';
+    try { txt = r.toString(); } catch (e3) {}
+    return JSON.stringify({ ok: true, v: 1, mode: 'render', bi: i1, bj: i2,
+                            s: s, e: e, text: txt,
+                            blkA: bpA.text, blkB: bpB.text,
+                            blkCount: list.length, docGen: docGen });
+  };
+  /* =========================================================
+   * v3.48.33（AI-ANCHOR）：按记录位置精确替换
+   * ---------------------------------------------------------
+   * 不再在全文里搜索原文。校验顺序：
+   *   no-anchor → mode-changed → doc-changed（docGen / 源文本长度）
+   *   → block-moved（块序号越界）→ block-changed（块全文指纹不符）
+   *   → text-mismatch（偏移处文本与记录原文不一致）
+   * 单块场景下若仅因空白 / 边界归一差异对不上，允许**块内**唯一命中
+   * 修正（mode='block-fix'）—— 仍限定在记录的块内，不会替换到别处。
+   * ========================================================= */
+  window.aiReplaceAnchor = function (anchorJson, text) {
+    var a = anchorJson;
+    if (typeof a === 'string') {
+      try { a = JSON.parse(a); } catch (eA) {
+        return JSON.stringify({ ok: false, err: 'bad-anchor', code: 'bad-anchor' });
+      }
+    }
+    text = String(text == null ? '' : text);
+    if (!text) return JSON.stringify({ ok: false, err: 'empty', code: 'empty' });
+    if (!a || typeof a !== 'object' || !a.v) {
+      return JSON.stringify({ ok: false, err: 'no-anchor', code: 'no-anchor' });
+    }
+    var srcEl = document.querySelector('#editor .t-src');
+    var curMode = srcEl ? 'src' : 'render';
+    if (a.mode !== curMode) {
+      return JSON.stringify({ ok: false, err: 'mode-changed', code: 'mode-changed',
+                              want: a.mode, now: curMode });
+    }
+    if (a.docGen != null && typeof docGen === 'number' && a.docGen !== docGen) {
+      return JSON.stringify({ ok: false, err: 'doc-changed', code: 'doc-changed',
+                              detail: 'docGen' });
+    }
+    if (curMode === 'src') {
+      var val = srcEl.value != null ? srcEl.value : (srcEl.textContent || '');
+      if (a.len != null && val.length !== a.len) {
+        return JSON.stringify({ ok: false, err: 'doc-changed', code: 'doc-changed',
+                                detail: 'len' });
+      }
+      var seg = val.slice(a.s, a.e);
+      if (_normTextLite(seg) !== _normTextLite(a.text)) {
+        return JSON.stringify({ ok: false, err: 'text-mismatch',
+                                code: 'text-mismatch',
+                                got: seg.slice(0, 60), want: String(a.text).slice(0, 60) });
+      }
+      try {
+        _applySrcReplace({ kind: (srcEl.value != null ? 'src' : 'src-dom'),
+                           el: srcEl, start: a.s, end: a.e }, text);
+        return JSON.stringify({ ok: true, err: '', code: '', hosts: 1,
+                                recovered: false, mode: 'src' });
+      } catch (eS) {
+        return JSON.stringify({ ok: false, err: 'insert-failed',
+                                code: 'insert-failed', mode: 'src' });
+      }
+    }
+    var list = _aiBlkList();
+    if (!list.length) {
+      return JSON.stringify({ ok: false, err: 'no-host', code: 'no-host' });
+    }
+    if (a.bi == null || a.bj == null || a.bi < 0 || a.bj < a.bi || a.bj >= list.length) {
+      return JSON.stringify({ ok: false, err: 'block-moved', code: 'block-moved',
+                              detail: 'index' });
+    }
+    var bA = list[a.bi], bB = list[a.bj];
+    var bpA = _blockPlain(bA), bpB = (bA === bB) ? bpA : _blockPlain(bB);
+    if (bpA.text !== a.blkA || bpB.text !== a.blkB) {
+      return JSON.stringify({ ok: false, err: 'block-changed', code: 'block-changed',
+                              block: a.bi, now: bpA.text.slice(0, 80),
+                              was: String(a.blkA || '').slice(0, 80) });
+    }
+    var r = _rangeFromOffsets(bA, a.s, bB, a.e);
+    if (!r || !r.startContainer || !r.startContainer.isConnected) {
+      return JSON.stringify({ ok: false, err: 'bad-offset', code: 'bad-offset' });
+    }
+    var mode = 'anchor', curTxt = '';
+    try { curTxt = r.toString(); } catch (e0) {}
+    if (_normTextLite(curTxt) !== _normTextLite(a.text)) {
+      if (a.bi === a.bj) {
+        var needle = String(a.text);
+        var at = bpA.text.indexOf(needle);
+        if (at >= 0 && bpA.text.indexOf(needle, at + 1) < 0) {
+          var r2 = _rangeFromOffsets(bA, at, bA, at + needle.length);
+          if (r2) { r = r2; mode = 'block-fix'; }
+        }
+      }
+      try { curTxt = r.toString(); } catch (e1) {}
+      if (_normTextLite(curTxt) !== _normTextLite(a.text)) {
+        return JSON.stringify({ ok: false, err: 'text-mismatch',
+                                code: 'text-mismatch',
+                                got: curTxt.slice(0, 60),
+                                want: String(a.text).slice(0, 60) });
+      }
+    }
+    return _replaceRangeWithText(r, text, mode);
+  };
+
   /* v3.48.18（AI-CTX）：AI 上下文自适应所需的位置信息。
      返回 {md, block, selText, selStart, selEnd}；block 为光标所在 .blk 在
      #editor.children 中的下标（与 state.raw 同序，供邻段扩展）。 */
@@ -8928,6 +9234,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     hideObjSel();           /* 旧 DOM 已被替换，不能继续作为缩放 / 删除目标 */
     foldSet = {};           /* P1-2：换文档清空折叠状态（标题文本键可能撞车） */
     docGen++;   /* v3.37（DOCGEN-1）：换文档 —— 旧渲染态的失焦回写自此失效 */
+    resetHints();   /* v3.48.33（HINT-ONCE）：新文档重新给一次输入引导 */
     state.raw = splitBlocks(text || '');
     /* v3.38（NEST-1）：载入即自愈交叉嵌套（==<u>x==</u> → ==<u>x</u>==） */
     for (var _hi = 0; _hi < state.raw.length; _hi++) state.raw[_hi] = healBlockRaw(state.raw[_hi]);
