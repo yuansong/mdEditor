@@ -325,45 +325,115 @@ class PdfExportDialog(QDialog):
     FONTS = ["", "Microsoft YaHei", "SimSun", "SimHei", "KaiTi",
              "Arial", "Times New Roman", "Consolas", "Courier New"]
 
+    # v3.48.25（PDF-SET+）：纸张尺寸 -> QPageSize.PageSizeId 映射
+    PAPERS = {
+        "A4": QPageSize.A4,
+        "Letter": QPageSize.Letter,
+        "A3": QPageSize.A3,
+        "A5": QPageSize.A5,
+        "B5": QPageSize.B5,
+    }
+    LINE_HEIGHTS = [("紧凑 1.0", 1.0), ("标准 1.5", 1.5),
+                    ("宽松 1.8", 1.8), ("宽松 2.0", 2.0)]
+
     def __init__(self, parent, settings):
         super().__init__(parent)
         self.setWindowTitle("PDF 导出设置")
         self._settings = settings
-        try:
-            margin = float(settings.value("pdf/margin", 20.0) or 20.0)
-        except (TypeError, ValueError):
-            margin = 20.0
-        try:
-            size = float(settings.value("pdf/fontSize", 11.0) or 11.0)
-        except (TypeError, ValueError):
-            size = 11.0
-        fam = str(settings.value("pdf/fontFamily", "") or "")
+
+        def num(key, default):
+            try:
+                return float(settings.value(key, default) or default)
+            except (TypeError, ValueError):
+                return float(default)
 
         lay = QVBoxLayout(self)
         form = QFormLayout()
-        self._margin = QDoubleSpinBox()
-        self._margin.setRange(0, 50)
-        self._margin.setDecimals(1)
-        self._margin.setSuffix(" mm")
-        self._margin.setValue(margin)
-        form.addRow("页边距", self._margin)
 
+        # ---- 纸张尺寸 / 方向 ----
+        self._paper = QComboBox()
+        for k in self.PAPERS:
+            self._paper.addItem(k, k)
+        pv = str(settings.value("pdf/paperSize", "A4") or "A4")
+        pi = self._paper.findData(pv)
+        self._paper.setCurrentIndex(pi if pi >= 0 else 0)
+        form.addRow("纸张尺寸", self._paper)
+
+        self._orient = QComboBox()
+        self._orient.addItem("纵向", "portrait")
+        self._orient.addItem("横向", "landscape")
+        ov = str(settings.value("pdf/orientation", "portrait") or "portrait")
+        oi = self._orient.findData(ov)
+        self._orient.setCurrentIndex(oi if oi >= 0 else 0)
+        form.addRow("方向", self._orient)
+
+        # ---- 四边页边距 ----
+        mwgt = QWidget()
+        mhl = QHBoxLayout(mwgt)
+        mhl.setContentsMargins(0, 0, 0, 0)
+        self._m_top = QDoubleSpinBox()
+        self._m_bottom = QDoubleSpinBox()
+        self._m_left = QDoubleSpinBox()
+        self._m_right = QDoubleSpinBox()
+        for sp, key, val in ((self._m_top, "pdf/marginTop", 20.0),
+                              (self._m_bottom, "pdf/marginBottom", 20.0),
+                              (self._m_left, "pdf/marginLeft", 20.0),
+                              (self._m_right, "pdf/marginRight", 20.0)):
+            sp.setRange(0, 50)
+            sp.setDecimals(1)
+            sp.setSuffix(" mm")
+            sp.setValue(num(key, val))
+            mhl.addWidget(sp)
+        form.addRow("页边距(上/下/左/右)", mwgt)
+
+        # ---- 缩放 ----
+        self._scale = QDoubleSpinBox()
+        self._scale.setRange(50, 200)
+        self._scale.setDecimals(0)
+        self._scale.setSuffix(" %")
+        self._scale.setValue(num("pdf/scale", 100.0))
+        form.addRow("缩放", self._scale)
+
+        # ---- 字体 / 字号 ----
+        fam = str(settings.value("pdf/fontFamily", "") or "")
         self._font = QComboBox()
         self._font.addItem("（跟随界面字体）", "")
         for f in self.FONTS[1:]:
             self._font.addItem(f, f)
-        idx = self._font.findData(fam)
-        self._font.setCurrentIndex(idx if idx >= 0 else 0)
+        fi = self._font.findData(fam)
+        self._font.setCurrentIndex(fi if fi >= 0 else 0)
         form.addRow("字体", self._font)
 
         self._size = QDoubleSpinBox()
         self._size.setRange(8, 24)
         self._size.setDecimals(1)
         self._size.setSuffix(" pt")
-        self._size.setValue(size)
+        self._size.setValue(num("pdf/fontSize", 11.0))
         form.addRow("字号", self._size)
 
+        # ---- 行间距 ----
+        self._lh = QComboBox()
+        for label, v in self.LINE_HEIGHTS:
+            self._lh.addItem(label, v)
+        lhv = float(settings.value("pdf/lineHeight", 1.5) or 1.5)
+        li = self._lh.findData(lhv)
+        self._lh.setCurrentIndex(li if li >= 0 else 1)
+        form.addRow("行间距", self._lh)
+
         lay.addLayout(form)
+
+        # ---- 内容 / 版式开关 ----
+        lay.addWidget(QLabel("内容 / 版式"))
+        self._h1 = QCheckBox("H1 标题前分页（章节另起一页）")
+        self._img = QCheckBox("图片自动适应页宽")
+        self._white = QCheckBox("强制白底（适合深色主题导出）")
+        self._h1.setChecked(str(settings.value("pdf/h1PageBreak", True) or True) not in ("false", "False", "0", ""))
+        self._img.setChecked(str(settings.value("pdf/imgFit", True) or True) not in ("false", "False", "0", ""))
+        self._white.setChecked(str(settings.value("pdf/forceWhite", True) or True) not in ("false", "False", "0", ""))
+        lay.addWidget(self._h1)
+        lay.addWidget(self._img)
+        lay.addWidget(self._white)
+
         self._save = QCheckBox("保存为默认")
         lay.addWidget(self._save)
 
@@ -374,9 +444,19 @@ class PdfExportDialog(QDialog):
 
     def result_opts(self):
         return {
-            "margin_mm": self._margin.value(),
+            "paper_size": self._paper.currentData() or "A4",
+            "orientation": self._orient.currentData() or "portrait",
+            "margin_top_mm": self._m_top.value(),
+            "margin_bottom_mm": self._m_bottom.value(),
+            "margin_left_mm": self._m_left.value(),
+            "margin_right_mm": self._m_right.value(),
+            "scale_pct": self._scale.value(),
             "font_family": self._font.currentData() or "",
             "font_size_pt": self._size.value(),
+            "line_height": self._lh.currentData() or 1.5,
+            "h1_page_break": self._h1.isChecked(),
+            "img_fit": self._img.isChecked(),
+            "force_white": self._white.isChecked(),
             "save_default": self._save.isChecked(),
         }
 
@@ -5471,9 +5551,20 @@ class MainWindow(QMainWindow):
             return
         opts = dlg.result_opts()
         if opts.get("save_default"):
-            self._settings.setValue("pdf/margin", opts["margin_mm"])
-            self._settings.setValue("pdf/fontFamily", opts["font_family"])
-            self._settings.setValue("pdf/fontSize", opts["font_size_pt"])
+            s = self._settings
+            s.setValue("pdf/paperSize", opts["paper_size"])
+            s.setValue("pdf/orientation", opts["orientation"])
+            s.setValue("pdf/marginTop", opts["margin_top_mm"])
+            s.setValue("pdf/marginBottom", opts["margin_bottom_mm"])
+            s.setValue("pdf/marginLeft", opts["margin_left_mm"])
+            s.setValue("pdf/marginRight", opts["margin_right_mm"])
+            s.setValue("pdf/scale", opts["scale_pct"])
+            s.setValue("pdf/fontFamily", opts["font_family"])
+            s.setValue("pdf/fontSize", opts["font_size_pt"])
+            s.setValue("pdf/lineHeight", opts["line_height"])
+            s.setValue("pdf/h1PageBreak", opts["h1_page_break"])
+            s.setValue("pdf/imgFit", opts["img_fit"])
+            s.setValue("pdf/forceWhite", opts["forceWhite"])
         self._pdf_opts = opts
         # v3.45.3（EXPORT-LINK）：书签数据在导出瞬间实时取（700ms 轮询缓存
         # 可能滞后，刚切文档就导出会拿到空大纲 → 无书签）
@@ -5520,12 +5611,27 @@ class MainWindow(QMainWindow):
         # v3.48.5（PDF-BG）：导出 HTML 的 body 背景随主题（--canvas 灰），
         # printToPdf 会把整页画布背景印出来 —— PDF 末页空白区一片灰。
         # PDF 导出强制白底（正文卡片 .page 本身是白底，不受影响）。
-        html = html.replace(
-            "</head>",
-            "<style>html,body{background:#ffffff !important}</style>\n</head>",
-            1)
-        # v3.47.1（PDF-SET）：应用用户设定的字体 / 字号（注入 !important 样式）
+        # v3.48.25（PDF-SET+）：导出版式样式（白底 / 行距 / H1 分页 / 图片适应页宽 / 缩放）
         opts = getattr(self, "_pdf_opts", None)
+        extra = []
+        if opts:
+            if opts.get("force_white", True):
+                extra.append("html,body{background:#ffffff !important}")
+            lh = opts.get("line_height")
+            if lh:
+                extra.append("body,.page{line-height:%.2f !important}" % float(lh))
+            if opts.get("h1_page_break"):
+                extra.append("h1:not(:first-of-type){page-break-before:always !important}")
+                extra.append("h2,h3,h4{page-break-after:avoid !important}")
+            if opts.get("img_fit"):
+                extra.append("img{max-width:100% !important;height:auto !important;page-break-inside:avoid !important}")
+            sc = opts.get("scale_pct")
+            if sc and float(sc) != 100.0:
+                extra.append("body{zoom:%.3f}" % (float(sc) / 100.0))
+        if extra:
+            style = "<style id='mded-pdf-layout'>%s</style>\n" % " ".join(extra)
+            html = html.replace("</head>", style + "</head>", 1)
+        # v3.47.1（PDF-SET）：应用用户设定的字体 / 字号（注入 !important 样式）
         if opts and opts.get("font_size_pt"):
             html = self._apply_pdf_font_css(
                 html, opts.get("font_family", ""), opts["font_size_pt"])
@@ -5549,15 +5655,18 @@ class MainWindow(QMainWindow):
             page = self._pdf_view.page()
             page.pdfPrintingFinished.connect(self._pdf_done)
             opts = getattr(self, "_pdf_opts", None)
-            if opts and opts.get("margin_mm", 0) > 0:
-                # v3.48.4（PDF-KW）：PySide6 6.11 的 printToPdf 只支持位置参数传
-                # QPageLayout（pageLayout= 关键字抛 AttributeError），且该异常类型
-                # 不是 TypeError——降级分支改为 Exception 兜底。
+            if opts:
                 try:
-                    layout = QPageLayout(
-                        QPageSize(QPageSize.A4), QPageLayout.Portrait,
-                        QMarginsF(opts["margin_mm"], opts["margin_mm"],
-                                  opts["margin_mm"], opts["margin_mm"]))
+                    ps = PdfExportDialog.PAPERS.get(
+                        opts.get("paper_size", "A4"), QPageSize.A4)
+                    orient = (QPageLayout.Landscape
+                              if opts.get("orientation") == "landscape"
+                              else QPageLayout.Portrait)
+                    m = QMarginsF(opts.get("margin_left_mm", 20.0),
+                                  opts.get("margin_top_mm", 20.0),
+                                  opts.get("margin_right_mm", 20.0),
+                                  opts.get("margin_bottom_mm", 20.0))
+                    layout = QPageLayout(QPageSize(ps), orient, m)
                     page.printToPdf(self._pdf_path, layout)
                 except Exception:
                     page.printToPdf(self._pdf_path)
