@@ -7765,6 +7765,20 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       .replace(/\n{2,}/g, '\n')
       .trim();
   }
+  /* v3.48.37（FRAG-RENDER）：按 state.raw 重建 [i1,i2] 的块 DOM。
+     AI 片段替换是用 execCommand('insertText') 把 **Markdown 源码**写进
+     contenteditable 的：input 事件已把 raw 同步成 Markdown，但 DOM 里仍是
+     字面文本（plaintext-only 不会解析 ** / ` / #）。不重建就会看到
+     「**加粗**」这种源码态（用户实锤）。 */
+  function _rerenderBlocksFromRaw(i1, i2) {
+    var last = Math.min(i2, ED.children.length - 1);
+    for (var q = Math.max(0, i1); q <= last; q++) {
+      var old = ED.children[q];
+      if (!old || !(q < state.raw.length)) continue;
+      var nu = blockEl(q);
+      try { ED.replaceChild(nu, old); } catch (eR) {}
+    }
+  }
   /* 把 Range 内容替换为 text（跨块倒序编辑，失败按快照回滚）。
      how 仅用于回传命中方式：cached / reloc / anchor / block-fix / src。 */
   function _replaceRangeWithText(r, text, how) {
@@ -7831,6 +7845,8 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     }
 
     try { if (typeof commitEditSilent === 'function') commitEditSilent(); } catch (e8) {}
+    /* v3.48.37（FRAG-RENDER）：把刚写入的 Markdown 重新渲染成样式 */
+    try { _rerenderBlocksFromRaw(i1, i2); } catch (e9) {}
     markDirty(); scheduleSnapshot();
     _xselHasSel = false; _xselClearOverlay();
     return JSON.stringify({ ok: true, err: '', code: '', hosts: hosts.length,

@@ -222,6 +222,15 @@ def _fill_painter(size: int) -> tuple:
     return pm, p
 
 
+def icon_filter(size: int = 16) -> QIcon:
+    """v3.48.35（FILE-SCOPE）：文件显示范围 —— 漏斗。"""
+    pm, p = _painter(size)
+    p.drawPath(_path([(3, 5), (21, 5), (14, 13), (14, 20.5),
+                      (10, 17.5), (10, 13)], True))
+    p.end()
+    return QIcon(pm)
+
+
 def icon_folder(color: str = "#0052d9", size: int = 16) -> QIcon:
     """文件列表文件夹：主题强调色填充（对齐设计01 .ficon 语义，随主题变色）。
 

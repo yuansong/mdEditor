@@ -17,16 +17,16 @@ import sys
 import openutil  # 跨平台打开文件 / 文件夹（封装 os.startfile / open / xdg-open）
 
 from PySide6.QtCore import (QBuffer, QByteArray, QEvent, QIODevice, QTimer, QUrl,
-                            QSize, Qt, QSettings, QMimeData, QObject, QMarginsF)
+                            QSize, Qt, QSettings, QMimeData, QObject)
 from PySide6.QtGui import (QAction, QActionGroup, QBrush, QColor, QGuiApplication,
-                           QIcon, QImage, QKeySequence, QPainter, QPen, QPixmap,
-                           QPageLayout, QPageSize)
+                           QIcon, QImage, QKeySequence, QPainter, QPen, QPixmap)
 from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QDialog, QFileDialog, QFrame, QHBoxLayout,
     QInputDialog, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
     QProxyStyle, QPushButton, QDockWidget, QSplitter, QStackedWidget, QStyle, QTabBar,
     QToolBar, QToolButton, QVBoxLayout, QWidget, QComboBox, QDoubleSpinBox,
-    QFormLayout, QCheckBox, QDialogButtonBox,
+    QFormLayout, QCheckBox, QDialogButtonBox, QGroupBox, QGridLayout,
+    QSpinBox,
 )
 from PySide6.QtWebEngineCore import (
     QWebEnginePage, QWebEngineSettings,
@@ -319,146 +319,189 @@ class EditorPage(QWebEnginePage):
         return super().acceptNavigationRequest(url, navType, isMainFrame)
 
 
-# v3.47.1（PDF-SET）：PDF 导出设置对话框（页边距 / 字体 / 字号，可保存为默认）
+# v3.48.34（PDF-LAYOUT）：PDF 导出设置对话框 —— 纸张 / 方向 / 四边独立边距 /
+# 缩放 / 行间距 / 字体 / 字号，可保存为默认。v3.47.1 起逐步扩展。
 class PdfExportDialog(QDialog):
     # 可选字体（含「跟随界面字体」占位）；中文环境优先常用字体
     FONTS = ["", "Microsoft YaHei", "SimSun", "SimHei", "KaiTi",
              "Arial", "Times New Roman", "Consolas", "Courier New"]
 
-    # v3.48.25（PDF-SET+）：纸张尺寸 -> QPageSize.PageSizeId 映射
-    PAPERS = {
-        "A4": QPageSize.A4,
-        "Letter": QPageSize.Letter,
-        "A3": QPageSize.A3,
-        "A5": QPageSize.A5,
-        "B5": QPageSize.B5,
-    }
-    LINE_HEIGHTS = [("紧凑 1.0", 1.0), ("标准 1.5", 1.5),
-                    ("宽松 1.8", 1.8), ("宽松 2.0", 2.0)]
-
     def __init__(self, parent, settings):
         super().__init__(parent)
         self.setWindowTitle("PDF 导出设置")
         self._settings = settings
-
-        def num(key, default):
-            try:
-                return float(settings.value(key, default) or default)
-            except (TypeError, ValueError):
-                return float(default)
+        from bookexport import PAPER_SIZES, PDF_DEFAULT_OPTS, opts_from_settings
+        o = opts_from_settings(settings)
+        self._syncing = False
 
         lay = QVBoxLayout(self)
-        form = QFormLayout()
+        lay.setSpacing(10)
 
-        # ---- 纸张尺寸 / 方向 ----
+        # ---- 纸张 ----
+        g_page = QGroupBox("纸张")
+        f1 = QFormLayout(g_page)
         self._paper = QComboBox()
-        for k in self.PAPERS:
-            self._paper.addItem(k, k)
-        pv = str(settings.value("pdf/paperSize", "A4") or "A4")
-        pi = self._paper.findData(pv)
-        self._paper.setCurrentIndex(pi if pi >= 0 else 0)
-        form.addRow("纸张尺寸", self._paper)
+        for label, val in PAPER_SIZES:
+            self._paper.addItem(label, val)
+        idx = self._paper.findData(o["paper_size"])
+        self._paper.setCurrentIndex(idx if idx >= 0 else 0)
+        f1.addRow("纸张尺寸", self._paper)
 
         self._orient = QComboBox()
         self._orient.addItem("纵向", "portrait")
         self._orient.addItem("横向", "landscape")
-        ov = str(settings.value("pdf/orientation", "portrait") or "portrait")
-        oi = self._orient.findData(ov)
-        self._orient.setCurrentIndex(oi if oi >= 0 else 0)
-        form.addRow("方向", self._orient)
+        idx = self._orient.findData(o["orientation"])
+        self._orient.setCurrentIndex(idx if idx >= 0 else 0)
+        f1.addRow("方向", self._orient)
+        lay.addWidget(g_page)
 
-        # ---- 四边页边距 ----
-        mwgt = QWidget()
-        mhl = QHBoxLayout(mwgt)
-        mhl.setContentsMargins(0, 0, 0, 0)
-        self._m_top = QDoubleSpinBox()
-        self._m_bottom = QDoubleSpinBox()
-        self._m_left = QDoubleSpinBox()
-        self._m_right = QDoubleSpinBox()
-        for sp, key, val in ((self._m_top, "pdf/marginTop", 20.0),
-                              (self._m_bottom, "pdf/marginBottom", 20.0),
-                              (self._m_left, "pdf/marginLeft", 20.0),
-                              (self._m_right, "pdf/marginRight", 20.0)):
-            sp.setRange(0, 50)
+        # ---- 页边距（四边独立；勾选「四边一致」时联动）----
+        g_m = QGroupBox("页边距")
+        v = QVBoxLayout(g_m)
+        self._uniform = QCheckBox("四边一致")
+        self._uniform.setChecked(bool(o["margin_uniform"]))
+        v.addWidget(self._uniform)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(8)
+        self._margins = {}
+        for i, (key, label) in enumerate((("top", "上"), ("right", "右"),
+                                          ("bottom", "下"), ("left", "左"))):
+            sp = QDoubleSpinBox()
+            sp.setRange(0.0, 100.0)
             sp.setDecimals(1)
+            sp.setSingleStep(1.0)
             sp.setSuffix(" mm")
-            sp.setValue(num(key, val))
-            mhl.addWidget(sp)
-        form.addRow("页边距(上/下/左/右)", mwgt)
+            sp.setValue(float(o["margin_" + key + "_mm"]))
+            sp.valueChanged.connect(self._on_margin_changed)
+            self._margins[key] = sp
+            row, col = divmod(i, 2)
+            grid.addWidget(QLabel(label), row, col * 2)
+            grid.addWidget(sp, row, col * 2 + 1)
+        v.addLayout(grid)
+        self._uniform.toggled.connect(self._sync_uniform)
+        lay.addWidget(g_m)
 
-        # ---- 缩放 ----
-        self._scale = QDoubleSpinBox()
-        self._scale.setRange(50, 200)
-        self._scale.setDecimals(0)
+        # ---- 排版 ----
+        g_t = QGroupBox("排版")
+        f3 = QFormLayout(g_t)
+        self._scale = QSpinBox()
+        self._scale.setRange(25, 400)
+        self._scale.setSingleStep(5)
         self._scale.setSuffix(" %")
-        self._scale.setValue(num("pdf/scale", 100.0))
-        form.addRow("缩放", self._scale)
+        self._scale.setToolTip("正文按比例缩放，页边距保持不变；100% 为原尺寸")
+        self._scale.setValue(int(o["scale_pct"]))
+        f3.addRow("缩放", self._scale)
 
-        # ---- 字体 / 字号 ----
-        fam = str(settings.value("pdf/fontFamily", "") or "")
+        self._line = QDoubleSpinBox()
+        self._line.setRange(0.0, 4.0)
+        self._line.setDecimals(2)
+        self._line.setSingleStep(0.05)
+        self._line.setSpecialValueText("跟随文档")
+        self._line.setToolTip("行高倍数（× 字号）；「跟随文档」表示不调整")
+        self._line.setValue(float(o["line_spacing"]))
+        f3.addRow("行间距", self._line)
+
         self._font = QComboBox()
         self._font.addItem("（跟随界面字体）", "")
         for f in self.FONTS[1:]:
             self._font.addItem(f, f)
-        fi = self._font.findData(fam)
-        self._font.setCurrentIndex(fi if fi >= 0 else 0)
-        form.addRow("字体", self._font)
+        idx = self._font.findData(o["font_family"])
+        self._font.setCurrentIndex(idx if idx >= 0 else 0)
+        f3.addRow("字体", self._font)
 
         self._size = QDoubleSpinBox()
         self._size.setRange(8, 24)
         self._size.setDecimals(1)
         self._size.setSuffix(" pt")
-        self._size.setValue(num("pdf/fontSize", 11.0))
-        form.addRow("字号", self._size)
-
-        # ---- 行间距 ----
-        self._lh = QComboBox()
-        for label, v in self.LINE_HEIGHTS:
-            self._lh.addItem(label, v)
-        lhv = float(settings.value("pdf/lineHeight", 1.5) or 1.5)
-        li = self._lh.findData(lhv)
-        self._lh.setCurrentIndex(li if li >= 0 else 1)
-        form.addRow("行间距", self._lh)
-
-        lay.addLayout(form)
-
-        # ---- 内容 / 版式开关 ----
-        lay.addWidget(QLabel("内容 / 版式"))
-        self._h1 = QCheckBox("H1 标题前分页（章节另起一页）")
-        self._img = QCheckBox("图片自动适应页宽")
-        self._white = QCheckBox("强制白底（适合深色主题导出）")
-        self._h1.setChecked(str(settings.value("pdf/h1PageBreak", True) or True) not in ("false", "False", "0", ""))
-        self._img.setChecked(str(settings.value("pdf/imgFit", True) or True) not in ("false", "False", "0", ""))
-        self._white.setChecked(str(settings.value("pdf/forceWhite", True) or True) not in ("false", "False", "0", ""))
-        lay.addWidget(self._h1)
-        lay.addWidget(self._img)
-        lay.addWidget(self._white)
+        self._size.setValue(float(o["font_size_pt"]))
+        f3.addRow("字号", self._size)
+        lay.addWidget(g_t)
 
         self._save = QCheckBox("保存为默认")
         lay.addWidget(self._save)
+
+        # v3.48.38（PDF-DEF）：一键还原为内置最佳默认参数（不写盘，仅重置本对话框）
+        hb = QHBoxLayout()
+        self._reset = QPushButton("还原默认设置")
+        self._reset.setToolTip(
+            "将以上各项重置为程序内置的最佳导出默认值（行距 / 字体 / 字号 / 边距等）")
+        self._reset.clicked.connect(self._reset_to_defaults)
+        hb.addWidget(self._reset)
+        hb.addStretch(1)
+        lay.addLayout(hb)
 
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         btns.accepted.connect(self.accept)
         btns.rejected.connect(self.reject)
         lay.addWidget(btns)
 
+        self._apply_uniform_state()
+
+    # ---- 四边联动 ----
+    def _apply_uniform_state(self):
+        """四边一致时锁住「右 / 下 / 左」（值随「上」联动），避免误以为可独立输入。"""
+        uni = self._uniform.isChecked()
+        for key in ("right", "bottom", "left"):
+            self._margins[key].setEnabled(not uni)
+
+    def _sync_uniform(self, checked):
+        if not checked:
+            self._apply_uniform_state()
+            return
+        self._syncing = True
+        top = self._margins["top"].value()
+        for key in ("right", "bottom", "left"):
+            self._margins[key].setValue(top)
+        self._syncing = False
+        self._apply_uniform_state()
+
+    def _on_margin_changed(self, _val):
+        if self._syncing or not self._uniform.isChecked():
+            return
+        src = self.sender()
+        self._syncing = True
+        for sp in self._margins.values():
+            if sp is not src:
+                sp.setValue(src.value())
+        self._syncing = False
+
     def result_opts(self):
+        m = {k: float(sp.value()) for k, sp in self._margins.items()}
         return {
-            "paper_size": self._paper.currentData() or "A4",
-            "orientation": self._orient.currentData() or "portrait",
-            "margin_top_mm": self._m_top.value(),
-            "margin_bottom_mm": self._m_bottom.value(),
-            "margin_left_mm": self._m_left.value(),
-            "margin_right_mm": self._m_right.value(),
-            "scale_pct": self._scale.value(),
+            "paper_size": self._paper.currentData(),
+            "orientation": self._orient.currentData(),
+            "margin_top_mm": m["top"],
+            "margin_right_mm": m["right"],
+            "margin_bottom_mm": m["bottom"],
+            "margin_left_mm": m["left"],
+            "margin_mm": m["top"],          # 旧键：兼容历史调用方
+            "margin_uniform": self._uniform.isChecked(),
+            "scale_pct": int(self._scale.value()),
+            "line_spacing": round(float(self._line.value()), 2),
             "font_family": self._font.currentData() or "",
             "font_size_pt": self._size.value(),
-            "line_height": self._lh.currentData() or 1.5,
-            "h1_page_break": self._h1.isChecked(),
-            "img_fit": self._img.isChecked(),
-            "force_white": self._white.isChecked(),
             "save_default": self._save.isChecked(),
         }
+
+    def _reset_to_defaults(self):
+        """v3.48.38（PDF-DEF）：将对话框控件重置为内置最佳默认参数（PDF_DEFAULT_OPTS）。
+
+        仅复位本对话框，不直接写盘；如需固化默认值，可勾选「保存为默认」后确定。"""
+        d = PDF_DEFAULT_OPTS
+        idx = self._paper.findData(d["paper_size"])
+        self._paper.setCurrentIndex(idx if idx >= 0 else 0)
+        idx = self._orient.findData(d["orientation"])
+        self._orient.setCurrentIndex(idx if idx >= 0 else 0)
+        self._uniform.setChecked(bool(d["margin_uniform"]))
+        for key, sp in self._margins.items():
+            sp.setValue(float(d["margin_" + key + "_mm"]))
+        self._scale.setValue(int(d["scale_pct"]))
+        self._line.setValue(float(d["line_spacing"]))
+        idx = self._font.findData(d["font_family"])
+        self._font.setCurrentIndex(idx if idx >= 0 else 0)
+        self._size.setValue(float(d["font_size_pt"]))
+        self._apply_uniform_state()
 
 
 class MainWindow(QMainWindow):
@@ -554,8 +597,8 @@ class MainWindow(QMainWindow):
         #              embed =内嵌 data URL（图片写入 Markdown 本身）
         _imgm = str(self._settings.value("imageMode", "assets") or "assets")
         self._image_mode = "embed" if _imgm == "embed" else "assets"
-        # v3.39.8（FMT-LOG）：格式化操作日志开关（默认开；内核经 collect 差量上报落盘）
-        self._fmt_log = self._settings.value("fmtLog", True, type=bool)
+        # v3.39.8（FMT-LOG）：格式化操作日志开关（v3.48.38 起默认关；内核经 collect 差量上报落盘）
+        self._fmt_log = self._settings.value("fmtLog", False, type=bool)
         # 外部 pandoc 路径（导出 docx / EPUB 时优先使用；留空则自动探测 PATH）
         self._pandoc_path = str(self._settings.value("pandocPath", "") or "")
         # v3.48.12（SEM-2）：本地语义搜索总开关（默认开；查找 → 全局搜索 → 语义搜索）
@@ -777,6 +820,8 @@ class MainWindow(QMainWindow):
         split.setHandleWidth(1)
         self.setCentralWidget(split)
         self.setAcceptDrops(True)
+        # v3.48.35（DROP-MD）：应用级 .md 拖放（子控件吞不掉，见方法注释）
+        self._install_app_drop_filter()
 
         # v3.46（SoloMD P1）：AI 助手停靠面板（默认隐藏，经「视图 → AI 助手」开启）
         self._ai_bridge = AIBridge(self)
@@ -784,8 +829,10 @@ class MainWindow(QMainWindow):
         self._ai_dock.setObjectName("aiDock")
         self._ai_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         # v3.48.23（AI-UI）：面板宽度缩减 1/4（460 → 345），更紧凑；
+        # v3.48.37（AI-UI-2）：再缩 1/6（345 → 288）—— 345 在 1080p 下与正文
+        # 抢宽度明显，288 仍能放下一行按钮 + 消息气泡。
         # 首次展开时按新宽度定型（见 _show_ai_dock），避免沿用旧残留宽度。
-        self._ai_dock.setMinimumWidth(345)
+        self._ai_dock.setMinimumWidth(288)
         self._ai_dock_width_sized = False
         self._ai_pane = ai_pane.AIPane(self._ai_bridge)
         self._ai_dock.setWidget(self._ai_pane)
@@ -1538,10 +1585,15 @@ class MainWindow(QMainWindow):
         """打开 AI 助手面板（统一入口：视图菜单 / 顶栏按钮 / 选中即问）。"""
         if not self._ai_dock.isVisible():
             self._ai_dock.show()
-        # v3.48.23（AI-UI）：首次展开按 345 定型（宽度已缩减 1/4），
+        # v3.48.23（AI-UI）：首次展开按定型宽度（宽度已缩减 1/4）；
+        # v3.48.37（AI-UI-2）：定型宽度 345 → 288（再缩 1/6）。
         # 之后尊重用户手动拖拽的宽度，不再强行重置。
         if not getattr(self, "_ai_dock_width_sized", False):
-            self.resizeDocks([self._ai_dock], [345], Qt.Horizontal)
+            # show() 后停靠布局会把 dock 的最小宽度抬回「内容最小宽度」，
+            # 此处重新压回 288 再定型，否则 resizeDocks 会被 356/460 这类
+            # 旧内容宽度卡住（v3.48.37 AI-UI-2 实测）。
+            self._ai_dock.setMinimumWidth(288)
+            self.resizeDocks([self._ai_dock], [288], Qt.Horizontal)
             self._ai_dock_width_sized = True
         self._ai_dock.raise_()
 
@@ -1598,7 +1650,7 @@ class MainWindow(QMainWindow):
             self._ai_pane.ask_about_selection(text)
 
     # v3.48.0（F3-b）：右键「AI」子菜单 —— 实时取回当前选区文本
-    def _ai_ctx_action(self, action_key, sel_text=None):
+    def _ai_ctx_action(self, action_key, sel_text=None, prompt=None):
         """右键 AI 子菜单统一入口：选中=仅带上下文提问；其余=按预设提示词改写。
 
         sel_text 为 None 时（菜单构造期间未阻塞取选区）实时取回当前编辑器选区，
@@ -1606,11 +1658,12 @@ class MainWindow(QMainWindow):
         if not sel_text:
             self._js_active(
                 "window.aiSelText()",
-                lambda v: self._ai_ctx_dispatch(action_key, v if isinstance(v, str) else ""))
+                lambda v: self._ai_ctx_dispatch(
+                    action_key, v if isinstance(v, str) else "", prompt))
             return
-        self._ai_ctx_dispatch(action_key, sel_text)
+        self._ai_ctx_dispatch(action_key, sel_text, prompt)
 
-    def _ai_ctx_dispatch(self, action_key, sel_text):
+    def _ai_ctx_dispatch(self, action_key, sel_text, prompt=None):
         self._show_ai_dock()
         pane = getattr(self, "_ai_pane", None)
         if pane is None or not hasattr(pane, "ai_action"):
@@ -1618,18 +1671,20 @@ class MainWindow(QMainWindow):
         if action_key == "select":
             pane.ask_about_selection(sel_text)
         else:
-            pane.ai_action(action_key, sel_text)
+            pane.ai_action(action_key, sel_text, prompt)
 
     # v3.48.24（AI-DOC）：整篇 AI 优化（编辑器 / 标签右键「AI优化 → 整篇优化」）
-    def _ai_doc_action(self, action_key):
-        """整篇 AI 优化：唤起 AI 面板并对当前活动文档整篇发起预设改写。"""
+    def _ai_doc_action(self, action_key, prompt=None):
+        """整篇 AI 优化：唤起 AI 面板并对当前活动文档整篇发起预设改写。
+
+        v3.48.36（AI-MENUS）：prompt 非空 = 菜单里的自定义提示词。"""
         self._show_ai_dock()
         pane = getattr(self, "_ai_pane", None)
         if pane is None or not hasattr(pane, "ai_action_doc"):
             return
-        pane.ai_action_doc(action_key)
+        pane.ai_action_doc(action_key, prompt)
 
-    def _ai_doc_action_from_tab(self, action_key, idx):
+    def _ai_doc_action_from_tab(self, action_key, idx, prompt=None):
         """标签右键：先切到该标签（确保活动编辑器为其内容），再整篇优化。
 
         切换后内容经异步加载，延迟一拍取活动文档全文，避免取到旧文档。"""
@@ -1637,23 +1692,25 @@ class MainWindow(QMainWindow):
             return
         if idx != self._cur:
             self._tabbar.setCurrentIndex(idx)
-        QTimer.singleShot(350, lambda: self._ai_doc_action(action_key))
+        QTimer.singleShot(350, lambda: self._ai_doc_action(action_key, prompt))
 
     # v3.48.31（MENU-AI）：文件列表右键「AI优化」—— 对**该文件**整篇发起预设
     # 改写（原正文选区右键的「整篇优化」迁到此处，语义由「当前文档」变为
     # 「右键所指文件」，避免用户以为作用于当前打开的文档）。
-    def _ai_doc_action_for_path(self, action_key, path):
+    def _ai_doc_action_for_path(self, action_key, path, prompt=None):
         path = os.path.abspath(path)
         norm = os.path.normpath(path)
         # 已在标签页中打开 → 复用标签右键逻辑（切到该标签 → 整篇优化）
         for i, d in enumerate(self._docs):
             dp = d.get("path")
             if dp and os.path.normpath(dp) == norm:
-                self._ai_doc_action_from_tab(action_key, i)
+                # v3.48.36（AI-MENUS 修正）：prompt 必须一并透传，否则
+                # 「文件已打开」分支会退回内置提示词（探针 E2 抓到实锤）
+                self._ai_doc_action_from_tab(action_key, i, prompt)
                 return
         # 未打开 → 先打开，待「活动文档 == 目标文件」且视图就绪后再发起
         # （open_file 为异步加载，直接执行会作用到旧文档上）
-        self._ai_doc_pending = (action_key, norm, 0)
+        self._ai_doc_pending = (action_key, norm, 0, prompt)
         self.open_file(path)
         QTimer.singleShot(400, self._flush_ai_doc_pending)
 
@@ -1665,18 +1722,19 @@ class MainWindow(QMainWindow):
         pend = getattr(self, "_ai_doc_pending", None)
         if not pend:
             return
-        key, norm, tries = pend
+        key, norm, tries = pend[0], pend[1], pend[2]
+        prompt = pend[3] if len(pend) > 3 else None
         cur = ""
         if 0 <= self._cur < len(self._docs):
             cur = self._docs[self._cur].get("path") or ""
         ready = bool(cur) and os.path.normpath(cur) == norm
         if not ready and tries < 12:
-            self._ai_doc_pending = (key, norm, tries + 1)
+            self._ai_doc_pending = (key, norm, tries + 1, prompt)
             QTimer.singleShot(500, self._flush_ai_doc_pending)
             return
         self._ai_doc_pending = None
         if ready:
-            self._ai_doc_action(key)
+            self._ai_doc_action(key, prompt)
         else:
             self.show_status("AI 优化目标文件未就绪：" + os.path.basename(norm))
 
@@ -3791,14 +3849,14 @@ class MainWindow(QMainWindow):
         a.triggered.connect(lambda: self._copy_to_clip(os.path.dirname(doc.get("path") or ""), "所在目录"))
         # v3.48.24（AI-DOC）：标签右键「整篇 AI 优化」—— 先切到该标签再整篇优化
         m.addSeparator()
+        # v3.48.36（AI-MENUS）：菜单项可在 系统设置 → AI 菜单 自定义
+        from ai_pane import ai_menu_items
         ai_menu = m.addMenu("AI优化")
-        for _label, _key in (
-            ("润色", "polish"), ("精简", "condense"), ("扩写", "expand"),
-            ("纠错", "correct"), ("翻译", "translate"), ("改语气", "tone"),
-        ):
+        for _it in ai_menu_items(self._settings, "doc"):
             ai_menu.addAction(
-                _label,
-                lambda k=_key, i=idx: self._ai_doc_action_from_tab(k, i))
+                _it["label"],
+                lambda k=_it["key"], pr=_it["prompt"], i=idx:
+                self._ai_doc_action_from_tab(k, i, pr))
         m.exec(self._tabbar.mapToGlobal(pos))
 
     def _copy_to_clip(self, text, what):
@@ -4715,9 +4773,15 @@ class MainWindow(QMainWindow):
 
     # v3.44.35（BOOK-2）：整本书级导出 / 关闭
     def close_book(self):
-        """关闭当前书籍（清空侧栏书籍目录与 _book 状态）。"""
+        """关闭当前书籍（清空侧栏书籍目录与 _book 状态）。
+
+        v3.48.38（BOOK-AUTO）：用户主动关闭书籍后，清除「上次阅读书籍」记录
+        （lastBook / lastBookChapter / lastBookScroll），使下次启动默认不再自动
+        重新打开这些已关闭的书籍；仅当用户再次手动打开时才重新登记。"""
         self._book = None
         self._sidebar.set_book(None)
+        for _k in ("lastBook", "lastBookChapter", "lastBookScroll"):
+            self._settings.remove(_k)
         self.show_status("已关闭书籍")
 
     def _book_chapters_with_depth(self, info):
@@ -4760,7 +4824,20 @@ class MainWindow(QMainWindow):
             self._export_book_ebook(info, chapters, fmt)
 
     def _export_book_pdf(self, info, chapters):
-        """整本书 PDF：有界并行渲染 + pypdf 合并（书签 / 页码）。"""
+        """整本书 PDF：有界并行渲染 + pypdf 合并（书签 / 页码）。
+
+        v3.48.38（BOOK-PDF）：导出前弹出与单文件一致的 PDF 设置对话框，默认取
+        已保存设置或内置最佳默认值；两种导出链路共用 bookexport 同一套 opts 应用
+        逻辑（纸张 / 边距 / 行距 / 字体），保证整书与单文件默认导出效果完全一致。"""
+        dlg = PdfExportDialog(self, self._settings)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        opts = dlg.result_opts()
+        if opts.get("save_default"):
+            # 与单文件导出一致：勾选「保存为默认」时落盘
+            from bookexport import save_opts
+            save_opts(self._settings, opts)
+        self._pdf_opts = opts
         path, _ = QFileDialog.getSaveFileName(
             self, "导出整本书 PDF",
             self._dlg_start("pdf", (info["title"] or "book") + ".pdf"), "PDF 文件 (*.pdf)")
@@ -4770,8 +4847,6 @@ class MainWindow(QMainWindow):
         self.show_status("正在导出整本书 PDF（并行渲染 %d 章）…" % len(chapters))
         from bookexport import BookPdfExporter
         editor_html = os.path.join(os.path.dirname(os.path.abspath(__file__)), "editor.html")
-        # v3.47.1（PDF-SET）：整本书 PDF 复用已保存的页边距 / 字体 / 字号默认
-        opts = self._pdf_defaults()
         self._book_pdf_exp = BookPdfExporter(
             self, EditorPage, editor_html, max_slots=3, opts=opts,
             on_done=lambda ok_path, msg: self._book_pdf_done(ok_path, msg),
@@ -5551,20 +5626,9 @@ class MainWindow(QMainWindow):
             return
         opts = dlg.result_opts()
         if opts.get("save_default"):
-            s = self._settings
-            s.setValue("pdf/paperSize", opts["paper_size"])
-            s.setValue("pdf/orientation", opts["orientation"])
-            s.setValue("pdf/marginTop", opts["margin_top_mm"])
-            s.setValue("pdf/marginBottom", opts["margin_bottom_mm"])
-            s.setValue("pdf/marginLeft", opts["margin_left_mm"])
-            s.setValue("pdf/marginRight", opts["margin_right_mm"])
-            s.setValue("pdf/scale", opts["scale_pct"])
-            s.setValue("pdf/fontFamily", opts["font_family"])
-            s.setValue("pdf/fontSize", opts["font_size_pt"])
-            s.setValue("pdf/lineHeight", opts["line_height"])
-            s.setValue("pdf/h1PageBreak", opts["h1_page_break"])
-            s.setValue("pdf/imgFit", opts["img_fit"])
-            s.setValue("pdf/forceWhite", opts["forceWhite"])
+            # v3.48.34（PDF-LAYOUT）：纸张 / 方向 / 四边边距 / 缩放 / 行距一并落盘
+            from bookexport import save_opts
+            save_opts(self._settings, opts)
         self._pdf_opts = opts
         # v3.45.3（EXPORT-LINK）：书签数据在导出瞬间实时取（700ms 轮询缓存
         # 可能滞后，刚切文档就导出会拿到空大纲 → 无书签）
@@ -5611,30 +5675,18 @@ class MainWindow(QMainWindow):
         # v3.48.5（PDF-BG）：导出 HTML 的 body 背景随主题（--canvas 灰），
         # printToPdf 会把整页画布背景印出来 —— PDF 末页空白区一片灰。
         # PDF 导出强制白底（正文卡片 .page 本身是白底，不受影响）。
-        # v3.48.25（PDF-SET+）：导出版式样式（白底 / 行距 / H1 分页 / 图片适应页宽 / 缩放）
-        opts = getattr(self, "_pdf_opts", None)
-        extra = []
-        if opts:
-            if opts.get("force_white", True):
-                extra.append("html,body{background:#ffffff !important}")
-            lh = opts.get("line_height")
-            if lh:
-                extra.append("body,.page{line-height:%.2f !important}" % float(lh))
-            if opts.get("h1_page_break"):
-                extra.append("h1:not(:first-of-type){page-break-before:always !important}")
-                extra.append("h2,h3,h4{page-break-after:avoid !important}")
-            if opts.get("img_fit"):
-                extra.append("img{max-width:100% !important;height:auto !important;page-break-inside:avoid !important}")
-            sc = opts.get("scale_pct")
-            if sc and float(sc) != 100.0:
-                extra.append("body{zoom:%.3f}" % (float(sc) / 100.0))
-        if extra:
-            style = "<style id='mded-pdf-layout'>%s</style>\n" % " ".join(extra)
-            html = html.replace("</head>", style + "</head>", 1)
+        html = html.replace(
+            "</head>",
+            "<style>html,body{background:#ffffff !important}</style>\n</head>",
+            1)
         # v3.47.1（PDF-SET）：应用用户设定的字体 / 字号（注入 !important 样式）
+        opts = getattr(self, "_pdf_opts", None)
         if opts and opts.get("font_size_pt"):
             html = self._apply_pdf_font_css(
                 html, opts.get("font_family", ""), opts["font_size_pt"])
+        if opts:
+            # v3.48.34（PDF-LAYOUT）：缩放 / 行间距（打印期 CSS，body zoom）
+            html = self._apply_pdf_layout_css(html, opts)
         base = QUrl.fromLocalFile(
             (os.path.dirname(self.file_path) if self.file_path else os.path.expanduser("~")) + "/")
         v.loadFinished.connect(self._print_pdf)
@@ -5655,19 +5707,15 @@ class MainWindow(QMainWindow):
             page = self._pdf_view.page()
             page.pdfPrintingFinished.connect(self._pdf_done)
             opts = getattr(self, "_pdf_opts", None)
+            # v3.48.4（PDF-KW）：PySide6 6.11 的 printToPdf 只支持位置参数传
+            # QPageLayout（pageLayout= 关键字抛 AttributeError），且该异常类型
+            # 不是 TypeError——降级分支改为 Exception 兜底。
+            # v3.48.34（PDF-LAYOUT）：纸张 / 方向 / 四边独立边距统一由
+            # bookexport.pdf_page_layout 构造（单位显式 Millimeter）。
             if opts:
                 try:
-                    ps = PdfExportDialog.PAPERS.get(
-                        opts.get("paper_size", "A4"), QPageSize.A4)
-                    orient = (QPageLayout.Landscape
-                              if opts.get("orientation") == "landscape"
-                              else QPageLayout.Portrait)
-                    m = QMarginsF(opts.get("margin_left_mm", 20.0),
-                                  opts.get("margin_top_mm", 20.0),
-                                  opts.get("margin_right_mm", 20.0),
-                                  opts.get("margin_bottom_mm", 20.0))
-                    layout = QPageLayout(QPageSize(ps), orient, m)
-                    page.printToPdf(self._pdf_path, layout)
+                    from bookexport import pdf_page_layout
+                    page.printToPdf(self._pdf_path, pdf_page_layout(opts))
                 except Exception:
                     page.printToPdf(self._pdf_path)
             else:
@@ -5701,18 +5749,16 @@ class MainWindow(QMainWindow):
             return html.replace("</head>", style + "</head>", 1)
         return html + style
 
+    @staticmethod
+    def _apply_pdf_layout_css(html, opts):
+        """v3.48.34（PDF-LAYOUT）：缩放 / 行间距打印期 CSS。"""
+        from bookexport import _apply_pdf_layout_css as _f
+        return _f(html, opts)
+
     def _pdf_defaults(self):
         """读取已保存的 PDF 默认设置（无则取界面字体 / 常规值）。"""
-        try:
-            margin = float(self._settings.value("pdf/margin", 20.0) or 20.0)
-        except (TypeError, ValueError):
-            margin = 20.0
-        try:
-            size = float(self._settings.value("pdf/fontSize", 11.0) or 11.0)
-        except (TypeError, ValueError):
-            size = 11.0
-        fam = str(self._settings.value("pdf/fontFamily", "") or "")
-        return {"margin_mm": margin, "font_family": fam, "font_size_pt": size}
+        from bookexport import opts_from_settings
+        return opts_from_settings(self._settings)
 
     def _pdf_done(self, path, ok):
         if not ok:
@@ -7419,6 +7465,36 @@ class MainWindow(QMainWindow):
         if img_cnt > 1:
             self.show_status(f"已插入 {img_cnt} 张图片")
 
+    # ---------- v3.48.35（DROP-MD）：应用级 .md 拖放 ----------
+    def _install_app_drop_filter(self):
+        """把 .md 拖放提升到应用级，任何子控件都吞不掉。
+
+        Qt 的拖放目标 = 光标下「接受 drop」的最近控件：QLineEdit / 大纲树 /
+        书签树 / AI 输入框等都自带 drop 实现，会先消费掉事件，主窗口的
+        dragEnterEvent/dropEvent 根本收不到（用户实测「拖进来没反应」）。
+        应用级过滤器在目标控件之前执行，因此能稳定截获 URL 拖放。
+        幂等：重复调用只装一次。
+        """
+        if getattr(self, "_app_drop_installed", False):
+            return
+        app = QApplication.instance()
+        if app is None:          # 无 QApplication（单测导入）时静默跳过
+            return
+        app.installEventFilter(self)
+        self._app_drop_installed = True
+
+    @staticmethod
+    def _md_drop_path(ev):
+        """拖放载荷里的第一个本地 .md 绝对路径（没有则空串）。"""
+        md = ev.mimeData()
+        if md is None or not md.hasUrls():
+            return ""
+        for url in md.urls():
+            p = url.toLocalFile()
+            if p and p.lower().endswith(MD_EXTS) and os.path.isfile(p):
+                return p
+        return ""
+
     # QWebEngineView 的渲染子控件会吞掉 drop 事件，需要事件过滤器
     def _install_drop_filter(self):
         for v in (self._view, self._view_src, self._view_prev):
@@ -7430,6 +7506,20 @@ class MainWindow(QMainWindow):
             v.setAcceptDrops(True)
 
     def eventFilter(self, obj, ev):
+        # v3.48.35（DROP-MD）：应用级 .md 拖放 —— 先于目标控件处理，
+        # 拖到任何位置（编辑器 / 文件列表 / 大纲 / 输入框）都能打开。
+        # 模态对话框期间不接管（避免弹窗未关就切文档）；不含 .md 的
+        # 载荷（图片等）直接放行，交给原有 dragEnterEvent/dropEvent。
+        if ev.type() in (QEvent.DragEnter, QEvent.DragMove, QEvent.Drop):
+            if QApplication.activeModalWidget() is None:
+                _md_p = self._md_drop_path(ev)
+                if _md_p:
+                    ev.acceptProposedAction()   # 必须 accept，否则 Qt 不投递 Drop
+                    if ev.type() == QEvent.Drop:
+                        self.open_file(_md_p)
+                        self.show_status('已打开拖入的文档：%s'
+                                         % os.path.basename(_md_p))
+                    return True
         # v3.44.9（ZEN-HOVER）：极简（zen）模式下菜单栏默认隐藏；鼠标移到窗口顶部
         # （标题栏下方客户区顶部阈值内）时显示，离开后自动隐藏（滞回 28/40px 防抖，
         # 弹出菜单期间不隐藏）。全局事件过滤器仅在 zen 模式安装（见 _apply_layout_chrome）。
@@ -7523,13 +7613,14 @@ class MainWindow(QMainWindow):
         # 期间**不**同步阻塞等待 runJavaScript（嵌套事件循环易与右键上下文菜单
         # 事件死锁，导致右键菜单整片不弹出）；点击子菜单项时**实时**取回选区文本。
         if not readonly:
+            # v3.48.36（AI-MENUS）：菜单项可在 系统设置 → AI 菜单 自定义
+            from ai_pane import ai_menu_items
             ai_menu = menu.addMenu("AI优化")
-            for _label, _key in (
-                ("润色", "polish"), ("精简", "condense"), ("扩写", "expand"),
-                ("纠错", "correct"), ("翻译", "translate"), ("改语气", "tone"),
-                ("选中提问", "select"),
-            ):
-                ai_menu.addAction(_label, lambda k=_key: self._ai_ctx_action(k))
+            for _it in ai_menu_items(self._settings, "ctx"):
+                ai_menu.addAction(
+                    _it["label"],
+                    lambda k=_it["key"], pr=_it["prompt"]:
+                    self._ai_ctx_action(k, prompt=pr))
             # v3.48.31（MENU-AI）：「整篇优化」子菜单已从正文选区右键移除 ——
             # 选区右键语义是「对所选文字操作」，整篇级入口迁到文件列表右键
             # 「AI优化」（见 _ai_doc_action_for_path）。

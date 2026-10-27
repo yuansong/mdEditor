@@ -9,7 +9,8 @@ import re
 import tempfile
 
 from PySide6.QtCore import QEvent, QPoint, QSize, QStandardPaths, Qt, QPointF, Signal
-from PySide6.QtGui import QBrush, QColor, QPainter, QPixmap, QPolygonF
+from PySide6.QtGui import (QAction, QActionGroup, QBrush, QColor,
+                           QFontMetrics, QPainter, QPixmap, QPolygonF)
 from PySide6.QtWidgets import (
     QApplication, QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QHeaderView,
     QDialog, QDialogButtonBox, QFormLayout, QFrame, QHBoxLayout, QInputDialog, QLabel,
@@ -20,9 +21,24 @@ from PySide6.QtWidgets import (
 
 from config import DRAFT_DIR, FILE_LIST_DEFAULT_DIR, HERE
 from styles import SIDEBAR_QSS
-from icons import icon_file, icon_folder, icon_up, book_state_icon, \
+from icons import icon_file, icon_folder, icon_filter, icon_up, book_state_icon, \
     BOOK_COLOR_OK, BOOK_COLOR_BAD, BOOK_COLOR_CAT
 import semsearch  # v3.48.12（SEM-3）：本地语义搜索（离线 TF-IDF + sqlite 倒排索引）
+
+def _md_url_path(md):
+    """v3.48.35（DROP-MD）：拖放载荷里的第一个本地 .md 路径（无则空串）。
+
+    口径与文件列表一致（Sidebar.MD_EXTS 含 .md/.markdown/.mdown/.txt），
+    因为这些扩展名在编辑器里都按 Markdown 文档打开。
+    """
+    if md is None or not md.hasUrls():
+        return ""
+    for u in md.urls():
+        p = u.toLocalFile()
+        if p and p.lower().endswith(Sidebar.MD_EXTS):
+            return p
+    return ""
+
 
 # 跨文件搜索上限（避免在超大目录上卡死界面）
 SEARCH_MAX_FILES = 1500
@@ -401,6 +417,12 @@ class OutlineTree(QTreeWidget):
         self._owner = owner
 
     def dropEvent(self, e):
+        # v3.48.35（DROP-MD）：拖入的是本地 .md → 直接打开文档，不参与调序
+        _p = _md_url_path(e.mimeData())
+        if _p:
+            e.acceptProposedAction()
+            self._owner._win.open_file(_p)
+            return
         src = self.currentItem()
         tgt = self.itemAt(e.position().toPoint())
         if src is None or tgt is None or src is tgt:
@@ -442,6 +464,12 @@ class BookTree(QTreeWidget):
         self.customContextMenuRequested.connect(self._on_menu)
 
     def dropEvent(self, e):
+        # v3.48.35（DROP-MD）：拖入的是本地 .md → 直接打开文档，不参与重排
+        _p = _md_url_path(e.mimeData())
+        if _p:
+            e.acceptProposedAction()
+            self._owner._win.open_file(_p)
+            return
         src = self.currentItem()
         tgt = self.itemAt(e.position().toPoint())
         if src is None or tgt is None or src is tgt:
@@ -512,6 +540,12 @@ class Sidebar(QWidget):
 
     TAB_FILES, TAB_OUTLINE, TAB_BOOK, TAB_BACKLINKS = 0, 1, 2, 3
     MD_EXTS = (".md", ".markdown", ".mdown", ".txt")
+    # v3.48.35（FILE-SCOPE）：文件列表显示范围（互斥三选一）
+    # all = 文件夹 + 全部文件；dirs = 仅文件夹；md = 文件夹 + Markdown（默认）
+    SCOPES = (("all", "显示所有文件"),
+              ("dirs", "显示文件夹"),
+              ("md", "仅显示 Markdown 文件"))
+    SCOPE_DEFAULT = "md"
 
     # v3.44.34（BOOK-1）：书籍页签对外信号
     bookEntryOpen = Signal(str)        # 章节节点被点击/双击 → 章节绝对路径
@@ -557,6 +591,8 @@ class Sidebar(QWidget):
         self._outline_words = False  # v3.31.2（#3）：分节字数后缀开关（默认关）
         self._last_headings = None   # 最近一次大纲数据（级别切换时复用重建）
         self._file_mode = "current"  # 文件列表显示模式：current=跟随当前文档 / blank=空白项
+        # v3.48.35（FILE-SCOPE）：显示范围（默认仅 Markdown，落盘 files/scope）
+        self._scope = self._load_scope()
         self._initial_restored = False  # v3.38（FLP-2）：启动/首次打开 tab 是否已定位过
 
         lay = QVBoxLayout(self)
@@ -630,6 +666,8 @@ class Sidebar(QWidget):
         self.file_list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
         self.file_list.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.file_list.setIconSize(QSize(16, 16))
+        # v3.48.35（DROP-MD）：列表自身不接 drop，交给主窗口统一处理
+        self.file_list.setAcceptDrops(False)
         self.file_list.itemDoubleClicked.connect(self._on_file_dbl)
         # v3.44.2（FILE-UX）：文件夹图标主题色（随 apply_theme 重填），文件用中性灰描边图标
         self._folder_accent = "#0052d9"
@@ -684,8 +722,27 @@ class Sidebar(QWidget):
         self.file_filter.setObjectName("fileFilter")
         self.file_filter.setPlaceholderText("筛选文件（实时，不区分大小写）")
         self.file_filter.setClearButtonEnabled(True)   # 行内清除钮（×）
+        # v3.48.35（DROP-MD）：筛选框不接受拖放 —— 否则把 .md 拖进来只会
+        # 在框里粘出一串路径；关掉后 drop 冒泡到主窗口，按「打开文档」处理。
+        self.file_filter.setAcceptDrops(False)
         self.file_filter.textChanged.connect(self._apply_file_filter)
-        fp_lay.addWidget(self.file_filter)
+        # v3.48.35（FILE-SCOPE）：筛选框右侧「显示范围」图标按钮（漏斗），
+        # 点击弹出三个互斥选项；选择即落盘并即时重建列表。
+        self.btn_scope = QToolButton(self)
+        self.btn_scope.setObjectName("fileScope")
+        self.btn_scope.setIcon(icon_filter(16))
+        self.btn_scope.setIconSize(QSize(16, 16))
+        self.btn_scope.setCursor(Qt.PointingHandCursor)
+        self.btn_scope.setFixedSize(26, 26)
+        self.btn_scope.setAutoRaise(True)
+        self.btn_scope.clicked.connect(self._popup_scope_menu)
+        self._update_scope_btn()
+        _frow = QHBoxLayout()
+        _frow.setContentsMargins(0, 0, 0, 0)
+        _frow.setSpacing(2)
+        _frow.addWidget(self.file_filter, 1)
+        _frow.addWidget(self.btn_scope)
+        fp_lay.addLayout(_frow)
         fp_lay.addWidget(self.file_list, 1)
 
         # 大纲：树形结构，默认展开到 3 级，更深层级默认折叠（可手动展开）
@@ -997,14 +1054,14 @@ class Sidebar(QWidget):
             # v3.48.31（MENU-AI）：「AI优化」—— 对该文件整篇发起预设改写
             # （原正文选区右键的「整篇优化」迁到此处：语义由「当前活动文档」
             #  变为「右键所指文件」，未打开的文件先打开，就绪后再发起）。
+            # v3.48.36（AI-MENUS）：菜单项可在 系统设置 → AI 菜单 自定义
+            from ai_pane import ai_menu_items
             ai_menu = menu.addMenu("AI优化")
-            for _label, _key in (
-                ("润色", "polish"), ("精简", "condense"), ("扩写", "expand"),
-                ("纠错", "correct"), ("翻译", "translate"), ("改语气", "tone"),
-            ):
+            for _it in ai_menu_items(self._win._settings, "doc"):
                 ai_menu.addAction(
-                    _label,
-                    lambda k=_key, pp=p: self._win._ai_doc_action_for_path(k, pp))
+                    _it["label"],
+                    lambda k=_it["key"], pr=_it["prompt"], pp=p:
+                    self._win._ai_doc_action_for_path(k, pp, pr))
             # v3.35（TPL-D）：把该文档收编为自定义模板（追加到 / 菜单与悬浮模板菜单）
             menu.addAction("设为模板…", lambda: self._win.make_template_from_file(p))
             # v3.48.31：原「插入目录 / 删除目录」两项已从文件列表移除 ——
@@ -1132,6 +1189,11 @@ class Sidebar(QWidget):
                     return 0.0
             files.sort(key=_mtime, reverse=True)
             others.sort(key=_mtime, reverse=True)
+        # v3.48.35（FILE-SCOPE）：按显示范围裁剪（文件夹恒在，便于继续下钻）
+        if self._scope == "dirs":
+            files, others = [], []
+        elif self._scope == "md":
+            others = []
         for n in dirs:
             p = os.path.join(self._cur_dir, n)
             it = QListWidgetItem(icon_folder(self._folder_accent), n)
@@ -1191,6 +1253,52 @@ class Sidebar(QWidget):
         f = getattr(self, "file_filter", None)
         if f is not None and f.text():
             f.setText("")
+
+    # ============ v3.48.35（FILE-SCOPE）：文件列表显示范围 ============
+    def _load_scope(self):
+        """读取显示范围（缺省 = 仅 Markdown；非法值回落默认）。"""
+        try:
+            v = str(self._win._settings.value("files/scope", self.SCOPE_DEFAULT) or "")
+        except AttributeError:
+            return self.SCOPE_DEFAULT
+        v = v.strip()
+        return v if v in ("all", "dirs", "md") else self.SCOPE_DEFAULT
+
+    def _build_scope_menu(self):
+        """构建三个互斥选项（每次重建，勾选态始终跟随当前值；供探针单测）。"""
+        m = QMenu(self)
+        grp = QActionGroup(m)
+        grp.setExclusive(True)
+        for key, label in self.SCOPES:
+            a = QAction(label, m)
+            a.setCheckable(True)
+            a.setChecked(key == self._scope)
+            a.triggered.connect(lambda _c=False, k=key: self._set_scope(k))
+            grp.addAction(a)
+            m.addAction(a)
+        m.setProperty("_group", grp)
+        return m
+
+    def _popup_scope_menu(self):
+        """点击漏斗按钮 → 在按钮下方弹出显示范围菜单。"""
+        m = self._build_scope_menu()
+        m.exec(self.btn_scope.mapToGlobal(self.btn_scope.rect().bottomLeft()))
+
+    def _set_scope(self, key):
+        if key not in ("all", "dirs", "md") or key == getattr(self, "_scope", None):
+            self._update_scope_btn()
+            return
+        self._scope = key
+        self._win._settings.setValue("files/scope", key)
+        self._update_scope_btn()
+        self._refresh_files()
+
+    def _update_scope_btn(self):
+        label = dict(self.SCOPES).get(getattr(self, "_scope", self.SCOPE_DEFAULT), "")
+        btn = getattr(self, "btn_scope", None)
+        if btn is not None:
+            btn.setToolTip("显示范围：%s\n（点击切换：显示所有文件 / 显示文件夹 / "
+                           "仅显示 Markdown 文件）" % label)
 
     # ============ v3.39（FL-5）：排序方式 ============
     def _sort_mode(self):
@@ -1308,9 +1416,10 @@ class Sidebar(QWidget):
             b.setCursor(Qt.PointingHandCursor)
             b.setAutoRaise(True)
             # v3.45.7（CRUMB-2）：增大内边距，扩大可点击热区；当前段加粗高亮
+            b.setObjectName("crumbSeg")   # padding 由全局 QSS（#crumbSeg）提供
             css = (
                 "QToolButton{{ border:none; background:transparent;"
-                " padding:4px 9px; border-radius:5px; color:{fg}; }}"
+                " border-radius:5px; color:{fg}; }}"
                 "QToolButton:hover{{ background:{hov}; }}"
             ).format(fg=fg, hov=hov)
             if cur:
@@ -1318,12 +1427,13 @@ class Sidebar(QWidget):
             b.setStyleSheet(css)
             b.clicked.connect(cb)
             lay.addWidget(b)
+            return b
 
         def sep():
             # v3.45.7（CRUMB-2）：分隔符加大间距 + 高亮，提升辨识度
             s = QLabel("›", self.crumbs)
             s.setStyleSheet("QLabel{{ color:{ac}; font-weight:700;"
-                            " font-size:13px; padding:0 6px; }}".format(ac=ac))
+                            " font-size:12px; padding:0 2px; }}".format(ac=ac))
             lay.addWidget(s)
 
         if self._cur_dir is None:
@@ -1347,38 +1457,70 @@ class Sidebar(QWidget):
         else:
             parts.append((norm or self._cur_dir, self._cur_dir))
 
-        # v3.45.7（CRUMB-2）：保开头、末尾超出部分用 … 省略
-        HEAD_KEEP = 3                      # 保留开头段数（不含「此电脑」）
-        if len(parts) > HEAD_KEEP + 1:     # 超过 4 段才折叠，避免浅路径误截
-            head = parts[:HEAD_KEEP]
-            hidden = parts[HEAD_KEEP:]
-        else:
-            head = parts
-            hidden = []
+        # v3.48.35（CRUMB-2LVL）：最多保留**最后两级**（当前目录 + 直接父目录），
+        # 从尾部往前截取：末级文本**永不省略**（「我现在在哪」必须一眼看清），
+        # 前导层级折叠为「…」（点击弹出全部被折叠目录，含「此电脑」）。
+        # 224px 侧栏放不下两级时退化为「… › 末级」。
+        _fm = QFontMetrics(self.crumbs.font())
+        PAD = 12      # 段钮左右内边距（QSS #sidebar QToolButton#crumbSeg）
+        SEP_W = 11    # 分隔符 › 实测宽
+        DOTS_W = 16   # 「…」按钮实测宽
+        UP_W = 22     # ↑ 按钮
+        PC_W = 51     # 「此电脑」段
 
-        seg("此电脑", "我的电脑（顶层）", self._enter_this_pc)
-        sep()
-        for i, (name, pth) in enumerate(head):
-            seg(name, pth, lambda pp=pth: self._enter_dir(pp))
-            sep()
+        keep = min(2, len(parts))
+        while True:
+            hidden = parts[:-keep] if keep < len(parts) else []
+            tail = parts[-keep:]
+            n_sep = (keep - 1) + (1 if hidden else 0)
+            fixed = (20 + UP_W + SEP_W * n_sep + (len(tail) + 1)
+                     + (DOTS_W if hidden else 0) + (0 if hidden else PC_W))
+            avail = 224 - fixed
+            last_w = _fm.horizontalAdvance(tail[-1][0]) + PAD
+            if keep == 1:
+                first_budget = None
+                break
+            first_budget = avail - last_w - PAD
+            if first_budget >= 34 or not hidden:
+                break
+            keep = 1                     # 两级放不下 → 只留末级
+
+        def seg_elided(name, pth, budget):
+            seg(_fm.elidedText(name, Qt.ElideRight, max(20, budget)), pth,
+                lambda pp=pth: self._enter_dir(pp))
+
         if hidden:
-            # … 按钮：点击弹出被省略的目录，可一键直达（含当前目录）
+            # … 按钮：弹出被折叠的上层目录（含「此电脑」），可一键直达
             b = QToolButton(self.crumbs)
             b.setText("…")
-            b.setToolTip("（路径过长，已省略 %d 级目录）点击展开" % len(hidden))
+            b.setObjectName("crumbDots")
+            b.setToolTip("已折叠 %d 级上层目录（含「此电脑」），点击展开" % (len(hidden) + 1))
             b.setCursor(Qt.PointingHandCursor)
             b.setAutoRaise(True)
             b_css = (
                 "QToolButton{{ border:none; background:transparent;"
-                " padding:4px 9px; border-radius:5px; color:{ac};"
+                " border-radius:5px; color:{ac};"
                 " font-weight:700; }}"
                 "QToolButton:hover{{ background:{hov}; }}"
             ).format(ac=ac, hov=hov)
             b.setStyleSheet(b_css)
             b.clicked.connect(self._popup_hidden_dirs)
-            b.setProperty("_hidden", hidden)
+            b.setProperty("_hidden", [("此电脑", None)] + hidden)
             lay.addWidget(b)
             sep()
+        elif keep < len(parts):
+            # 理论上不会走到（hidden 为空即未截断），保留兜底
+            seg("此电脑", "我的电脑（顶层）", self._enter_this_pc)
+            sep()
+
+        for i, (name, pth) in enumerate(tail):
+            if i == len(tail) - 1:
+                # 末级：完整显示，绝不省略
+                seg(name, pth, lambda pp=pth: self._enter_dir(pp))
+            else:
+                seg_elided(name, pth, first_budget if first_budget else 60)
+            if i < len(tail) - 1:
+                sep()
         lay.addStretch(1)
         self._crumb_full = "此电脑 › " + " › ".join(p for p, _ in parts)
 
@@ -1392,7 +1534,10 @@ class Sidebar(QWidget):
             return
         m = QMenu(self)
         for name, pth in hidden:
-            m.addAction(name, lambda pp=pth: self._enter_dir(pp))
+            if pth is None:      # v3.48.35：折叠列表首项 =「此电脑」
+                m.addAction(name, self._enter_this_pc)
+            else:
+                m.addAction(name, lambda pp=pth: self._enter_dir(pp))
         gp = s.mapToGlobal(s.rect().bottomLeft())
         m.exec(gp)
 

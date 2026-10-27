@@ -328,6 +328,12 @@ SIDEBAR_QSS_TPL = """
   background: transparent; color: {text}; font-weight: 600;
   border-bottom: 2px solid {accent};
 }}
+/* v3.48.35（CRUMB-TAIL）：路径段按钮 / 「…」折叠按钮的内边距 —— 用双 ID 选择器
+   压过上面 #sidebar QToolButton 的 5px 12px（否则每段空耗 24px，224px 侧栏放不下三层） */
+#sidebar QToolButton#crumbSeg {{ border:none; background:transparent;
+  padding:4px 6px; border-radius:5px; }}
+#sidebar QToolButton#crumbDots {{ border:none; background:transparent;
+  padding:4px 4px; border-radius:5px; }}
 #sidebar #crumbUp {{
   border: 1px solid {input_border}; background: {input_bg};
   color: {text_muted}; border-radius: 6px; font-size: 13px;
@@ -376,6 +382,14 @@ SIDEBAR_QSS_TPL = """
   margin: 4px 10px 0 10px; font-size: 12.5px; background: {input_bg}; color: {text};
 }}
 #sidebar QLineEdit:focus {{ border-color: {accent}; }}
+/* v3.48.35（FILE-SCOPE）：筛选框与「显示范围」漏斗按钮同处一行 —— 筛选框右
+   边距收 0（按钮自己带右边距），按钮固定 26×26、边框与输入框同款。 */
+#sidebar #fileFilter {{ margin: 4px 0 0 10px; }}
+#sidebar #fileScope {{
+  border: 1px solid {input_border}; background: {input_bg};
+  border-radius: 6px; margin: 4px 10px 0 0; padding: 0;
+}}
+#sidebar #fileScope:hover {{ border-color: {accent}; }}
 #sidebar QComboBox {{
   border: 1px solid {input_border}; border-radius: 6px; padding: 4px 8px;
   font-size: 12px; background: {input_bg}; color: {text};

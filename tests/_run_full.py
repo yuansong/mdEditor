@@ -136,7 +136,15 @@ RESULT_FILE = {"m86": "_m86_bi.txt",
                "m186": "_m186_v3458_run.txt",
                # v3.48.32 起纳入：结果文件名不循 _<tag>.txt 约定的差异引擎探针
                "expand_diff": "_expand_diff_check.out.txt",
-               "probe_fragfail": "_probe_fragfail_run.txt"}
+               "probe_fragfail": "_probe_fragfail_run.txt",
+               # v3.48.36：以下探针只往 stdout 打印、不写自有结果文件 ——
+               # 结果源必须是 _runner 捕获的 _run.txt，否则 pass_n=0 被误判 crash
+               "probe_frag_anchor": "_probe_frag_anchor_run.txt",
+               "probe_hint_once": "_probe_hint_once_run.txt",
+               "probe_pdf_layout": "_probe_pdf_layout_run.txt",
+               "probe_file_scope": "_probe_file_scope_run.txt",
+               "probe_ai_menus": "_probe_ai_menus_run.txt",
+               "probe_frag_render": "_probe_frag_render.txt"}
 for m in ("m29a", "m29b", "m30a", "m30b", "m31", "m33", "m34", "m35", "m39",
           "m83", "m84", "m85", "m86", "m87", "m88",
           # v3.37 起纳入：m104 = 图标块交互收口（代码块顶栏 / 图表留白 / 图表自然尺寸 / 七模板）
@@ -172,7 +180,15 @@ for m in ("m29a", "m29b", "m30a", "m30b", "m31", "m33", "m34", "m35", "m39",
           "probe_fragfail", "expand_diff", "probe_expand_merge",
           "probe_edge_insert",
           # v3.48.33（AI-ANCHOR / HINT-ONCE）：位置锚点替换 24 项 + 引导提示一次性 15 项
-          "probe_frag_anchor", "probe_hint_once"):
+          "probe_frag_anchor", "probe_hint_once",
+          # v3.48.34（PDF-LAYOUT）：纸张 / 方向 / 四边边距 / 缩放 / 行距 25 项
+          "probe_pdf_layout",
+          # v3.48.35（FILE-SCOPE/CRUMB-TAIL/DROP-MD）：显示范围 + 路径尾三层 + 拖放 32 项
+          "probe_file_scope",
+          # v3.48.36（AI-MENUS）：两处 AI 菜单自定义 14 项
+          "probe_ai_menus",
+          # v3.48.37（FRAG-RENDER / AI-UI-2 / MENU-PREFILL）：16 项
+          "probe_frag_render"):
     try:
         subprocess.run([VENV, "_runner.py", PROBE_SCRIPT.get(m, "_%s.py" % m)],
                        cwd=HERE, capture_output=True, text=True, timeout=SUB_TIMEOUT)

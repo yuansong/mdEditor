@@ -10,7 +10,8 @@ from datetime import datetime
 from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QColor, QKeySequence, QTextCursor, QTextCharFormat
 from PySide6.QtWidgets import (
-    QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QGroupBox, QScrollArea, QHeaderView, QSizePolicy,
+    QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog,
+    QDialogButtonBox, QFileDialog, QFrame, QGroupBox, QScrollArea, QHeaderView, QSizePolicy,
     QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu, QMessageBox,
     QPlainTextEdit, QPushButton, QKeySequenceEdit, QRadioButton, QSlider, QSplitter, QSpinBox,
     QStackedWidget, QTabWidget, QTextBrowser, QTextEdit, QToolButton, QTreeWidget, QTreeWidgetItem,
@@ -563,7 +564,8 @@ class SettingsDialog(_ThemedDialog):
         # v3.43.0（LOOK-1）：「外观」页迁出至顶栏「外观(&A)」菜单，此处不再保留
         # v3.43.1（SET-3P）：导航顺序 = 通用 / 编辑器 / 写作与输入 / 模板
         # v3.47.2（SoloMD 对标）：新增「AI 连接」页（默认连接参数配置入口）
-        for name in ("通用", "编辑器", "写作与输入", "模板", "AI 连接"):
+        # v3.48.36（AI-MENUS）：新增「AI 菜单」页（两处「AI优化」菜单自定义）
+        for name in ("通用", "编辑器", "写作与输入", "模板", "AI 菜单", "AI 连接"):
             QListWidgetItem(name, self.nav)
         self.nav.setCurrentRow(0)
 
@@ -573,6 +575,7 @@ class SettingsDialog(_ThemedDialog):
         self.pages.addWidget(self._page_editor_fmt())
         self.pages.addWidget(self._page_writing())
         self.pages.addWidget(TemplatePage(win, self))
+        self.pages.addWidget(self._page_ai_menus())
         self.pages.addWidget(self._page_ai_connection())
         self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
 
@@ -728,7 +731,7 @@ class SettingsDialog(_ThemedDialog):
         gb_flog, gflog = self._group("格式化操作日志")
         self.fmt_log_box = QCheckBox(
             "记录格式化操作日志（时间 / 动作 / 源码片段，用于问题复现与排查）", page)
-        self.fmt_log_box.setChecked(bool(getattr(self._win, "_fmt_log", True)))
+        self.fmt_log_box.setChecked(bool(getattr(self._win, "_fmt_log", False)))
         self.fmt_log_box.toggled.connect(self._win.set_fmt_log)
         gflog.addWidget(self.fmt_log_box)
         flog_hint = QLabel("· 日志写入 %APPDATA%\\mdEditor\\fmtlog\\，帮助菜单 →「格式化操作日志」可查看 / 导出\n"
@@ -1251,6 +1254,180 @@ class SettingsDialog(_ThemedDialog):
         return page
 
     # v3.47.2（SoloMD 对标）：「AI 连接」页 —— 默认连接参数配置入口
+
+    # ================= v3.48.36（AI-MENUS）：AI 菜单 =================
+    def _page_ai_menus(self):
+        """「AI 菜单」页：框选文字右键 / 整篇文章右键两处「AI优化」的菜单项
+        名称与提示词自定义。改动即时落盘（右键菜单每次构建时实时读取）。"""
+        from ai_pane import ai_menu_items
+        page = QWidget(self)
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(12)
+
+        title = QLabel("AI 菜单")
+        title.setObjectName("pageTitle")
+        lay.addWidget(title)
+        info = QLabel("自定义两处「AI优化」菜单的菜单项名称与提示词。"
+                      "提示词留空表示使用内置提示词（翻译会按内容语种自动定向）。设置即时生效。")
+        info.setWordWrap(True)
+        info.setObjectName("pageTitle")
+        info.setStyleSheet("font-size:11.5px; font-weight:400;")
+        lay.addWidget(info)
+
+        self._ai_menu_data = {}
+        self._ai_menu_lists = {}
+        for scope, cap in (("ctx", "框选文字后 · 右键「AI优化」"),
+                           ("doc", "选中文章后 · 文件列表 / 标签右键「AI优化」")):
+            gb, v = self._group(cap)
+            lst = QListWidget(self)
+            lst.setObjectName("aiMenuList")
+            lst.setMinimumHeight(96)
+            lst.itemDoubleClicked.connect(lambda _it, s=scope: self._ai_menu_edit(s))
+            v.addWidget(lst)
+            row = QHBoxLayout()
+            for text, cb in (("添加…", lambda _c=False, sc=scope: self._ai_menu_add(sc)),
+                             ("编辑…", lambda _c=False, sc=scope: self._ai_menu_edit(sc)),
+                             ("删除", lambda _c=False, sc=scope: self._ai_menu_del(sc)),
+                             ("上移", lambda _c=False, sc=scope: self._ai_menu_move(sc, -1)),
+                             ("下移", lambda _c=False, sc=scope: self._ai_menu_move(sc, 1)),
+                             ("恢复默认", lambda _c=False, sc=scope: self._ai_menu_reset(sc))):
+                btn = QPushButton(text)
+                btn.clicked.connect(cb)
+                row.addWidget(btn)
+            row.addStretch(1)
+            v.addLayout(row)
+            lay.addWidget(gb)
+            self._ai_menu_lists[scope] = lst
+            self._ai_menu_data[scope] = ai_menu_items(self._win._settings, scope)
+            self._ai_menu_repaint(scope)
+
+        lay.addStretch(1)
+        scr = QScrollArea(self)
+        scr.setWidget(page)
+        scr.setWidgetResizable(True)
+        scr.setFrameShape(QFrame.NoFrame)
+        return scr
+
+    def _ai_menu_repaint(self, scope):
+        lst = self._ai_menu_lists[scope]
+        cur = lst.currentRow()
+        lst.clear()
+        for it in self._ai_menu_data[scope]:
+            tag = "内置提示词" if not it.get("prompt") else "自定义提示词"
+            QListWidgetItem("%s（%s）" % (it["label"], tag), lst)
+        n = lst.count()
+        lst.setCurrentRow(cur if 0 <= cur < n else (n - 1 if n else -1))
+
+    def _ai_menu_save(self, scope):
+        from ai_pane import save_ai_menu_items
+        save_ai_menu_items(self._win._settings, scope, self._ai_menu_data[scope])
+        self._ai_menu_repaint(scope)
+
+    def _ai_menu_cur(self, scope):
+        lst = self._ai_menu_lists[scope]
+        row = lst.currentRow()
+        items = self._ai_menu_data[scope]
+        if not (0 <= row < len(items)):
+            QMessageBox.information(self, "提示", "请先在列表中选择一个菜单项。")
+            return None, None
+        return row, items[row]
+
+    def _ai_menu_add(self, scope):
+        res = self._ai_menu_prompt_dlg("添加菜单项")
+        if res is None:
+            return
+        label, prompt = res
+        items = self._ai_menu_data[scope]
+        row = max(0, self._ai_menu_lists[scope].currentRow())
+        items.insert(row + 1 if row >= 0 else len(items),
+                     {"key": "c#" + label, "label": label, "prompt": prompt})
+        self._ai_menu_save(scope)
+
+    def _ai_menu_edit(self, scope):
+        row, it = self._ai_menu_cur(scope)
+        if row is None:
+            return
+        # v3.48.37（MENU-PREFILL）：内置项点开即带出内置提示词（不必自己写）；
+        # 若用户原样保存，则仍按「留空 = 内置」落盘 —— 翻译的动态语种提示词
+        # 因此不会被写死成单一方向。
+        from ai_pane import builtin_prompt_for
+        saved_prompt = it.get("prompt", "")
+        prefill = saved_prompt or builtin_prompt_for(it.get("key", ""))
+        res = self._ai_menu_prompt_dlg("编辑菜单项", it.get("label", ""), prefill)
+        if res is None:
+            return
+        label, prompt = res
+        it["label"] = label
+        it["prompt"] = "" if (not saved_prompt and prompt == prefill) else prompt
+        if it["key"].startswith("c#"):
+            it["key"] = "c#" + label      # 自定义项的 key 跟随名称
+        self._ai_menu_save(scope)
+
+    def _ai_menu_del(self, scope):
+        row, it = self._ai_menu_cur(scope)
+        if row is None:
+            return
+        self._ai_menu_data[scope].pop(row)
+        self._ai_menu_save(scope)
+
+    def _ai_menu_move(self, scope, delta):
+        row, it = self._ai_menu_cur(scope)
+        if row is None:
+            return
+        items = self._ai_menu_data[scope]
+        j = row + delta
+        if not (0 <= j < len(items)):
+            return
+        items[row], items[j] = items[j], items[row]
+        self._ai_menu_save(scope)
+        self._ai_menu_lists[scope].setCurrentRow(j)
+
+    def _ai_menu_reset(self, scope):
+        from ai_pane import _builtin_menu_items
+        if QMessageBox.question(
+                self, "恢复默认", "恢复该菜单为内置菜单项？自定义项将被清除。"
+        ) != QMessageBox.Yes:
+            return
+        self._ai_menu_data[scope] = _builtin_menu_items(scope)
+        self._ai_menu_save(scope)
+
+    def _ai_menu_prompt_dlg(self, title, label0="", prompt0=""):
+        """菜单项编辑小对话框：返回 (label, prompt)；取消返回 None。"""
+        dlg = QDialog(self)
+        dlg.setWindowTitle(title)
+        dlg.setModal(True)
+        dlg.resize(420, 300)
+        v = QVBoxLayout(dlg)
+        form = QHBoxLayout()
+        form.addWidget(QLabel("菜单名称"))
+        ed_label = QLineEdit(label0)
+        form.addWidget(ed_label, 1)
+        v.addLayout(form)
+        v.addWidget(QLabel("提示词（内置项已预填内置提示词，保持原样即继续使用内置；"
+                           "自定义提示词请写明「只输出结果文本本身，不要附加解释」）"))
+        ed_prompt = QPlainTextEdit(prompt0)
+        ed_prompt.setPlaceholderText("例如：请把下面的文本改写成 FAQs 问答对，"
+                                     "每条以「Q: / A:」开头，不要附加解释。")
+        v.addWidget(ed_prompt, 1)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(dlg.accept)
+        bb.rejected.connect(dlg.reject)
+        v.addWidget(bb)
+
+        def _accept():
+            if not ed_label.text().strip():
+                QMessageBox.information(self, "提示", "菜单名称不能为空。")
+                return
+            dlg.accept()
+
+        bb.accepted.disconnect()
+        bb.accepted.connect(_accept)
+        ok = dlg.exec() == QDialog.DialogCode.Accepted
+        if not ok:
+            return None
+        return ed_label.text().strip(), ed_prompt.toPlainText().strip()
+
     def _page_ai_connection(self):
         """复用 ai_connection.AIConnectionForm：与独立连接面板共享同一份
         QSettings + 凭据存储，因此「设置里填的默认连接」即「主面板连接设置

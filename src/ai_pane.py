@@ -19,6 +19,7 @@
     连续），短文本仍自然收缩并右/左对齐。
 """
 import difflib
+import json
 import re
 import time
 from datetime import datetime
@@ -27,7 +28,8 @@ from PySide6.QtGui import QTextCursor, QTextCharFormat, QColor
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTextEdit,
     QTextBrowser, QPushButton, QLabel, QPlainTextEdit, QMessageBox, QSplitter,
     QApplication, QDialog, QMenu, QStackedWidget, QListWidget, QListWidgetItem,
-    QProgressBar, QComboBox, QRadioButton, QGroupBox, QAbstractItemView)
+    QProgressBar, QComboBox, QRadioButton, QGroupBox, QAbstractItemView,
+    QSizePolicy)
 
 import ai_core
 import ai_context as _ai_ctx
@@ -107,6 +109,83 @@ AI_PRESET_PROMPTS = {
         "只输出改写后的文本本身，不要附加任何解释、引号或前后缀。"),
 }
 
+# v3.48.36（AI-MENUS）：两处「AI优化」菜单的内置菜单项（可在系统设置自定义）。
+# scope=ctx：框选文字后 · 正文右键；scope=doc：选中文章后 · 文件列表 / 标签右键。
+AI_MENU_DEFAULTS = {
+    "ctx": [("polish", "润色"), ("condense", "精简"), ("expand", "扩写"),
+            ("correct", "纠错"), ("translate", "翻译"), ("tone", "改语气"),
+            ("select", "选中提问")],
+    "doc": [("polish", "润色"), ("condense", "精简"), ("expand", "扩写"),
+            ("correct", "纠错"), ("translate", "翻译"), ("tone", "改语气")],
+}
+AI_MENU_SETTING = {"ctx": "ai/ctxMenu", "doc": "ai/docMenu"}
+
+
+def _builtin_menu_items(scope):
+    return [{"key": k, "label": lab, "prompt": ""}
+            for k, lab in AI_MENU_DEFAULTS[scope]]
+
+
+def ai_menu_items(settings, scope):
+    """读出某处 AI 菜单的菜单项（未配置 / 配置损坏时回落内置清单）。
+
+    返回 [{"key","label","prompt"}]，prompt 为空串 = 使用内置提示词
+    （内置项含翻译的语种动态提示词）；key 以 c# 开头 = 自定义项。"""
+    raw = ""
+    if settings is not None:
+        raw = str(settings.value(AI_MENU_SETTING[scope], "") or "")
+    if not raw.strip():
+        return _builtin_menu_items(scope)
+    try:
+        arr = json.loads(raw)
+    except (ValueError, TypeError):
+        return _builtin_menu_items(scope)
+    if not isinstance(arr, list):
+        return _builtin_menu_items(scope)
+    known = {k for k, _ in AI_MENU_DEFAULTS["ctx"]} | set(AI_PRESET_PROMPTS)
+    out = []
+    for it in arr:
+        if not isinstance(it, dict):
+            continue
+        label = str(it.get("label") or "").strip()
+        if not label:
+            continue
+        key = str(it.get("key") or "").strip()
+        prompt = str(it.get("prompt") or "").strip()
+        if not key or (key not in known and not key.startswith("c#")):
+            key = "c#" + label
+        if key == "select" and scope != "ctx":
+            continue          # 「选中提问」只在框选文字的菜单里有意义
+        out.append({"key": key, "label": label, "prompt": prompt})
+    return out or _builtin_menu_items(scope)
+
+
+def builtin_prompt_for(key):
+    """v3.48.37（MENU-PREFILL）：返回某个内置菜单项的「内置提示词」文本。
+
+    系统设置里点开菜单项时用它预填编辑框 —— 用户不必先删空再自己写。
+    注意：翻译的内置提示词是**按语种动态生成**的，这里给的是等价的双向兜底文本；
+    设置界面若发现提示词与预填值完全一致，会继续按「留空 = 内置」保存，
+    避免把动态提示词写死成单一方向。
+    """
+    k = str(key or "").strip()
+    if k == "select":
+        return ("（「选中提问」无需提示词：直接把选中的内容作为上下文提问，"
+                "由你在面板里输入问题）")
+    if k == "translate":
+        return ("请将下面的文本翻译成中文；若原文本身就是中文，则翻译成英文。"
+                "要求准确、自然、符合目标语言表达习惯，只输出译文本身，"
+                "不要附加任何解释、引号或前后缀。")
+    return AI_PRESET_PROMPTS.get(k, "")
+
+
+def save_ai_menu_items(settings, scope, items):
+    """把菜单项写回 QSettings（系统设置「AI 菜单」页调用）。"""
+    clean = [{"key": str(it.get("key") or ""), "label": str(it.get("label") or ""),
+              "prompt": str(it.get("prompt") or "")}
+             for it in items if str(it.get("label") or "").strip()]
+    settings.setValue(AI_MENU_SETTING[scope], json.dumps(clean, ensure_ascii=False))
+
 
 class AIPane(QWidget):
     def __init__(self, bridge):
@@ -185,21 +264,30 @@ class AIPane(QWidget):
         self._dot.setStyleSheet("border-radius:5.5px;background:%s" % _DOT["unconfigured"])
         self._status_text = QLabel("未配置连接")
         self._status_text.setObjectName("aiStatusText")
-        self._clear_btn = QPushButton("清空内容")
+        # v3.48.37（AI-UI-2）：模型名 / 错误信息长度不定，会给状态条贡献 155px
+        # 最小宽度，令 288px 的面板根本压不下去 —— 允许压缩 + 省略号，完整文本进 tooltip
+        self._status_text.setMinimumWidth(58)
+        self._status_text.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self._status_full = "未配置连接"
+        self._clear_btn = QPushButton("清空")
         self._clear_btn.setObjectName("aiClearBtn")
+        # v3.48.37（AI-UI-2）：面板再缩 1/6（345→288）后，状态条三个中文长标签会把
+        # 布局最小宽度顶到 460 → 改短标签 + tooltip 保留完整语义。
+        self._clear_btn.setToolTip("清空对话内容（不可撤销）")
         self._clear_btn.clicked.connect(self._on_clear)
-        self._conn_btn = QPushButton("连接设置")
+        self._conn_btn = QPushButton("连接")
         self._conn_btn.setObjectName("aiConnBtn")
+        self._conn_btn.setToolTip("连接设置：选择服务商 / 模型与凭据")
         self._conn_btn.clicked.connect(lambda: self.bridge.open_connection())
         # v3.48.11（AI-THINK）：「显示思考过程」开关 —— 位于进度/状态文本后。
         # 开启：流式期间与定稿气泡均渲染 💭 思考过程块（reasoning 实时增量）；
         # 关闭：仅当模型未产出最终回答时，用思考内容兜底（不再显示空回复报错）。
-        self._think_btn = QPushButton("显示思考过程")
+        self._think_btn = QPushButton("思考")
         self._think_btn.setObjectName("aiThinkBtn")
         self._think_btn.setCheckable(True)
         self._think_btn.setChecked(False)
         self._think_btn.setToolTip(
-            "开启后实时显示模型的思考过程（reasoning）。\n"
+            "显示思考过程：开启后实时显示 reasoning。\n"
             "关闭（默认）：请求本地模型时直接跳过思考，更快拿到最终回答。")
         self._think_btn.toggled.connect(self._on_think_toggled)
         strow.addWidget(self._dot)
@@ -265,7 +353,20 @@ class AIPane(QWidget):
         st = self.bridge.connection_status()
         self._dot.setStyleSheet(
             "border-radius:5.5px;background:%s" % _DOT.get(st["level"], "#95a5a6"))
-        self._status_text.setText(st["text"])
+        self._status_full = str(st.get("text") or "")
+        self._apply_status_text()
+
+    def _apply_status_text(self):
+        """v3.48.37（AI-UI-2）：按当前可用宽度省略状态文本（完整内容在 tooltip）。"""
+        full = getattr(self, "_status_full", "") or ""
+        fm = self._status_text.fontMetrics()
+        avail = max(40, self._status_text.width() - 2)
+        self._status_text.setText(fm.elidedText(full, Qt.ElideRight, avail))
+        self._status_text.setToolTip(full)
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        self._apply_status_text()
 
     # ---------------- 聊天气泡渲染 ----------------
     def _think_html(self, reasoning, muted_bd, muted_bg, muted_tx):
@@ -836,8 +937,10 @@ class AIPane(QWidget):
         self.ask_about_selection(text)
 
     # v3.48.0（F3-b）：右键「AI」子菜单预设操作（润色/精简/扩写/纠错/翻译/改语气）
-    def ai_action(self, action_key, sel_text):
-        """按预设提示词把选中文本提交给 AI 改写；翻译按语种动态生成提示词。"""
+    def ai_action(self, action_key, sel_text, prompt=None):
+        """按预设提示词把选中文本提交给 AI 改写；翻译按语种动态生成提示词。
+
+        v3.48.36（AI-MENUS）：prompt 非空 = 菜单里的自定义提示词，原样使用。"""
         if not sel_text or not sel_text.strip():
             self._render_msgs.append(
                 {"role": "system",
@@ -849,7 +952,9 @@ class AIPane(QWidget):
             QMessageBox.information(self, "提示",
                 "请等待上一次请求完成（或按 Esc 中止生成）。")
             return
-        if action_key == "translate":
+        if prompt:
+            pass                      # 自定义提示词原样使用
+        elif action_key == "translate":
             prompt = self._translate_prompt(sel_text)
         else:
             prompt = AI_PRESET_PROMPTS.get(action_key)
@@ -893,8 +998,10 @@ class AIPane(QWidget):
                 "只输出译文本身，不要附加任何解释、引号或前后缀。")
 
     # ================= v3.48.24（AI-DOC）：整篇 AI 优化 =================
-    def ai_action_doc(self, action_key):
+    def ai_action_doc(self, action_key, prompt=None):
         """整篇 AI 优化入口：取当前文档全文，按预设提示词整篇改写。
+
+        v3.48.36（AI-MENUS）：prompt 非空 = 菜单里的自定义提示词，原样使用。
 
         与选中改写（ai_action）不同，本路径整篇送单一请求（长文档经
         ai_context 自适应降级），返回后挂「整篇应用」锚点，确认后整体替换。"""
@@ -903,9 +1010,9 @@ class AIPane(QWidget):
                 "请等待上一次请求完成（或按 Esc 中止生成）。")
             return
         self.bridge.get_markdown(
-            lambda md: self._got_doc_for_action(md, action_key))
+            lambda md: self._got_doc_for_action(md, action_key, prompt))
 
-    def _got_doc_for_action(self, md, action_key):
+    def _got_doc_for_action(self, md, action_key, prompt=None):
         if not md or not md.strip():
             self._render_msgs.append({
                 "role": "system",
@@ -913,7 +1020,7 @@ class AIPane(QWidget):
                 "time": _now()})
             self._render()
             return
-        prompt = self._doc_prompt(action_key, md)
+        prompt = prompt or self._doc_prompt(action_key, md)
         if not prompt:
             self._render_msgs.append({
                 "role": "system", "text": "未知的整篇优化类型。", "time": _now()})

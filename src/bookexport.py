@@ -66,10 +66,164 @@ def _apply_pdf_font_css(html, font_family, font_size_pt):
     return html + style
 
 
-def _pdf_page_layout(margin_mm):
-    return QPageLayout(
-        QPageSize(QPageSize.A4), QPageLayout.Portrait,
-        QMarginsF(margin_mm, margin_mm, margin_mm, margin_mm))
+# v3.48.34（PDF-LAYOUT）：导出设置 —— 纸张尺寸 / 方向 / 四边独立边距 / 缩放 / 行间距。
+# 说明：printToPdf 只接受 QPageLayout（纸张 / 方向 / 边距）；缩放与行距不是原生参数，
+# 必须在打印期注入 CSS（body{zoom} / line-height），两条路径（单文档 / 整本书）共用本模块。
+PAPER_SIZES = [("A4", "A4"), ("A3", "A3"), ("A5", "A5"), ("B4", "B4"),
+               ("B5", "B5"), ("Letter", "Letter"), ("Legal", "Legal")]
+
+# v3.48.38（PDF-DEF）：PDF 导出最佳默认参数（美观大方、贴合中文阅读习惯）。
+# · 纸张 A4 纵向、四边 20mm 等距 —— 标准且舒展；
+# · 行间距 1.6（= 行高倍数 line-height，覆盖模板基准 1.8 为更紧凑精炼的中文正文）；
+#   注入时强制下限 1.0，避免任意极小值导致中文行重叠（见 _apply_pdf_layout_css）。
+# · 字体留空 = 跟随界面字体（Microsoft YaHei / PingFang SC，中文优先）；字号 11pt 舒适。
+# · 缩放 100%（不放大缩小，页边距恒定）。
+PDF_DEFAULT_OPTS = {
+    "paper_size": "A4",
+    "orientation": "portrait",
+    "margin_top_mm": 20.0,
+    "margin_right_mm": 20.0,
+    "margin_bottom_mm": 20.0,
+    "margin_left_mm": 20.0,
+    "margin_uniform": True,
+    "scale_pct": 100,
+    "line_spacing": 1.6,
+    "font_family": "",
+    "font_size_pt": 11.0,
+}
+
+_PAPER_ENUM = {
+    "A4": QPageSize.A4, "A3": QPageSize.A3, "A5": QPageSize.A5,
+    "B4": QPageSize.B4, "B5": QPageSize.B5,
+    "Letter": QPageSize.Letter, "Legal": QPageSize.Legal,
+}
+
+
+def _as_float(value, default):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _as_bool(value, default=True):
+    if isinstance(value, bool):
+        return value
+    txt = str(value).strip().lower()
+    if txt == "":
+        return bool(default)
+    return txt not in ("0", "false", "no", "off")
+
+
+def pdf_opts(opts=None):
+    """把任意来源的 opts 归一成完整设置：补默认值 + 兼容旧键 + 范围钳制。"""
+    o = dict(PDF_DEFAULT_OPTS)
+    if opts:
+        o.update({k: v for k, v in dict(opts).items() if v is not None})
+    # 兼容 v3.47.1~v3.48.33 的单一页边距键 margin_mm（四边等距）
+    if opts and "margin_mm" in dict(opts) and "margin_top_mm" not in dict(opts):
+        legacy = _as_float(dict(opts).get("margin_mm"), 20.0)
+        for k in ("margin_top_mm", "margin_right_mm",
+                  "margin_bottom_mm", "margin_left_mm"):
+            o[k] = legacy
+    o["paper_size"] = str(o.get("paper_size") or "A4")
+    if o["paper_size"] not in _PAPER_ENUM:
+        o["paper_size"] = "A4"
+    o["orientation"] = ("landscape" if str(o.get("orientation")).strip().lower()
+                        in ("landscape", "横向") else "portrait")
+    for k in ("margin_top_mm", "margin_right_mm", "margin_bottom_mm", "margin_left_mm"):
+        o[k] = max(0.0, min(100.0, _as_float(o.get(k), 20.0)))
+    o["margin_uniform"] = _as_bool(o.get("margin_uniform"), True)
+    if o["margin_uniform"]:
+        for k in ("margin_right_mm", "margin_bottom_mm", "margin_left_mm"):
+            o[k] = o["margin_top_mm"]
+    o["scale_pct"] = int(round(max(25.0, min(400.0, _as_float(o.get("scale_pct"), 100.0)))))
+    o["line_spacing"] = max(0.0, min(4.0, _as_float(o.get("line_spacing"), 0.0)))
+    o["font_size_pt"] = max(4.0, min(72.0, _as_float(o.get("font_size_pt"), 11.0)))
+    o["font_family"] = str(o.get("font_family") or "")
+    return o
+
+
+def opts_from_settings(settings):
+    """从 QSettings 读取已保存的导出默认值（旧键 pdf/margin 作为四边回退）。"""
+    legacy = _as_float(settings.value("pdf/margin", 20.0), 20.0)
+    return pdf_opts({
+        "paper_size": settings.value("pdf/paperSize", "A4"),
+        "orientation": settings.value("pdf/orientation", "portrait"),
+        "margin_top_mm": settings.value("pdf/marginTop", legacy),
+        "margin_right_mm": settings.value("pdf/marginRight", legacy),
+        "margin_bottom_mm": settings.value("pdf/marginBottom", legacy),
+        "margin_left_mm": settings.value("pdf/marginLeft", legacy),
+        "margin_uniform": settings.value("pdf/marginUniform", True),
+        "scale_pct": settings.value("pdf/scalePct", 100),
+        "line_spacing": settings.value("pdf/lineSpacing", PDF_DEFAULT_OPTS["line_spacing"]),
+        "font_family": settings.value("pdf/fontFamily", ""),
+        "font_size_pt": settings.value("pdf/fontSize", 11.0),
+    })
+
+
+def save_opts(settings, opts):
+    """把导出设置写回 QSettings（调用方需已确认「保存为默认」）。"""
+    o = pdf_opts(opts)
+    settings.setValue("pdf/paperSize", o["paper_size"])
+    settings.setValue("pdf/orientation", o["orientation"])
+    settings.setValue("pdf/marginTop", o["margin_top_mm"])
+    settings.setValue("pdf/marginRight", o["margin_right_mm"])
+    settings.setValue("pdf/marginBottom", o["margin_bottom_mm"])
+    settings.setValue("pdf/marginLeft", o["margin_left_mm"])
+    settings.setValue("pdf/marginUniform", o["margin_uniform"])
+    settings.setValue("pdf/margin", o["margin_top_mm"])   # 旧键：向后兼容
+    settings.setValue("pdf/scalePct", o["scale_pct"])
+    settings.setValue("pdf/lineSpacing", o["line_spacing"])
+    settings.setValue("pdf/fontFamily", o["font_family"])
+    settings.setValue("pdf/fontSize", o["font_size_pt"])
+
+
+def pdf_page_layout(opts=None):
+    """按设置构造 QPageLayout（纸张 / 方向 / 四边独立边距）。
+
+    v3.48.34 实测坑：QPageLayout 构造的 units 参数若省略，边距会被当成 point
+    处理（传 20 实际只有 7.1mm）；必须显式传 QPageLayout.Millimeter。
+    """
+    o = pdf_opts(opts)
+    margins = QMarginsF(o["margin_left_mm"], o["margin_top_mm"],
+                        o["margin_right_mm"], o["margin_bottom_mm"])
+    orient = (QPageLayout.Landscape if o["orientation"] == "landscape"
+              else QPageLayout.Portrait)
+    return QPageLayout(QPageSize(_PAPER_ENUM[o["paper_size"]]), orient, margins,
+                       QPageLayout.Millimeter)
+
+
+def _pdf_page_layout(opts):
+    """兼容旧签名：数字 = 四边等距毫米；dict = 完整设置。"""
+    if isinstance(opts, (int, float)):
+        opts = {"margin_mm": float(opts), "margin_uniform": True}
+    return pdf_page_layout(opts)
+
+
+def _apply_pdf_layout_css(html, opts=None):
+    """打印期注入缩放 / 行距（printToPdf 无此原生参数）。
+
+    缩放落在 body 上（实测：落在 html 上会连带缩放页边距，落在 body/.page 上
+    页边距保持不变、行高严格按比例变化）。仅在 @media print 内生效。
+    """
+    o = pdf_opts(opts)
+    rules = []
+    if abs(o["scale_pct"] - 100) >= 1:
+        rules.append("body{zoom:%.4f;}" % (o["scale_pct"] / 100.0))
+    if o["line_spacing"] > 0:
+        # 安全下限 1.0：任意极小值（如 0.1）会致中文行重叠「看不见」，
+        # 强制钳到 ≥1.0 保证可读（v3.48.38）。
+        _lh = max(1.0, float(o["line_spacing"]))
+        rules.append("body,#editor,.page,p,li,td,th,blockquote,.blk{"
+                     "line-height:%.2f!important;}" % _lh)
+    if not rules:
+        return html
+    style = ("<style id='mded-pdf-layout'>@media print{%s}</style>"
+             % "".join(rules))
+    if "</head>" in html:
+        return html.replace("</head>", style + "</head>", 1)
+    return html + style
 
 
 class BookPdfExporter:
@@ -230,6 +384,8 @@ class BookPdfExporter:
         if _sz:
             html = _apply_pdf_font_css(
                 html, self.opts.get("font_family", ""), _sz)
+        # v3.48.34（PDF-LAYOUT）：缩放 / 行距（打印期 CSS）
+        html = _apply_pdf_layout_css(html, self.opts)
         fd, tmp = tempfile.mkstemp(suffix=".pdf")
         os.close(fd)
         s["printer_path"] = tmp
@@ -251,11 +407,11 @@ class BookPdfExporter:
         # Exception 兜底；且任何 print 异常都只降级该章（_fail_slot），
         # 不再拖死整本导出。
         try:
-            _mm = self.opts.get("margin_mm") or 0
             page = s["printer"].page()
-            if _mm > 0:
+            if self.opts:
+                # v3.48.34（PDF-LAYOUT）：纸张 / 方向 / 四边独立边距
                 try:
-                    page.printToPdf(path, _pdf_page_layout(_mm))
+                    page.printToPdf(path, pdf_page_layout(self.opts))
                 except Exception:
                     page.printToPdf(path)
             else:
