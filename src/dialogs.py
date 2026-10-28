@@ -1303,10 +1303,19 @@ class SettingsDialog(_ThemedDialog):
             self._ai_menu_repaint(scope)
 
         lay.addStretch(1)
+        # v3.48.39（AI-MENU-BG）：去掉 QScrollArea 自带的 viewport / 页面底色。
+        # 该底色会盖住组框的 bg_soft 浅灰卡面、把圆角裁成直角，还会带来一条
+        # 横向滚动条，观感与本对话框其他页（浅灰圆角卡片、无额外底色）不一致。
+        # 透明后页面直接透出对话框底色，与其余设置页统一；垂直滚动能力保留。
         scr = QScrollArea(self)
         scr.setWidget(page)
         scr.setWidgetResizable(True)
         scr.setFrameShape(QFrame.NoFrame)
+        scr.viewport().setAutoFillBackground(False)
+        page.setAutoFillBackground(False)
+        scr.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scr.setStyleSheet("QScrollArea{background:transparent;border:none;}"
+                          "QScrollArea>QWidget>QWidget{background:transparent;}")
         return scr
 
     def _ai_menu_repaint(self, scope):

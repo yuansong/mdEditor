@@ -518,6 +518,16 @@ DIALOG_QSS_TPL = """
 #settingsDlg #themeList::item {{ padding: 8px 10px; border-radius: 6px; }}
 #settingsDlg #themeList::item:hover {{ background: {list_hover}; }}
 #settingsDlg #themeList::item:selected {{ background: {accent_soft}; color: {accent}; }}
+/* v3.48.39（AI-MENU-BG）：AI 菜单页列表补 settingsDlg 级样式，与 #themeList
+   完全同源 —— 此前仅落回通用 QDialog QListWidget，在滚动区内 viewport 未随主题
+   着色，深色主题下呈白底，与本页组框及其他列表页不统一。 */
+#settingsDlg #aiMenuList {{
+  background: {input_bg}; border: 1px solid {menu_border};
+  border-radius: 6px; color: {text}; outline: 0;
+}}
+#settingsDlg #aiMenuList::item {{ padding: 8px 10px; border-radius: 6px; }}
+#settingsDlg #aiMenuList::item:hover {{ background: {list_hover}; }}
+#settingsDlg #aiMenuList::item:selected {{ background: {accent_soft}; color: {accent}; }}
 #settingsDlg QSlider::groove:horizontal {{ height: 4px; background: {sep}; border-radius: 2px; }}
 #settingsDlg QSlider::handle:horizontal {{
   width: 14px; height: 14px; margin: -6px 0; border-radius: 6px; background: {accent};
