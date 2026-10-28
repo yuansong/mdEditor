@@ -262,27 +262,27 @@ class AIPane(QWidget):
         self._dot = QLabel()
         self._dot.setFixedSize(11, 11)
         self._dot.setStyleSheet("border-radius:5.5px;background:%s" % _DOT["unconfigured"])
-        self._status_text = QLabel("未配置连接")
+        self._status_text = QLabel(T("未配置连接", "No connection configured"))
         self._status_text.setObjectName("aiStatusText")
         # v3.48.37（AI-UI-2）：模型名 / 错误信息长度不定，会给状态条贡献 155px
         # 最小宽度，令 288px 的面板根本压不下去 —— 允许压缩 + 省略号，完整文本进 tooltip
         self._status_text.setMinimumWidth(58)
         self._status_text.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         self._status_full = "未配置连接"
-        self._clear_btn = QPushButton("清空")
+        self._clear_btn = QPushButton(T("清空", "Clear"))
         self._clear_btn.setObjectName("aiClearBtn")
         # v3.48.37（AI-UI-2）：面板再缩 1/6（345→288）后，状态条三个中文长标签会把
         # 布局最小宽度顶到 460 → 改短标签 + tooltip 保留完整语义。
-        self._clear_btn.setToolTip("清空对话内容（不可撤销）")
+        self._clear_btn.setToolTip(T("清空对话内容（不可撤销）", "Clear chat content (cannot be undone)"))
         self._clear_btn.clicked.connect(self._on_clear)
-        self._conn_btn = QPushButton("连接")
+        self._conn_btn = QPushButton(T("连接", "Connect"))
         self._conn_btn.setObjectName("aiConnBtn")
-        self._conn_btn.setToolTip("连接设置：选择服务商 / 模型与凭据")
+        self._conn_btn.setToolTip(T("连接设置：选择服务商 / 模型与凭据", "Connection settings: choose provider / model and credentials"))
         self._conn_btn.clicked.connect(lambda: self.bridge.open_connection())
         # v3.48.11（AI-THINK）：「显示思考过程」开关 —— 位于进度/状态文本后。
         # 开启：流式期间与定稿气泡均渲染 💭 思考过程块（reasoning 实时增量）；
         # 关闭：仅当模型未产出最终回答时，用思考内容兜底（不再显示空回复报错）。
-        self._think_btn = QPushButton("思考")
+        self._think_btn = QPushButton(T("思考", "Think"))
         self._think_btn.setObjectName("aiThinkBtn")
         self._think_btn.setCheckable(True)
         self._think_btn.setChecked(False)
@@ -312,7 +312,7 @@ class AIPane(QWidget):
         ibrow = QHBoxLayout()
         ibrow.setSpacing(4)   # v3.48.23（AI-UI）：发送行横向间距压缩
         ibrow.addStretch(1)
-        self._send_btn = QPushButton("发送")
+        self._send_btn = QPushButton(T("发送", "Send"))
         self._send_btn.setObjectName("aiSendBtn")
         self._send_btn.setDefault(True)
         ibrow.addWidget(self._send_btn)
@@ -465,16 +465,17 @@ class AIPane(QWidget):
                         links.append(
                             ' · <a href="cmd://fragreplace/{idx}">片段替换</a>'
                             .format(idx=idx))
-                        links.append('<a href="cmd://insert/{idx}">插入</a>'
-                                     .format(idx=idx))
+                        links.append('<a href="cmd://insert/{idx}">{ins}</a>'
+                                     .format(idx=idx, ins=T("插入", "Insert")))
                     # v3.48.24（AI-DOC）：整篇 AI 优化结果额外提供「整篇应用」——
                     # 把 AI 结果整体替换当前文档（Ctrl+Z 可撤销）。
                     elif whole_doc:
                         links.append(
-                            ' · <a href="cmd://apply_whole/{idx}">整篇应用</a>'
-                            .format(idx=idx))
+                            ' · <a href="cmd://apply_whole/{idx}">{whole}</a>'
+                            .format(idx=idx, whole=T("整篇应用", "Apply to Whole")))
                     else:
-                        links.append('<a href="cmd://insert/{idx}">插入</a>'.format(idx=idx))
+                        links.append('<a href="cmd://insert/{idx}">{ins}</a>'.format(
+                            idx=idx, ins=T("插入", "Insert")))
                 anchors = ('<div style="margin:4px 0 0 4px;font-size:12px;">'
                            '{links}</div>').format(links=" · ".join(links))
             return (
@@ -559,7 +560,7 @@ class AIPane(QWidget):
         # v3.48.33（AI-ANCHOR）：位置锚点与原文同批暂存，定稿时挂到消息上
         self._pending_anchor = orig_anchor if transform else None
         if self._worker and self._worker.isRunning():
-            QMessageBox.information(self, "提示",
+            QMessageBox.information(self, T("提示", "Tip"),
                 "请等待上一次请求完成（或按 Esc 中止生成）。")
             return False
         base, model, key = self._connection()
@@ -569,7 +570,7 @@ class AIPane(QWidget):
         if cfg["provider"] == "ollama":
             installed = self._get_ollama_models()
             if not installed:
-                QMessageBox.warning(self, "未检测到本地模型",
+                QMessageBox.warning(self, T("未检测到本地模型", "No local model detected"),
                     "尚未检测到已安装的本地模型。请先下载安装 Ollama 并拉取模型"
                     "（例如 llama3.2），或在面板内「连接设置」中选择其它服务商。")
                 return False
@@ -579,12 +580,12 @@ class AIPane(QWidget):
                     save_connection(self.bridge.settings(), cfg["provider"],
                                     cfg["base"], model)
         if not base or not model:
-            QMessageBox.warning(self, "未配置连接",
+            QMessageBox.warning(self, T("未配置连接", "No connection configured"),
                 "尚未配置可用的服务地址与模型。请点「连接设置」打开连接面板，"
                 "选择服务商并填写模型（本地 Ollama 需先安装并启动）。")
             return False
         if not key and "openai.com" in base:
-            QMessageBox.warning(self, "缺少 API Key",
+            QMessageBox.warning(self, T("缺少 API Key", "Missing API Key"),
                 "OpenAI 官方接口需要 API Key；本地 / Ollama 服务可留空。")
             return False
         self._streaming = False
@@ -619,8 +620,8 @@ class AIPane(QWidget):
         # 注意：勿调用 self._set_status()——该类无此方法（会抛 AttributeError，
         # 经 sys.excepthook 记日志后虽不致界面卡死，但每次请求都记一条崩溃日志，
         # 且状态条不更新）；完成/取消时由 _on_done→refresh_status /
-        # _on_cancelled→setText("已停止生成") 恢复。
-        self._status_text.setText("正在回答…")
+        # _on_cancelled→setText(T("已停止生成", "Generation stopped")) 恢复。
+        self._status_text.setText(T("正在回答…", "Answering…"))
         return True
 
     # ---------------- v3.48.18（AI-CTX）自适应上下文 ----------------
@@ -702,9 +703,9 @@ class AIPane(QWidget):
         rate = (chars / el) if el > 0.5 else 0.0
         parts = ["已等待 %ds" % int(el)]
         if chars:
-            parts.append("已收 %d 字" % chars)
+            parts.append(T("已收 %d 字", "Received %d chars") % chars)
             if rate >= 0.5:
-                parts.append("约 %d 字/秒" % round(rate))
+                parts.append(T("约 %d 字/秒", "≈ %d chars/sec") % round(rate))
         return ('<div style="font-size:11px;color:{muted};margin-top:6px;">'
                 '{t}</div>').format(muted=muted, t=" · ".join(parts))
 
@@ -804,10 +805,10 @@ class AIPane(QWidget):
     def _on_cancelled(self):
         self._set_busy(False)
         self._tick_timer.stop()
-        self._status_text.setText("已停止生成")
+        self._status_text.setText(T("已停止生成", "Generation stopped"))
         if self._stream_msg is not None:
             self._stream_msg.pop("pending", None)
-        self._render_msgs.append({"role": "system", "text": "已停止生成。", "time": _now()})
+        self._render_msgs.append({"role": "system", "text": T("已停止生成。", "Generation stopped."), "time": _now()})
         self._stream_msg = None
         self._pending_whole_doc = None
         self._pending_anchor = None
@@ -821,7 +822,7 @@ class AIPane(QWidget):
         # 先判忙，再清理输入 —— 修复 v3.47.1「先 clear/append 再 guarded return」
         # 导致的吞请求（worker 运行中再次发送被静默丢弃、连错误都不显示）
         if self._worker and self._worker.isRunning():
-            QMessageBox.information(self, "提示",
+            QMessageBox.information(self, T("提示", "Tip"),
                 "请等待上一次请求完成（或按 Esc 中止生成）。")
             return
         self._pending_transform = None   # v3.48.0（F3-c）：普通发送不作片段替换
@@ -911,7 +912,7 @@ class AIPane(QWidget):
                 "time": _now()})
             self._render()
         except Exception as e:  # 清空异常兜底，避免界面假死
-            QMessageBox.critical(self, "清空失败",
+            QMessageBox.critical(self, T("清空失败", "Clear failed"),
                 "清空对话内容时发生错误：%s" % e)
 
     # v3.47.1（AI-BYOK）：选中即问 —— 把选中文本作为上下文预填输入区
@@ -949,7 +950,7 @@ class AIPane(QWidget):
             self._render()
             return
         if self._worker and self._worker.isRunning():
-            QMessageBox.information(self, "提示",
+            QMessageBox.information(self, T("提示", "Tip"),
                 "请等待上一次请求完成（或按 Esc 中止生成）。")
             return
         if prompt:
@@ -1006,7 +1007,7 @@ class AIPane(QWidget):
         与选中改写（ai_action）不同，本路径整篇送单一请求（长文档经
         ai_context 自适应降级），返回后挂「整篇应用」锚点，确认后整体替换。"""
         if self._worker and self._worker.isRunning():
-            QMessageBox.information(self, "提示",
+            QMessageBox.information(self, T("提示", "Tip"),
                 "请等待上一次请求完成（或按 Esc 中止生成）。")
             return
         self.bridge.get_markdown(
@@ -1261,7 +1262,7 @@ class AIFragmentDialog(QDialog, TwoPaneMergeMixin):
                  title=None, hint=None, target_hint=""):
         super().__init__(parent)
         self.setObjectName("aiFragDlg")
-        self.setWindowTitle(title or "AI 片段替换")
+        self.setWindowTitle(title or T("AI 片段替换", "AI Fragment Replace"))
         self._bridge = bridge
         self.setModal(True)
         self.resize(940, 680)
@@ -1286,8 +1287,8 @@ class AIFragmentDialog(QDialog, TwoPaneMergeMixin):
 
     def _mp_tail_buttons(self, brow):
         brow.addStretch(1)
-        b_cancel = QPushButton("取消", self)
-        b_ok = QPushButton("确认替换", self)
+        b_cancel = QPushButton(T("取消", "Cancel"), self)
+        b_ok = QPushButton(T("确认替换", "Confirm Replace"), self)
         b_ok.setObjectName("primaryBtn")
         b_ok.setDefault(True)
         b_cancel.clicked.connect(self.reject)

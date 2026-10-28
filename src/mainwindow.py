@@ -293,7 +293,7 @@ class EditorPage(QWebEnginePage):
     def javaScriptPrompt(self, origin, msg, default):
         from PySide6.QtWidgets import QInputDialog
         parent = self.parent() if isinstance(self.parent(), QWidget) else None
-        text, ok = QInputDialog.getText(parent, "输入", str(msg), text=str(default or ""))
+        text, ok = QInputDialog.getText(parent, T("输入", "Input"), str(msg), text=str(default or ""))
         return ok, text
 
     def javaScriptAlert(self, origin, msg):
@@ -329,7 +329,7 @@ class PdfExportDialog(QDialog):
 
     def __init__(self, parent, settings):
         super().__init__(parent)
-        self.setWindowTitle("PDF 导出设置")
+        self.setWindowTitle(T("PDF 导出设置", "PDF Export Settings"))
         self._settings = settings
         from bookexport import PAPER_SIZES, PDF_DEFAULT_OPTS, opts_from_settings
         o = opts_from_settings(settings)
@@ -339,7 +339,7 @@ class PdfExportDialog(QDialog):
         lay.setSpacing(10)
 
         # ---- 纸张 ----
-        g_page = QGroupBox("纸张")
+        g_page = QGroupBox(T("纸张", "Paper"))
         f1 = QFormLayout(g_page)
         self._paper = QComboBox()
         for label, val in PAPER_SIZES:
@@ -349,17 +349,17 @@ class PdfExportDialog(QDialog):
         f1.addRow("纸张尺寸", self._paper)
 
         self._orient = QComboBox()
-        self._orient.addItem("纵向", "portrait")
-        self._orient.addItem("横向", "landscape")
+        self._orient.addItem(T("纵向", "Portrait"), "portrait")
+        self._orient.addItem(T("横向", "Landscape"), "landscape")
         idx = self._orient.findData(o["orientation"])
         self._orient.setCurrentIndex(idx if idx >= 0 else 0)
         f1.addRow("方向", self._orient)
         lay.addWidget(g_page)
 
         # ---- 页边距（四边独立；勾选「四边一致」时联动）----
-        g_m = QGroupBox("页边距")
+        g_m = QGroupBox(T("页边距", "Margins"))
         v = QVBoxLayout(g_m)
-        self._uniform = QCheckBox("四边一致")
+        self._uniform = QCheckBox(T("四边一致", "Uniform Margins"))
         self._uniform.setChecked(bool(o["margin_uniform"]))
         v.addWidget(self._uniform)
 
@@ -384,13 +384,13 @@ class PdfExportDialog(QDialog):
         lay.addWidget(g_m)
 
         # ---- 排版 ----
-        g_t = QGroupBox("排版")
+        g_t = QGroupBox(T("排版", "Layout"))
         f3 = QFormLayout(g_t)
         self._scale = QSpinBox()
         self._scale.setRange(25, 400)
         self._scale.setSingleStep(5)
         self._scale.setSuffix(" %")
-        self._scale.setToolTip("正文按比例缩放，页边距保持不变；100% 为原尺寸")
+        self._scale.setToolTip(T("正文按比例缩放，页边距保持不变；100% 为原尺寸", "Scale body text proportionally; margins stay fixed; 100% = original size"))
         self._scale.setValue(int(o["scale_pct"]))
         f3.addRow("缩放", self._scale)
 
@@ -399,12 +399,12 @@ class PdfExportDialog(QDialog):
         self._line.setDecimals(2)
         self._line.setSingleStep(0.05)
         self._line.setSpecialValueText("跟随文档")
-        self._line.setToolTip("行高倍数（× 字号）；「跟随文档」表示不调整")
+        self._line.setToolTip(T("行高倍数（× 字号）；「跟随文档」表示不调整", "Line-height multiplier (× font size); 'Follow Document' means no adjustment"))
         self._line.setValue(float(o["line_spacing"]))
         f3.addRow("行间距", self._line)
 
         self._font = QComboBox()
-        self._font.addItem("（跟随界面字体）", "")
+        self._font.addItem(T("（跟随界面字体）", "(Follow UI Font)"), "")
         for f in self.FONTS[1:]:
             self._font.addItem(f, f)
         idx = self._font.findData(o["font_family"])
@@ -419,12 +419,12 @@ class PdfExportDialog(QDialog):
         f3.addRow("字号", self._size)
         lay.addWidget(g_t)
 
-        self._save = QCheckBox("保存为默认")
+        self._save = QCheckBox(T("保存为默认", "Save as Default"))
         lay.addWidget(self._save)
 
         # v3.48.38（PDF-DEF）：一键还原为内置最佳默认参数（不写盘，仅重置本对话框）
         hb = QHBoxLayout()
-        self._reset = QPushButton("还原默认设置")
+        self._reset = QPushButton(T("还原默认设置", "Restore Defaults"))
         self._reset.setToolTip(
             "将以上各项重置为程序内置的最佳导出默认值（行距 / 字体 / 字号 / 边距等）")
         self._reset.clicked.connect(self._reset_to_defaults)
@@ -489,6 +489,7 @@ class PdfExportDialog(QDialog):
         """v3.48.38（PDF-DEF）：将对话框控件重置为内置最佳默认参数（PDF_DEFAULT_OPTS）。
 
         仅复位本对话框，不直接写盘；如需固化默认值，可勾选「保存为默认」后确定。"""
+        from bookexport import PDF_DEFAULT_OPTS
         d = PDF_DEFAULT_OPTS
         idx = self._paper.findData(d["paper_size"])
         self._paper.setCurrentIndex(idx if idx >= 0 else 0)
@@ -847,7 +848,7 @@ class MainWindow(QMainWindow):
         self._ai_collapsed_sidebar = False
         self._ai_dock.visibilityChanged.connect(self._on_ai_dock_visibility)
 
-        self._status = QLabel("就绪")
+        self._status = QLabel(T("就绪", "Ready"))
         self.statusBar().addWidget(self._status)
         # v3.29d（B3）：临时提示独立区域（右侧、3 秒自动还原），不再覆盖左侧常驻信息
         self._toast = QLabel("")
@@ -863,31 +864,31 @@ class MainWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self._blktype)
         # v3.40（UI-R7①）：状态栏六格 —— 消息区 | 模式 | 字数 | 行,列 | 缩放 | 保存态
         # （UI-SPEC PS-03；模式格点击循环切换、缩放格点击重置 100%）
-        self._cell_mode = QLabel("写作")
-        self._cell_mode.setToolTip("当前模式 · 点击循环切换（写作 → 源码 → 分屏）")
+        self._cell_mode = QLabel(T("写作", "Writing"))
+        self._cell_mode.setToolTip(T("当前模式 · 点击循环切换（写作 → 源码 → 分屏）", "Current mode · click to cycle (Writing → Source → Split)"))
         self._cell_mode.setCursor(Qt.PointingHandCursor)
         self._cell_mode.mousePressEvent = lambda _e: self.cycle_mode()
         self.statusBar().addPermanentWidget(self._cell_mode)
-        self._count = QLabel("字数 0 · 约 0 分钟")
+        self._count = QLabel(T("字数 0 · 约 0 分钟", "Words 0 · ~0 min"))
         self._count.setCursor(Qt.PointingHandCursor)
-        self._count.setToolTip("字数统计（中文按字 / 英文按词）· 点击查看详情")
+        self._count.setToolTip(T("字数统计（中文按字 / 英文按词）· 点击查看详情", "Word count (Chinese by char / English by word) · click for details"))
         self._count.installEventFilter(self)
         self.statusBar().addPermanentWidget(self._count)
-        self._pos = QLabel("行 1 · 列 1")
-        self._pos.setToolTip("光标所在行 / 列（Ctrl+G 可跳转到指定行）")
+        self._pos = QLabel(T("行 1 · 列 1", "Line 1 · Col 1"))
+        self._pos.setToolTip(T("光标所在行 / 列（Ctrl+G 可跳转到指定行）", "Cursor line / column (Ctrl+G to jump to a line)"))
         self.statusBar().addPermanentWidget(self._pos)
         self._cell_zoom = QLabel("100%")
-        self._cell_zoom.setToolTip("编辑区缩放 · 点击重置 100%（Ctrl+= 放大 / Ctrl+- 缩小）")
+        self._cell_zoom.setToolTip(T("编辑区缩放 · 点击重置 100%（Ctrl+= 放大 / Ctrl+- 缩小）", "Editor zoom · click to reset 100% (Ctrl+= zoom in / Ctrl+- zoom out)"))
         self._cell_zoom.setCursor(Qt.PointingHandCursor)
         self._cell_zoom.mousePressEvent = lambda _e: self.set_zoom(1.0)
         self.statusBar().addPermanentWidget(self._cell_zoom)
-        self._cell_save = QLabel("✓ 已保存")
-        self._cell_save.setToolTip("当前文档保存状态（自动保存开启时停留时间极短）")
+        self._cell_save = QLabel(T("✓ 已保存", "✓ Saved"))
+        self._cell_save.setToolTip(T("当前文档保存状态（自动保存开启时停留时间极短）", "Current document save state (very brief when auto-save is on)"))
         self._save_state = ""
         self.statusBar().addPermanentWidget(self._cell_save)
         # v3.29d（UX #26）：状态栏常驻「⌘ 命令」入口，提高命令面板发现率
-        self._cmd_entry = QLabel("⌘ 命令")
-        self._cmd_entry.setToolTip("打开命令面板（Ctrl+Shift+P）")
+        self._cmd_entry = QLabel(T("⌘ 命令", "⌘ Command"))
+        self._cmd_entry.setToolTip(T("打开命令面板（Ctrl+Shift+P）", "Open command palette (Ctrl+Shift+P)"))
         self._cmd_entry.setCursor(Qt.PointingHandCursor)
         self._cmd_entry.setStyleSheet("padding: 0 8px;")
         self._cmd_entry.mousePressEvent = lambda _e: self.show_command_palette()
@@ -975,7 +976,7 @@ class MainWindow(QMainWindow):
         self._btn_tb_show.setObjectName("tbExpand")
         self._btn_tb_show.setIcon(icon_toolbar_expand(16))
         self._btn_tb_show.setIconSize(QSize(16, 16))
-        self._btn_tb_show.setToolTip("展开工具栏（视图 → 显示 / 隐藏工具栏，或 Ctrl+Shift+B）")
+        self._btn_tb_show.setToolTip(T("展开工具栏（视图 → 显示 / 隐藏工具栏，或 Ctrl+Shift+B）", "Expand toolbar (View → Show/Hide Toolbar, or Ctrl+Shift+B)"))
         self._btn_tb_show.setCursor(Qt.PointingHandCursor)
         self._btn_tb_show.setAutoRaise(True)
         self._btn_tb_show.setFixedSize(20, 58)
@@ -1171,7 +1172,7 @@ class MainWindow(QMainWindow):
         self._settings.setValue("mmdTheme", val)
         self._js_all(f"window.setMmdTheme({js(val)})")
         lbl = MMD_THEME_LABELS.get(val, "")
-        self.show_status(f"图表主题：{lbl or val}" if val else "图表主题已更新（跟随界面主题）")
+        self.show_status(T(f"图表主题：{lbl or val}", f"Chart theme: {lbl or val}") if val else "图表主题已更新（跟随界面主题）")
 
     def _js_all(self, code):
         """对全部已加载的编辑器视图执行 JS。"""
@@ -1436,10 +1437,13 @@ class MainWindow(QMainWindow):
         self._reg_act("帮助", "关于", None, self._about, menu=m_help)
 
     def _apply_language(self):
-        """界面语言变更后即时刷新：菜单栏 / 工具栏提示 / 顶栏分段 / 编辑器内核。"""
+        """界面语言变更后即时刷新：菜单栏 / 工具栏提示 / 侧栏 / 顶栏分段 / 编辑器内核。"""
         self.menuBar().clear()
         self._build_menubar()
         self._retranslate_chrome()
+        sb = getattr(self, "_sidebar", None)
+        if sb is not None and hasattr(sb, "_retranslate"):
+            sb._retranslate()
         self._push_lang_to_js()
 
     def _retranslate_chrome(self):
@@ -1793,7 +1797,7 @@ class MainWindow(QMainWindow):
         if ready:
             self._ai_doc_action(key, prompt)
         else:
-            self.show_status("AI 优化目标文件未就绪：" + os.path.basename(norm))
+            self.show_status(T("AI 优化目标文件未就绪：", "AI optimize target file not ready: ") + os.path.basename(norm))
 
     # ================= v3.46（SoloMD P2）：Excel/CSV 表格导入 =================
     def import_table(self):
@@ -1806,13 +1810,13 @@ class MainWindow(QMainWindow):
         try:
             md = table_file_to_markdown(path)
         except Exception as e:
-            QMessageBox.critical(self, "导入失败", "读取表格文件出错：\n%s" % e)
+            QMessageBox.critical(self, T("导入失败", "Import failed"), "读取表格文件出错：\n%s" % e)
             return
         if not md:
-            QMessageBox.information(self, "导入失败", "文件为空或无法解析出表格数据。")
+            QMessageBox.information(self, T("导入失败", "Import failed"), T("文件为空或无法解析出表格数据。", "File is empty or no tabular data could be parsed."))
             return
         self._js_active('window.insertMarkdown(' + js(md) + ')')
-        self.show_status("已插入表格（%s）" % os.path.basename(path))
+        self.show_status(T("已插入表格（%s）", "Table inserted (%s)") % os.path.basename(path))
 
 
 
@@ -2038,7 +2042,7 @@ class MainWindow(QMainWindow):
                     self._view, "window.scrollToRatio(%s)" % json.dumps(ratio)))
             else:
                 # 目标文件已不存在（如被删除的章节）：同文档仅滚动，异文档提示并不导航
-                self.show_status("跳转历史目标文件不存在：" + os.path.basename(path))
+                self.show_status(T("跳转历史目标文件不存在：", "Jump-history target file does not exist: ") + os.path.basename(path))
                 if cur:
                     self._js_view(self._view, "window.scrollToRatio(%s)" % json.dumps(ratio))
         finally:
@@ -2053,7 +2057,7 @@ class MainWindow(QMainWindow):
         try:
             QDesktopServices.openUrl(QUrl(url))
         except Exception as e:   # noqa: BLE001
-            self.show_status("无法打开链接：%s" % e)
+            self.show_status(T("无法打开链接：%s", "Cannot open link: %s") % e)
 
     def _scroll_to_anchor(self, slug):
         """页内锚点跳转：先按标题 slug（scrollToAnchor），再按元素 id
@@ -2090,7 +2094,7 @@ class MainWindow(QMainWindow):
             return
         base = self._doc_dir()
         if not base:
-            self.show_status("文档尚未保存，无法解析相对链接：" + href)
+            self.show_status(T("文档尚未保存，无法解析相对链接：", "Document not saved; cannot resolve relative link: ") + href)
             return
         path, sep, frag = href.partition("#")
         path = unquote(path).replace("\\", "/")
@@ -2121,7 +2125,7 @@ class MainWindow(QMainWindow):
             if not self._settings.value("quoteTipShown", False, type=bool):
                 self._settings.setValue("quoteTipShown", True)
                 # v3.38（QUO-12）：提示明确化 —— 退出条件 = 空行上回车
-                self.show_status("提示：引用末尾空行上按回车即可退出（行尾连按两次回车）；Tab 加一层嵌套 / Shift+Tab 减一层")
+                self.show_status(T("提示：引用末尾空行上按回车即可退出（行尾连按两次回车）；Tab 加一层嵌套 / Shift+Tab 减一层", "Tip: press Enter on the blank line at the end of a quote to exit (double Enter at line end); Tab adds one nesting level / Shift+Tab removes one"))
             return
         self.show_status(msg)
 
@@ -2131,7 +2135,7 @@ class MainWindow(QMainWindow):
         except (TypeError, ValueError):
             return
         if isinstance(data, dict) and data.get("line"):
-            self._pos.setText(f"行 {int(data['line'])} · 列 {int(data.get('col', 1))}")
+            self._pos.setText(T(f"行 {int(data['line'])} · 列 {int(data.get('col', 1))}", f"Line {int(data['line'])} · Col {int(data.get('col', 1))}"))
             # v3.30.10（HP-1）：当前块类型（标题 N / 表格 / 图表 / 公式 / 引用…）
             self._blktype.setText(data.get("type") or "")
         elif isinstance(data, dict) and data.get("imgsel"):
@@ -2218,7 +2222,7 @@ class MainWindow(QMainWindow):
         self._js_view(self._view_src, f"window.scrollSrcToBlock({idx},{frac})")
 
     def goto_line(self):
-        n, ok = QInputDialog.getInt(self, "转到行", "行号：", 1, 1, 1_000_000)
+        n, ok = QInputDialog.getInt(self, T("转到行", "Go to Line"), T("行号：", "Line number:"), 1, 1, 1_000_000)
         if ok:
             self._js_active(f"window.gotoLine({n})")
 
@@ -2226,7 +2230,7 @@ class MainWindow(QMainWindow):
         """状态栏点击 → 字数 / 字符 / 段落 / 阅读时长详情。"""
         s = self._stats or {}
         if not s:
-            QMessageBox.information(self, "统计", "暂无统计数据。")
+            QMessageBox.information(self, T("统计", "Statistics"), T("暂无统计数据。", "No statistics yet."))
             return
         g = lambda k: int(s.get(k, 0) or 0)  # noqa: E731
         QMessageBox.information(
@@ -2251,7 +2255,7 @@ class MainWindow(QMainWindow):
             md.setHtml(html)
             md.setText(html)
             QApplication.clipboard().setMimeData(md)
-            self.show_status("已复制为 HTML · 粘贴到微信 / Word 可保留格式")
+            self.show_status(T("已复制为 HTML · 粘贴到微信 / Word 可保留格式", "Copied as HTML · pasting to WeChat / Word preserves formatting"))
         self._js_active("window.getExportHTML()", cb)
 
     def extra_commands(self):
@@ -2287,23 +2291,23 @@ class MainWindow(QMainWindow):
              "enabled": True, "run": self.archive_workspace},
         ]
         for t in styles.THEMES:
-            rows.append({"group": "外观", "name": f"切换主题：{t['label']}", "seq": "",
+            rows.append({"group": "外观", "name": T(f"切换主题：{t['label']}", f"Switch theme: {t['label']}"), "seq": "",
                          "enabled": True, "run": theme_cmd(t["id"])})
         # v3.43.0（LOOK-1）：外观四项全部进命令面板 —— mac / zen 两套风格会藏掉菜单栏，
         # 命令面板是唯一不受布局门控影响、任何风格下都能改回外观的通道。
         for sid, label in uistyles.menu_styles():
-            rows.append({"group": "外观", "name": f"切换界面风格：{label}", "seq": "",
+            rows.append({"group": "外观", "name": T(f"切换界面风格：{label}", f"Switch UI style: {label}"), "seq": "",
                          "enabled": True, "run": (lambda s=sid: self.set_uistyle(s))})
         for _label, _val in MMD_THEMES:
-            rows.append({"group": "外观", "name": f"切换图表风格：{_label}", "seq": "",
+            rows.append({"group": "外观", "name": T(f"切换图表风格：{_label}", f"Switch diagram style: {_label}"), "seq": "",
                          "enabled": True, "run": (lambda v=_val: self._set_mmd_theme(v))})
         for _sid, _slabel in CODE_STYLES:
-            rows.append({"group": "外观", "name": f"切换代码风格：{_slabel}", "seq": "",
+            rows.append({"group": "外观", "name": T(f"切换代码风格：{_slabel}", f"Switch code style: {_slabel}"), "seq": "",
                          "enabled": True, "run": (lambda s=_sid: self.set_code_prefs(style=s))})
-        rows.append({"group": "外观", "name": "界面风格管理…", "seq": "",
+        rows.append({"group": "外观", "name": T("界面风格管理…", "UI Style Manager…"), "seq": "",
                      "enabled": True, "run": self.show_style_manager})
         for m_id, _icon, label, _desc in MODES:
-            rows.append({"group": "视图", "name": f"切换到{label}", "seq": "",
+            rows.append({"group": "视图", "name": T(f"切换到{label}", f"Switch to {label}"), "seq": "",
                          "enabled": True, "run": (lambda m=m_id: self._set_mode(m))})
         return rows
 
@@ -2393,7 +2397,7 @@ class MainWindow(QMainWindow):
         """v3.32（P0-3）：「立即留档」—— 不等写盘节流，把当前内容直接存一份
         快照（与自动快照不同：内容相同也保留，用户主动打点应有痕迹）。"""
         if not self.file_path:
-            self.show_status("未命名文档暂不支持版本快照 · 保存到文件后可用")
+            self.show_status(T("未命名文档暂不支持版本快照 · 保存到文件后可用", "Untitled documents do not support version snapshots yet · available after saving to a file"))
             return
 
         def cb(md):
@@ -2414,9 +2418,9 @@ class MainWindow(QMainWindow):
                 with open(fp, "w", encoding="utf-8") as f:
                     f.write(out)
             except OSError as e:
-                QMessageBox.warning(self, "留档失败", str(e))
+                QMessageBox.warning(self, T("留档失败", "Snapshot failed"), str(e))
                 return
-            self.show_status(f"已留档 · {os.path.basename(fp)}")
+            self.show_status(T(f"已留档 · {os.path.basename(fp)}", f"Snapshot saved · {os.path.basename(fp)}"))
 
         self._js_active("window.getMarkdown()", cb)
 
@@ -2426,7 +2430,7 @@ class MainWindow(QMainWindow):
             with open(snap_path, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
         except OSError as e:
-            QMessageBox.critical(self, "恢复失败", str(e))
+            QMessageBox.critical(self, T("恢复失败", "Restore failed"), str(e))
             return
         when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mtime)) if mtime else "历史版本"
         if QMessageBox.question(
@@ -2438,7 +2442,7 @@ class MainWindow(QMainWindow):
         self._push_text(text)
         self._dirty = True
         self._update_title()
-        self.show_status(f"已恢复历史版本（{when}）· 按 Ctrl+S 保存")
+        self.show_status(T(f"已恢复历史版本（{when}）· 按 Ctrl+S 保存", f"Restored historical version ({when}) · press Ctrl+S to save"))
 
     def apply_merged_text(self, text):
         """v3.47.4（REQ3）：把合并结果（可能含冲突标记）写入当前编辑区。
@@ -2450,7 +2454,7 @@ class MainWindow(QMainWindow):
         self._push_text(text)
         self._dirty = True
         self._update_title()
-        self.show_status("已应用合并结果到当前编辑区 · 按 Ctrl+S 保存")
+        self.show_status(T("已应用合并结果到当前编辑区 · 按 Ctrl+S 保存", "Applied merge result to current editor · press Ctrl+S to save"))
         return True
 
     # ================= 侧栏文件管理支撑（回收站删除 / 重命名同步） =================
@@ -2495,14 +2499,14 @@ class MainWindow(QMainWindow):
             self._js_view(self._view_prev, f"window.reorderSections({js(payload)})")
         else:
             self._js_active(f"window.reorderSections({js(payload)})")
-        self.show_status("已调整章节顺序")
+        self.show_status(T("已调整章节顺序", "Chapter order adjusted"))
 
     # ================= P1-7 外部打开 =================
     def show_in_explorer(self, path=None):
         """在资源管理器中定位当前文档（无文档时打开所在目录）。"""
         target = path or self.file_path
         if not target:
-            QMessageBox.information(self, "在资源管理器中显示", "当前文档尚未保存到文件。")
+            QMessageBox.information(self, T("在资源管理器中显示", "Show in Explorer"), T("当前文档尚未保存到文件。", "Current document is not saved to a file yet."))
             return
         target = os.path.abspath(target)
         try:
@@ -2512,18 +2516,18 @@ class MainWindow(QMainWindow):
                 d = os.path.dirname(target)
                 subprocess.Popen(["explorer", d if d else "."])
         except OSError as e:
-            QMessageBox.critical(self, "打开失败", str(e))
+            QMessageBox.critical(self, T("打开失败", "Open failed"), str(e))
 
     def open_external(self, path=None):
         """用系统默认程序打开指定文件（缺省 = 当前文档；
         可用系统设置里的外部编辑器路径覆盖）。v3.25：支持侧栏文件列表右键调用。"""
         target = path or self.file_path
         if not target:
-            QMessageBox.information(self, "用外部程序打开", "当前文档尚未保存到文件。")
+            QMessageBox.information(self, T("用外部程序打开", "Open with external program"), T("当前文档尚未保存到文件。", "Current document is not saved to a file yet."))
             return
         target = os.path.abspath(target)
         if not os.path.exists(target):
-            QMessageBox.information(self, "用外部程序打开", f"文件不存在：{target}")
+            QMessageBox.information(self, T("用外部程序打开", "Open with external program"), f"文件不存在：{target}")
             return
         cmd = str(getattr(self, "_external_editor", "") or "").strip()
         try:
@@ -2531,9 +2535,9 @@ class MainWindow(QMainWindow):
                 subprocess.Popen([cmd, target])
             else:
                 openutil.open_path(target)     # 跨平台：Windows=startfile / mac=open / linux=xdg-open
-            self.show_status(f"已用外部程序打开 · {target}")
+            self.show_status(T(f"已用外部程序打开 · {target}", f"Opened with external program · {target}"))
         except OSError as e:
-            QMessageBox.critical(self, "打开失败", str(e))
+            QMessageBox.critical(self, T("打开失败", "Open failed"), str(e))
 
     # ================= P1-2 折叠 =================
     def fold_all_headings(self, close):
@@ -2549,14 +2553,14 @@ class MainWindow(QMainWindow):
         self._auto_pair = bool(on)
         self._settings.setValue("autoPair", bool(on))
         self._js_active(f"window.setMode({{autoPair: {str(bool(on)).lower()}}})")
-        self.show_status("自动配对：开" if on else "自动配对：关")
+        self.show_status(T("自动配对：开", "Auto-pair: On") if on else "自动配对：关")
 
     def set_emoji_complete(self, on):
         """Emoji 短代码自动补全开关。"""
         self._emoji = bool(on)
         self._settings.setValue("emojiComplete", bool(on))
         self._js_active(f"window.setMode({{emoji: {str(bool(on)).lower()}}})")
-        self.show_status("Emoji 补全：开" if on else "Emoji 补全：关")
+        self.show_status(T("Emoji 补全：开", "Emoji completion: On") if on else "Emoji 补全：关")
 
     def set_history_keep(self, n):
         """历史版本保留份数（1~100，系统设置→通用；v3.43.1 上限 200 → 100）。"""
@@ -2566,13 +2570,13 @@ class MainWindow(QMainWindow):
             return
         self._history_keep = n
         self._settings.setValue("historyKeep", n)
-        self.show_status(f"历史版本保留 {n} 份")
+        self.show_status(T(f"历史版本保留 {n} 份", f"History versions kept: {n}"))
 
     def set_external_editor(self, path):
         """外部编辑器可执行文件路径（留空 = 系统默认关联程序，系统设置→通用）。"""
         self._external_editor = str(path or "").strip()
         self._settings.setValue("externalEditor", self._external_editor)
-        self.show_status("外部编辑器：" + (self._external_editor or "系统默认程序"))
+        self.show_status(T("外部编辑器：", "External editor: ") + (self._external_editor or "系统默认程序"))
 
     # ================= 跨文件搜索 =================
     def show_search(self):
@@ -2595,7 +2599,7 @@ class MainWindow(QMainWindow):
     def open_file_at(self, path, line):
         """打开文件并跳转到指定行（搜索结果点击）。"""
         if not path or not os.path.exists(path):
-            self.show_status(f"文件不存在：{path}")
+            self.show_status(T(f"文件不存在：{path}", f"File does not exist: {path}"))
             return
         self._pending_goto = (os.path.abspath(path), max(1, int(line)))
         self._pending_tries = 0
@@ -2613,7 +2617,7 @@ class MainWindow(QMainWindow):
         if loaded:
             self._pending_goto = None
             self._js_active(f"window.gotoLine({line})")
-            self.show_status(f"已跳转到 {os.path.basename(path)} 第 {line} 行")
+            self.show_status(T(f"已跳转到 {os.path.basename(path)} 第 {line} 行", f"Jumped to line {line} of {os.path.basename(path)}"))
             return
         self._pending_tries += 1
         if self._pending_tries < 12:
@@ -2637,7 +2641,7 @@ class MainWindow(QMainWindow):
         if dlg.is_url():
             name = dlg._cur_stem() or "图片"
             self._js_active(f"window.insertImageMarkdown({js(src)}, {js(name)})")
-            self.show_status(f"已插入网络图片 · {src[:60]}")
+            self.show_status(T(f"已插入网络图片 · {src[:60]}", f"Inserted network image · {src[:60]}"))
             return
         self._insert_image_file(src, mode=dlg.mode())
 
@@ -2667,14 +2671,14 @@ class MainWindow(QMainWindow):
             try:
                 rel = self._save_image_to_assets(path, filename=fname)
             except OSError as e:
-                self.show_status(f"图片落盘失败，已改为内嵌：{e}")
+                self.show_status(T(f"图片落盘失败，已改为内嵌：{e}", f"Image save failed; switched to embedded: {e}"))
                 rel = None
             else:
                 if rel is None:
                     self._status_prefer_assets()
         if rel:
             self._js_active(f"window.insertImageMarkdown({js(rel)}, {js(name)})")
-            self.show_status(f"已插入图片（相对路径）· {rel}")
+            self.show_status(T(f"已插入图片（相对路径）· {rel}", f"Inserted image (relative path) · {rel}"))
             return
         try:
             ext = os.path.splitext(path)[1].lower()
@@ -2689,12 +2693,12 @@ class MainWindow(QMainWindow):
             b64 = base64.b64encode(raw).decode("ascii")
             data_url = f"data:{mime};base64,{b64}"
             self._js_active(f"window.insertImageMarkdown({js(data_url)}, {js(name)})")
-            self.show_status(f"已插入图片（内嵌）· {os.path.basename(path)}")
+            self.show_status(T(f"已插入图片（内嵌）· {os.path.basename(path)}", f"Inserted image (embedded) · {os.path.basename(path)}"))
         except OSError as e:
-            self.show_status(f"插入图片失败：{e}")
+            self.show_status(T(f"插入图片失败：{e}", f"Insert image failed: {e}"))
 
     def _status_prefer_assets(self):
-        self.show_status("当前文档尚未保存，图片已改为内嵌；保存后插入的图片会自动落到 assets 目录")
+        self.show_status(T("当前文档尚未保存，图片已改为内嵌；保存后插入的图片会自动落到 assets 目录", "Document not saved; image switched to embedded; inserted images will land in the assets folder after saving"))
 
     # ---- 落盘：资源目录 ----
     def _assets_dir_for(self, doc_path):
@@ -2773,15 +2777,15 @@ class MainWindow(QMainWindow):
                     self._status_prefer_assets()
         if rel:
             self._js_active(f"window.insertImageMarkdown({js(rel)}, {js(name)})")
-            self.show_status(f"已粘贴图片（相对路径）· {rel}")
+            self.show_status(T(f"已粘贴图片（相对路径）· {rel}", f"Pasted image (relative path) · {rel}"))
         else:
             # v3.29d（B8）：大图内嵌提示（粘贴网络图 / 未保存文档回退内嵌时）
             m2 = re.match(r"^data:image/[^;]+;base64,", url or "")
             if m2 and len(url) > 1024 * 1365:   # base64 后约 >1MB 原始数据
-                self.show_status("提示：粘贴的内嵌图片超过 1MB，可能拖慢文档加载；"
-                                 "建议保存文档后改用相对路径（assets）存储", 6000)
+                self.show_status(T("提示：粘贴的内嵌图片超过 1MB，可能拖慢文档加载；建议保存文档后改用相对路径（assets）存储",
+                                     "Tip: pasted embedded images over 1MB may slow document loading; after saving the document, consider switching to relative-path (assets) storage"), 6000)
             self._js_active(f"window.insertImageMarkdown({js(url)}, {js(name)})")
-            self.show_status("已粘贴图片（内嵌 data URL）")
+            self.show_status(T("已粘贴图片（内嵌 data URL）", "Pasted image (embedded data URL)"))
 
     def set_image_mode(self, mode):
         """设置图片存放方式：assets=落盘相对路径（推荐）/ embed=内嵌 data URL。"""
@@ -2789,7 +2793,7 @@ class MainWindow(QMainWindow):
         self._image_mode = mode
         self._settings.setValue("imageMode", mode)
         self._push_doc_dir()
-        self.show_status("图片存放方式：" + (
+        self.show_status(T("图片存放方式：", "Image storage method: ") + (
             "相对路径（保存到「文档名.assets」文件夹）" if mode == "assets"
             else "内嵌 data URL（图片写入文档本身）"))
 
@@ -2819,7 +2823,7 @@ class MainWindow(QMainWindow):
         self._fmt_log = bool(on)
         self._settings.setValue("fmtLog", self._fmt_log)
         self._push_fmt_log_flag()
-        self.show_status("格式化操作日志已开启" if self._fmt_log else "格式化操作日志已关闭")
+        self.show_status(T("格式化操作日志已开启", "Format operation logging enabled") if self._fmt_log else "格式化操作日志已关闭")
 
     def _push_fmt_log_flag(self):
         """向所有已加载视图下发日志开关（window.setFmtLog）。"""
@@ -2854,7 +2858,7 @@ class MainWindow(QMainWindow):
             try:
                 self._img_crop(idx, src, req)
             except Exception as e:                                                 # noqa: BLE001
-                self.show_status(f"裁剪失败：{e}")
+                self.show_status(T(f"裁剪失败：{e}", f"Crop failed: {e}"))
         elif act == "imgReplace":
             self._img_replace(idx, str(req.get("mode") or "assets"))   # v3.38
         elif act == "mmdToImg":
@@ -2865,19 +2869,19 @@ class MainWindow(QMainWindow):
         回调后编辑器整块替换为图片语法；单向不可逆（不保留图表源码）。"""
         m = re.match(r"^data:image/png;base64,(.*)$", data_url, re.S)
         if not m:
-            self.show_status("图表转图片失败：图片数据无效")
+            self.show_status(T("图表转图片失败：图片数据无效", "Chart-to-image failed: invalid image data"))
             return
         try:
             data = base64.b64decode(m.group(1))
         except (ValueError, binascii.Error):
-            self.show_status("图表转图片失败：图片数据无效")
+            self.show_status(T("图表转图片失败：图片数据无效", "Chart-to-image failed: invalid image data"))
             return
         rel = self._save_image_to_assets(data=data, filename="chart.png")
         if not rel:
-            self.show_status("图表转图片失败：请先保存文档")
+            self.show_status(T("图表转图片失败：请先保存文档", "Chart-to-image failed: save the document first"))
             return
         self._js_active(f"window.__doMmdToImg({int(idx)}, {js(rel)})")
-        self.show_status(f"图表已转换为图片 · {rel}")
+        self.show_status(T(f"图表已转换为图片 · {rel}", f"Chart converted to image · {rel}"))
 
     def _img_replace(self, idx, mode):
         """v3.38（图片报告 §四#9）：右键「替换图片」—— 选图后按当前存储形态替换 src。"""
@@ -2896,12 +2900,12 @@ class MainWindow(QMainWindow):
                 with open(path, "rb") as f:
                     raw = f.read()
             except OSError as e:
-                self.show_status(f"替换图片失败：{e}")
+                self.show_status(T(f"替换图片失败：{e}", f"Replace image failed: {e}"))
                 return
             mime = IMG_MIME.get(os.path.splitext(name)[1].lower() or ".png", "image/png")
             new_src = f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
         self._js_active(f"window.__doImgReplace({int(idx)}, {js(new_src)})")
-        self.show_status(f"已替换图片 · {name}")
+        self.show_status(T(f"已替换图片 · {name}", f"Image replaced · {name}"))
 
     def _img_bytes(self, src):
         """v3.30.16：把图片块的 src 取成字节（本地文件 / data URL / 网络图）。"""
@@ -2932,14 +2936,14 @@ class MainWindow(QMainWindow):
         可直接粘贴到微信 / Word / 画图等。不改文档、不入撤销历史。"""
         data = self._img_bytes(src)
         if not data:
-            self.show_status("复制图片失败：取不到图片数据（本地文件缺失 / 网络图下载失败）")
+            self.show_status(T("复制图片失败：取不到图片数据（本地文件缺失 / 网络图下载失败）", "Copy image failed: cannot get image data (local file missing / network image download failed)"))
             return
         img = QImage()
         if not img.loadFromData(data):
-            self.show_status("复制图片失败：无法识别的图片格式")
+            self.show_status(T("复制图片失败：无法识别的图片格式", "Copy image failed: unrecognized image format"))
             return
         QGuiApplication.clipboard().setImage(img)
-        self.show_status(f"图片已复制到剪贴板（{img.width()}×{img.height()}）")
+        self.show_status(T(f"图片已复制到剪贴板（{img.width()}×{img.height()}）", f"Image copied to clipboard ({img.width()}×{img.height()})"))
 
     def _img_crop(self, idx, src, req):
         """v3.39.6（IMG-CROP）：按自然像素裁剪图片并写回。
@@ -2953,20 +2957,20 @@ class MainWindow(QMainWindow):
             w = int(req.get("w") or 0)
             h = int(req.get("h") or 0)
         except (TypeError, ValueError):
-            self.show_status("裁剪失败：裁剪区域参数无效")
+            self.show_status(T("裁剪失败：裁剪区域参数无效", "Crop failed: invalid crop-region parameters"))
             return
         data = self._img_bytes(src)
         if not data:
-            self.show_status("裁剪失败：取不到图片数据（文件缺失 / 下载失败）")
+            self.show_status(T("裁剪失败：取不到图片数据（文件缺失 / 下载失败）", "Crop failed: cannot get image data (file missing / download failed)"))
             return
         img = QImage()
         if not img.loadFromData(data):
-            self.show_status("裁剪失败：无法识别的图片格式")
+            self.show_status(T("裁剪失败：无法识别的图片格式", "Crop failed: unrecognized image format"))
             return
         w = min(w, img.width() - x)
         h = min(h, img.height() - y)
         if w < 2 or h < 2:
-            self.show_status("裁剪失败：裁剪区域过小")
+            self.show_status(T("裁剪失败：裁剪区域过小", "Crop failed: crop region too small"))
             return
         crop = img.copy(x, y, w, h)
 
@@ -2986,7 +2990,7 @@ class MainWindow(QMainWindow):
             buf = QBuffer(ba)
             buf.open(QIODevice.WriteOnly)
             if not crop.save(buf, fmt):
-                self.show_status("裁剪失败：图片编码失败")
+                self.show_status(T("裁剪失败：图片编码失败", "Crop failed: image encoding failed"))
                 return
             buf.close()
             mime = "image/jpeg" if fmt == "JPG" else ("image/webp" if fmt == "WEBP" else "image/png")
@@ -3001,7 +3005,7 @@ class MainWindow(QMainWindow):
                 new_name = self._unique_name(out_dir, f"{stem}-crop{ext}")
                 out_path = os.path.join(out_dir, new_name)
                 if not crop.save(out_path, _fmt_of(ext)):
-                    self.show_status("裁剪失败：写入文件失败")
+                    self.show_status(T("裁剪失败：写入文件失败", "Crop failed: file write failed"))
                     return
                 if re.match(r"^[A-Za-z]:[\\/]", src):
                     new_src = out_path
@@ -3031,13 +3035,13 @@ class MainWindow(QMainWindow):
             if not new_src:
                 # v3.39.11（IMG-CROP-3）：区分「未保存无法定位」与「文件真的缺失」
                 if not self.file_path:
-                    self.show_status("裁剪失败：文档未保存，相对路径图片无法定位原图，请先保存文档")
+                    self.show_status(T("裁剪失败：文档未保存，相对路径图片无法定位原图，请先保存文档", "Crop failed: document not saved; cannot locate original of relative-path image; save the document first"))
                 else:
-                    self.show_status(f"裁剪失败：本地图片文件缺失（{src}），请检查路径或重新插入图片")
+                    self.show_status(T(f"裁剪失败：本地图片文件缺失（{src}），请检查路径或重新插入图片", f"Crop failed: local image file missing ({src}); check the path or re-insert the image"))
                 return
         # v3.39.12（IMG-CROP-7）：回调带原 src，内核比对一致才写回（防跨块 / 跨文档污染）
         self._js_active(f"window.__doImgCrop && window.__doImgCrop({int(idx)}, {js(new_src)}, {js(src)})")
-        self.show_status(f"已裁剪图片（{crop.width()}×{crop.height()}）")
+        self.show_status(T(f"已裁剪图片（{crop.width()}×{crop.height()}）", f"Image cropped ({crop.width()}×{crop.height()})"))
 
     def _img_local_path(self, src):
         """把图片块的 src 解析成本地文件绝对路径；非本地文件返回 None。"""
@@ -3057,12 +3061,12 @@ class MainWindow(QMainWindow):
     def _img_ask_name(self, title, default_stem):
         """弹框让用户指定存储名称（默认带 5 位自动编号前缀，可连编号一起改）。"""
         fname = self._numbered_asset_name(default_stem, "")   # 借用编号逻辑（不带扩展名）
-        text, ok = QInputDialog.getText(self, title, "存储名称（含编号前缀，可修改）：", text=fname)
+        text, ok = QInputDialog.getText(self, title, T("存储名称（含编号前缀，可修改）：", "Storage name (with number prefix, editable):"), text=fname)
         if not ok or not text.strip():
             return None
         text = text.strip()
         if not re.match(r'^[^\\/:*?"<>|]+$', text):
-            QMessageBox.information(self, title, "名称包含非法字符（不能含 \\ / : * ? \" < > |）。")
+            QMessageBox.information(self, title, T("名称包含非法字符（不能含 \\ / : * ? \" < > |）。", 'Name contains illegal characters (cannot include \\ / : * ? \" < > |).'))
             return None
         return text
 
@@ -3072,7 +3076,7 @@ class MainWindow(QMainWindow):
             return
         old = self._img_local_path(src)
         if not old or not os.path.isfile(old):
-            self.show_status("重命名失败：只支持本地 assets 中的图片（内嵌 / 网络图片无文件名）")
+            self.show_status(T("重命名失败：只支持本地 assets 中的图片（内嵌 / 网络图片无文件名）", "Rename failed: only images in local assets are supported (embedded / network images have no filename)"))
             return
         directory = os.path.dirname(old)
         ext = os.path.splitext(old)[1] or ".png"
@@ -3083,11 +3087,11 @@ class MainWindow(QMainWindow):
         try:
             os.rename(old, os.path.join(directory, new_name))
         except OSError as e:
-            self.show_status(f"重命名失败：{e}")
+            self.show_status(T(f"重命名失败：{e}", f"Rename failed: {e}"))
             return
         new_rel = f"{os.path.basename(directory)}/{new_name}"
         self._js_active(f"window.imgReqDone && window.imgReqDone({int(idx)}, {js(new_rel)})")
-        self.show_status(f"图片已重命名 · {new_name}")
+        self.show_status(T(f"图片已重命名 · {new_name}", f"Image renamed · {new_name}"))
 
     def _img_to_embed(self, idx, src):
         """相对路径 → 内嵌：读文件转 data URL 写回。
@@ -3095,7 +3099,7 @@ class MainWindow(QMainWindow):
         不再被引用的孤儿文件）；删除失败（占用 / 只读）仅提示、不影响转换。"""
         fp = self._img_local_path(src)
         if not fp or not os.path.isfile(fp):
-            self.show_status("转为内嵌失败：找不到图片文件")
+            self.show_status(T("转为内嵌失败：找不到图片文件", "Convert to embedded failed: image file not found"))
             return
         ext = os.path.splitext(fp)[1].lower()
         mime = IMG_MIME.get(ext, "image/png")
@@ -3103,7 +3107,7 @@ class MainWindow(QMainWindow):
             with open(fp, "rb") as f:
                 b64 = base64.b64encode(f.read()).decode("ascii")
         except OSError as e:
-            self.show_status(f"转为内嵌失败：{e}")
+            self.show_status(T(f"转为内嵌失败：{e}", f"Convert to embedded failed: {e}"))
             return
         data_url = f"data:{mime};base64,{b64}"
         self._js_active(f"window.imgReqDone && window.imgReqDone({int(idx)}, {js(data_url)})")
@@ -3121,7 +3125,7 @@ class MainWindow(QMainWindow):
                 removed = "（图片在 assets 目录外，原文件保留）"
         except OSError as e:
             removed = f"，原文件删除失败（{e}），请手动清理"
-        self.show_status(f"图片已转为内嵌 data URL{removed}")
+        self.show_status(T(f"图片已转为内嵌 data URL{removed}", f"Image converted to embedded data URL{removed}"))
 
     def _img_to_assets(self, idx, src):
         """内嵌 data URL / 网络图片 / 本地文件 → 相对路径落盘（弹框指定名称）。"""
@@ -3133,7 +3137,7 @@ class MainWindow(QMainWindow):
             try:
                 data = base64.b64decode(m.group(2))
             except (ValueError, binascii.Error):
-                self.show_status("转为相对路径失败：内嵌数据解码错误")
+                self.show_status(T("转为相对路径失败：内嵌数据解码错误", "Convert to relative path failed: embedded data decode error"))
                 return
             default_stem = "图片" + ext
             name = self._img_ask_name("转为相对路径", os.path.splitext(default_stem)[0])
@@ -3149,12 +3153,12 @@ class MainWindow(QMainWindow):
                 ext = MIME_EXT.get(ctype, ".png")
                 data = raw
             except Exception as e:      # noqa: BLE001 — 网络 / 超时 / 解码错误统一提示
-                self.show_status(f"网络图片下载失败，已保持原样：{e}")
+                self.show_status(T(f"网络图片下载失败，已保持原样：{e}", f"Network image download failed; kept as-is: {e}"))
                 return
         else:
             fp = self._img_local_path(src)
             if not fp or not os.path.isfile(fp):
-                self.show_status("转为相对路径失败：找不到图片文件")
+                self.show_status(T("转为相对路径失败：找不到图片文件", "Convert to relative path failed: image file not found"))
                 return
             default_stem = os.path.splitext(os.path.basename(fp))[0] or "图片"
             name = self._img_ask_name("转为相对路径", default_stem)
@@ -3165,12 +3169,12 @@ class MainWindow(QMainWindow):
                     data = f.read()
                 ext = os.path.splitext(fp)[1].lower() or ".png"
             except OSError as e:
-                self.show_status(f"转为相对路径失败：{e}")
+                self.show_status(T(f"转为相对路径失败：{e}", f"Convert to relative path failed: {e}"))
                 return
         if name is None:
             return
         if not self.file_path:
-            self.show_status("请先把文档保存到文件，再转为相对路径（需要确定 assets 目录）")
+            self.show_status(T("请先把文档保存到文件，再转为相对路径（需要确定 assets 目录）", "Save the document to a file first, then convert to relative path (assets folder must be determined)"))
             return
         uext = os.path.splitext(name)[1].lower()
         if uext:                        # 用户在名称里自带了扩展名
@@ -3181,13 +3185,13 @@ class MainWindow(QMainWindow):
         try:
             rel = self._save_image_to_assets(data=data, filename=fname)
         except OSError as e:
-            self.show_status(f"图片落盘失败：{e}")
+            self.show_status(T(f"图片落盘失败：{e}", f"Image save failed: {e}"))
             return
         if not rel:
-            self.show_status("请先把文档保存到文件，再转为相对路径")
+            self.show_status(T("请先把文档保存到文件，再转为相对路径", "Save the document to a file first, then convert to relative path"))
             return
         self._js_active(f"window.imgReqDone && window.imgReqDone({int(idx)}, {js(rel)})")
-        self.show_status(f"图片已转为相对路径 · {rel}")
+        self.show_status(T(f"图片已转为相对路径 · {rel}", f"Image converted to relative path · {rel}"))
 
     # ---- 迁移：把文档里已有的内嵌图片抽出成文件 ----
     def migrate_embedded_images(self):
@@ -3203,7 +3207,7 @@ class MainWindow(QMainWindow):
                 return
             new_md, count, failed = self._extract_embedded_images(md)
             if count == 0:
-                QMessageBox.information(self, "迁移内嵌图片",
+                QMessageBox.information(self, T("迁移内嵌图片", "Migrate Embedded Images"),
                                         "本文档没有内嵌的 data URL 图片，无需迁移。")
                 return
             assets = os.path.basename(self._assets_dir_for(self.file_path))
@@ -3221,7 +3225,7 @@ class MainWindow(QMainWindow):
                 with open(self.file_path, "w", encoding="utf-8") as f:
                     f.write(out)
             except OSError as e:
-                QMessageBox.critical(self, "迁移失败", str(e))
+                QMessageBox.critical(self, T("迁移失败", "Migration failed"), str(e))
                 return
             if 0 <= self._cur < len(self._docs):
                 self._docs[self._cur]["content"] = out
@@ -3231,7 +3235,7 @@ class MainWindow(QMainWindow):
             msg = f"已迁移 {count} 张内嵌图片到 {assets}"
             if failed:
                 msg += f"（{failed} 张解码失败已保留原样）"
-            self.show_status(msg + "，请按 Ctrl+S 确认保存")
+            self.show_status(msg + T("，请按 Ctrl+S 确认保存", ", press Ctrl+S to confirm save"))
 
         self._js_active("window.getMarkdown()", cb)
 
@@ -3269,7 +3273,7 @@ class MainWindow(QMainWindow):
             s = data["stats"]
             self._stats = dict(s) if isinstance(s, dict) else {}
             n = int(self._stats.get("chars", 0) or 0)
-            self._count.setText(f"字数 {n:,} · 约 {int(self._stats.get('readMin', 0) or 0)} 分钟")
+            self._count.setText(T(f"字数 {n:,} · 约 {int(self._stats.get('readMin', 0) or 0)} 分钟", f"Words {n:,} · ~{int(self._stats.get('readMin', 0) or 0)} min"))
         if data.get("img"):
             self._handle_pasted_image(data.get("img"))
         if data.get("req"):
@@ -3321,9 +3325,9 @@ class MainWindow(QMainWindow):
                             last[doc["path"]] = _now
                             self._snap_ts = last
                         self._write_text(doc["path"], out)   # v3.29d（B2）：按原编码写盘
-                        self.show_status(f"已自动保存 · {doc['path']}")
+                        self.show_status(T(f"已自动保存 · {doc['path']}", f"Auto-saved · {doc['path']}"))
                     except OSError as e:
-                        self._status.setText(f"自动保存失败：{e}")
+                        self._status.setText(T(f"自动保存失败：{e}", f"Auto-save failed: {e}"))
         # v3.32（P0-1）：未命名文档影子草稿 —— 10 秒节流写入 %APPDATA%/mdEditor/drafts/，
         # 崩溃 / 断电后启动可恢复；内容清空即删草稿；保存到路径后由 save_file_as 收走。
         if 0 <= self._cur < len(self._docs):
@@ -3373,7 +3377,7 @@ class MainWindow(QMainWindow):
         doc = self._docs[idx]
         doc["pinned"] = not doc.get("pinned")
         name = os.path.basename(doc["path"]) if doc.get("path") else "未命名"
-        self.show_status(f"已{'固定' if doc['pinned'] else '取消固定'} · {name}")
+        self.show_status(T(f"已{'固定' if doc['pinned'] else '取消固定'} · {name}", f"{'Pinned' if doc['pinned'] else 'Unpinned'} · {name}"))
         self._enforce_pin_order()
         self._refresh_tab_texts()
 
@@ -3403,7 +3407,7 @@ class MainWindow(QMainWindow):
         tb = self._tabbar
         overflow = (tb.count() > 1 and tb.sizeHint().width() > tb.width() + 2)
         self._btn_tb_more.setEnabled(overflow)
-        self._btn_tb_more.setToolTip("所有标签页" if overflow else "所有标签页（无溢出）")
+        self._btn_tb_more.setToolTip(T("所有标签页", "All Tabs") if overflow else "所有标签页（无溢出）")
 
     def _show_tb_more_menu(self):
         m = QMenu(self)
@@ -3426,7 +3430,7 @@ class MainWindow(QMainWindow):
         # v3.45.7（REQ4）：per-doc mode —— 渲染 / 源码 / 分屏 状态随文件独立保留
         self._docs.append({"path": path, "content": text, "dirty": False, "mode": "edit"})
         idx = len(self._docs) - 1
-        self._tabbar.addTab("未命名" if not path else os.path.basename(path))
+        self._tabbar.addTab(T("未命名", "Untitled") if not path else os.path.basename(path))
         self._tabbar.setCurrentIndex(idx)  # 触发 _on_tab_clicked -> 激活
         return idx
 
@@ -3502,13 +3506,13 @@ class MainWindow(QMainWindow):
         self._refresh_tab_texts()
         if self.file_path:
             self._sidebar.set_root(self.file_path)
-            self._status.setText(f"已打开 · {self.file_path}")
+            self._status.setText(T(f"已打开 · {self.file_path}", f"Opened · {self.file_path}"))
             if self._book:   # v3.44.34（BOOK-1）：书籍中切换文档时高亮对应章节
                 self._sidebar.highlight_book_path(self.file_path)
                 self._record_book_chapter()   # v3.45.7（BOOK-READ-1）
         else:
             self._sidebar.clear_current_file()   # v3.38（OUT-3）：清除残留的文件上下文与高亮
-            self.show_status("未命名文档")
+            self.show_status(T("未命名文档", "Untitled Document"))
         self._remember_last_session()   # v3.38（OUT-5）
         # 期间用户又点了其他标签 -> 继续处理最新请求
         self.refresh_wiki()  # v3.44.37（BACKLINK-3）：切换后重建双链索引与反向链接
@@ -3535,7 +3539,7 @@ class MainWindow(QMainWindow):
         # v3.38（TAB-7）：固定标签不可关闭（关闭按钮 / Ctrl+W / 菜单统一入口守卫）
         if doc.get("pinned"):
             name = os.path.basename(doc["path"]) if doc.get("path") else "未命名"
-            self.show_status(f"标签已固定，请先取消固定再关闭 · {name}")
+            self.show_status(T(f"标签已固定，请先取消固定再关闭 · {name}", f"Tab is pinned; unpin it before closing · {name}"))
             return
 
         def do_close(cached_md=None):
@@ -3650,7 +3654,7 @@ class MainWindow(QMainWindow):
             self.snapshot_history(path, text)
             self._write_text(path, text)
         except OSError as e:
-            QMessageBox.critical(self, "保存失败", f"{path}\n{e}")
+            QMessageBox.critical(self, T("保存失败", "Save failed"), f"{path}\n{e}")
             return False
         self._remember_dir("save", path)
         doc["path"] = path
@@ -3734,7 +3738,7 @@ class MainWindow(QMainWindow):
         discard = not need
         if need and ask:
             box = QMessageBox(self)
-            box.setWindowTitle("批量关闭")
+            box.setWindowTitle(T("批量关闭", "Batch Close"))
             box.setIcon(QMessageBox.Question)
             names = []
             for i in need[:8]:
@@ -3742,12 +3746,12 @@ class MainWindow(QMainWindow):
                     if self._docs[i].get("path") else "未命名"
                 names.append(f"    {nm}")
             if len(need) > 8:
-                names.append(f"    …等共 {len(need)} 个")
-            box.setText(f"要关闭的 {len(idxs)} 个标签页中，{len(need)} 个文档未保存，"
-                        f"是否保存后关闭？\n" + "\n".join(names))
-            b_save = box.addButton("全部保存", QMessageBox.AcceptRole)
-            b_skip = box.addButton("全部不保存", QMessageBox.DestructiveRole)
-            box.addButton("取消", QMessageBox.RejectRole)
+                names.append(T(f"    …等共 {len(need)} 个", f"    ...and {len(need)} more"))
+            box.setText(T(f"要关闭的 {len(idxs)} 个标签页中，{len(need)} 个文档未保存，是否保存后关闭？\n",
+                         f"Of the {len(idxs)} tabs to close, {len(need)} documents are unsaved, close after saving?\n") + "\n".join(names))
+            b_save = box.addButton(T("全部保存", "Save All"), QMessageBox.AcceptRole)
+            b_skip = box.addButton(T("全部不保存", "Don't Save All"), QMessageBox.DestructiveRole)
+            box.addButton(T("取消", "Cancel"), QMessageBox.RejectRole)
             box.exec()
             if box.clickedButton() is not b_save and box.clickedButton() is not b_skip:
                 return 0
@@ -3775,7 +3779,7 @@ class MainWindow(QMainWindow):
             self.snapshot_history(doc["path"], text)
             self._write_text(doc["path"], text)
         except OSError as e:
-            QMessageBox.critical(self, "保存失败", f"{doc['path']}\n{e}")
+            QMessageBox.critical(self, T("保存失败", "Save failed"), f"{doc['path']}\n{e}")
             return False
         self._remember_dir("save", doc["path"])
         doc["content"] = md
@@ -3798,11 +3802,11 @@ class MainWindow(QMainWindow):
             self._docs[self._cur]["dirty"] = bool(self._dirty)
         idxs = [i for i in range(len(self._docs)) if not self._docs[i].get("pinned")]
         if not idxs:
-            self.show_status("没有可关闭的标签页（固定标签需先取消固定）")
+            self.show_status(T("没有可关闭的标签页（固定标签需先取消固定）", "No closable tabs (pinned tabs must be unpinned first)"))
             return
         n = self._batch_close(idxs)
         if n:
-            self.show_status(f"已关闭 {n} 个标签页")
+            self.show_status(T(f"已关闭 {n} 个标签页", f"Closed {n} tabs"))
 
     def _close_unmodified(self):
         """关闭所有未修改的标签（右键菜单项）；固定标签跳过（TAB-7 语义：不许自动关）。"""
@@ -3811,20 +3815,20 @@ class MainWindow(QMainWindow):
         idxs = [i for i in range(len(self._docs))
                 if not self._docs[i].get("dirty") and not self._docs[i].get("pinned")]
         if not idxs:
-            self.show_status("没有未修改的标签页")
+            self.show_status(T("没有未修改的标签页", "No unmodified tabs"))
             return
         n = self._batch_close(idxs)
         if n:
-            self.show_status(f"已关闭 {n} 个未修改的标签页")
+            self.show_status(T(f"已关闭 {n} 个未修改的标签页", f"Closed {n} unmodified tabs"))
 
     def _open_terminal(self, path):
         """v3.38（TAB-10）：在文件所在目录打开 PowerShell。"""
         d = os.path.dirname(path or "") or None
         try:
             subprocess.Popen("start powershell", shell=True, cwd=d)
-            self.show_status(f"已打开终端 · {d or '当前目录'}")
+            self.show_status(T(f"已打开终端 · {d or '当前目录'}", f"Terminal opened · {d or 'Current Directory'}"))
         except OSError as e:
-            QMessageBox.warning(self, "打开终端失败", str(e))
+            QMessageBox.warning(self, T("打开终端失败", "Failed to Open Terminal"), str(e))
 
     def _when_idle(self, fn):
         """等切换锁释放后再执行（右键即选中的异步窗口期保护）。"""
@@ -3911,7 +3915,7 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         # v3.48.36（AI-MENUS）：菜单项可在 系统设置 → AI 菜单 自定义
         from ai_pane import ai_menu_items
-        ai_menu = m.addMenu("AI优化")
+        ai_menu = m.addMenu(T("AI优化", "AI Optimize"))
         for _it in ai_menu_items(self._settings, "doc"):
             ai_menu.addAction(
                 _it["label"],
@@ -3923,19 +3927,19 @@ class MainWindow(QMainWindow):
         if not text:
             return
         QApplication.clipboard().setText(text)
-        self.show_status(f"已复制{what}：{text}")
+        self.show_status(T(f"已复制{what}：{text}", f"Copied {what}: {text}"))
 
     # ---- TAB-3：重新打开关闭的标签 ----
     def _reopen_closed_tab(self):
         if not self._closed_stack:
-            self.show_status("没有可重新打开的标签页")
+            self.show_status(T("没有可重新打开的标签页", "No tabs to reopen"))
             return
         doc = self._closed_stack.pop()
         idx = self._add_doc(path=doc.get("path"), text=doc.get("content"))
         self._docs[idx]["dirty"] = bool(doc.get("dirty"))
         self._refresh_tab_texts()
         name = os.path.basename(doc["path"]) if doc.get("path") else "未命名"
-        self.show_status(f"已重新打开 · {name}")
+        self.show_status(T(f"已重新打开 · {name}", f"Reopened · {name}"))
 
     # ---- TAB-4：上一个 / 下一个标签 ----
     def _cycle_tab(self, step):
@@ -3951,7 +3955,7 @@ class MainWindow(QMainWindow):
 
         def __init__(self, win, entries, sel):
             super().__init__(win, Qt.Dialog | Qt.FramelessWindowHint)
-            self.setWindowTitle("切换标签页")
+            self.setWindowTitle(T("切换标签页", "Switch Tabs"))
             self._win = win
             self._entries = entries          # [(idx, 文本), ...]
             self._sel = sel
@@ -4006,7 +4010,7 @@ class MainWindow(QMainWindow):
         self._mru = [d for d in self._mru
                      if any(d is x for x in self._docs)]   # 惰性剔除已关闭
         if len(self._docs) < 2:
-            self.show_status("只有一个标签页")
+            self.show_status(T("只有一个标签页", "Only one tab"))
             return
         # MRU 序优先，缺项（从未切过的标签）按标签条顺序补尾
         order = [self._docs.index(d) if any(d is x for x in self._docs) else -1
@@ -4046,7 +4050,7 @@ class MainWindow(QMainWindow):
                 self.snapshot_history(doc["path"], text)
                 self._write_text(doc["path"], text)
             except OSError as e:
-                QMessageBox.critical(self, "保存失败", f"{doc['path']}\n{e}")
+                QMessageBox.critical(self, T("保存失败", "Save failed"), f"{doc['path']}\n{e}")
                 continue
             doc["content"] = md
             doc["dirty"] = False
@@ -4148,7 +4152,7 @@ class MainWindow(QMainWindow):
         except OSError:
             return
         doc["draft_ts"] = now
-        self.show_status("草稿已自动暂存（未命名文档，崩溃可恢复）")
+        self.show_status(T("草稿已自动暂存（未命名文档，崩溃可恢复）", "Draft auto-saved (untitled document, recoverable after crash)"))
 
     def _remove_draft(self, doc):
         """草稿收走 / 清空时删除对应草稿文件。"""
@@ -4212,7 +4216,7 @@ class MainWindow(QMainWindow):
             idx = self._add_doc(path=None, text=text)
             if 0 <= idx < len(self._docs):
                 self._docs[idx]["draft"] = fp       # 草稿跟随文档继续更新，保存后收走
-        self.show_status("已恢复草稿内容 · 保存到文件后自动清理")
+        self.show_status(T("已恢复草稿内容 · 保存到文件后自动清理", "Draft content recovered · auto-cleared after saving to a file"))
 
     def open_folder(self):
         """打开文件夹：左侧文件栏定位并显示该文件夹的一级内容。"""
@@ -4223,7 +4227,7 @@ class MainWindow(QMainWindow):
         self._update_side_btn()
         self._sidebar.select_tab(Sidebar.TAB_FILES)
         self._sidebar.set_root(d)
-        self.show_status(f"已打开文件夹：{d}")
+        self.show_status(T(f"已打开文件夹：{d}", f"Folder opened: {d}"))
 
     def open_file(self, path=None):
         # QAction.triggered 会把 checked(bool) 作为第一个参数传入，
@@ -4238,7 +4242,7 @@ class MainWindow(QMainWindow):
                 return
             self._remember_dir("open", path)
         if not os.path.exists(path):
-            QMessageBox.warning(self, "打开失败", f"文件不存在：\n{path}")
+            QMessageBox.warning(self, T("打开失败", "Open failed"), f"文件不存在：\n{path}")
             return
         self._load_path(path)
 
@@ -4267,11 +4271,12 @@ class MainWindow(QMainWindow):
             return
         info = bookmode.read_book(d)
         if not info:
-            QMessageBox.warning(self, "打开书籍失败",
-                                "未检测到 mdBook 项目：\n需要在该目录下存在 book.toml 或 SUMMARY.md。")
+            QMessageBox.warning(self, T("打开书籍失败", "Open book failed"),
+                                T("未检测到 mdBook 项目：\n需要在该目录下存在 book.toml 或 SUMMARY.md。",
+                                  "No mdBook project detected:\nA book.toml or SUMMARY.md must exist in that directory."))
             return
         self._load_book(info)
-        self.show_status("已打开书籍：" + info["title"])
+        self.show_status(T("已打开书籍：", "Book opened: ") + info["title"])
         # 打开第一章（含链接的章节）
         first = self._book_first_chapter(info["root"])
         if first and first.get("abs_path"):
@@ -4284,7 +4289,7 @@ class MainWindow(QMainWindow):
             self, "选择书籍根目录（将在此处创建 book.toml 与 src/）", "")
         if not d:
             return
-        title, ok = QInputDialog.getText(self, "新建书籍", "书籍名称：", text="未命名书籍")
+        title, ok = QInputDialog.getText(self, T("新建书籍", "New Book"), T("书籍名称：", "Book name:"), text="未命名书籍")
         if not ok or not title.strip():
             return
         title = title.strip()
@@ -4293,7 +4298,7 @@ class MainWindow(QMainWindow):
         if (os.path.exists(os.path.join(book_dir, "book.toml"))
                 or os.path.exists(os.path.join(book_dir, "SUMMARY.md"))
                 or os.path.exists(os.path.join(book_dir, "src", "SUMMARY.md"))):
-            QMessageBox.warning(self, "新建书籍失败",
+            QMessageBox.warning(self, T("新建书籍失败", "New Book Failed"),
                                 "该目录已存在 mdBook 项目（book.toml / SUMMARY.md），请另选目录。")
             return
         src_dir = os.path.join(book_dir, "src")
@@ -4311,15 +4316,15 @@ class MainWindow(QMainWindow):
                 f.write("# %s\n\n> 这是《%s》的第一章。在右侧编辑内容，"
                         "或从「书籍」页签右键新增章节。\n" % (title, title))
         except OSError as e:
-            QMessageBox.critical(self, "新建书籍失败", str(e))
+            QMessageBox.critical(self, T("新建书籍失败", "New Book Failed"), str(e))
             return
         info = bookmode.read_book(book_dir)
         if not info:
-            QMessageBox.warning(self, "新建书籍失败",
+            QMessageBox.warning(self, T("新建书籍失败", "New Book Failed"),
                                 "书籍文件已生成，但无法解析，请检查目录权限。")
             return
         self._load_book(info)
-        self.show_status("已新建书籍：" + info["title"])
+        self.show_status(T("已新建书籍：", "New book created: ") + info["title"])
         first = self._book_first_chapter(info["root"])
         if first and first.get("abs_path"):
             self.open_book_link(first["abs_path"])
@@ -4350,17 +4355,17 @@ class MainWindow(QMainWindow):
     def _open_summary_for_edit(self, summary_path):
         """书籍右键「编辑目录」：以普通文档标签打开该书的 summary.md（保留书籍关联）。"""
         if not summary_path or not os.path.isfile(summary_path):
-            self.show_status("未找到目录文件：" + str(summary_path))
+            self.show_status(T("未找到目录文件：", "Table-of-contents file not found: ") + str(summary_path))
             return
         self._load_path(summary_path)
-        self.show_status("正在编辑目录：" + os.path.basename(summary_path))
+        self.show_status(T("正在编辑目录：", "Editing table of contents: ") + os.path.basename(summary_path))
 
     # ================= v3.46（TOC-SEL）：目录改为「侧栏选择入口」触发 =================
     def insert_toc_for_file(self, path):
         """从文件列表选择单个文件 → 仅对该文件生成并插入标题大纲目录。"""
         path = os.path.abspath(path)
         if not os.path.isfile(path):
-            self.show_status("文件不存在：" + path)
+            self.show_status(T("文件不存在：", "File does not exist: ") + path)
             return
         if self.file_path and os.path.normpath(self.file_path) == path:
             # 已是当前活动文档：直接取回正文后插入标题大纲
@@ -4379,7 +4384,7 @@ class MainWindow(QMainWindow):
         summary_path = os.path.abspath(summary_path)
         info = bookmode.read_book(os.path.dirname(summary_path))
         if not info:
-            self.show_status("无法解析书籍目录：" + summary_path)
+            self.show_status(T("无法解析书籍目录：", "Cannot parse book table of contents: ") + summary_path)
             return
         summary_dir = info["summary_dir"]
         toc_rel = "目录.md"
@@ -4388,19 +4393,19 @@ class MainWindow(QMainWindow):
         # 生成目录页内容（排除目录页自身，避免自引用）
         toc = self._build_book_toc_from_root(root, exclude_rel=toc_rel)
         if not toc:
-            self.show_status("该书暂无可用于生成目录的章节")
+            self.show_status(T("该书暂无可用于生成目录的章节", "This book has no chapters available for generating a TOC"))
             return
         try:
             self._write_text(toc_path, toc)
         except OSError as e:
-            self.show_status("目录页创建失败：" + str(e))
+            self.show_status(T("目录页创建失败：", "TOC page creation failed: ") + str(e))
             return
         # 在 summary.md 首行（书籍标题之后）登记「目录」章节项
         self._insert_toc_entry_into_summary(root, toc_rel, "目录")
         try:
             bookmode.write_summary(summary_path, root)
         except OSError as e:
-            self.show_status("目录写入 SUMMARY 失败：" + str(e))
+            self.show_status(T("目录写入 SUMMARY 失败：", "TOC write to SUMMARY failed: ") + str(e))
             return
         # 重新载入书籍并登记目录页
         info2 = bookmode.read_book(os.path.dirname(summary_path))
@@ -4408,7 +4413,7 @@ class MainWindow(QMainWindow):
             self._load_book(info2)
         self._book_toc_page = toc_path
         self._book_toc_rel = toc_rel
-        self.show_status("已在书籍最前插入目录（随 SUMMARY.md 自动同步）")
+        self.show_status(T("已在书籍最前插入目录（随 SUMMARY.md 自动同步）", "Inserted TOC at the front of the book (auto-synced with SUMMARY.md)"))
 
     def _maybe_run_pending_toc(self):
         """目标文档已打开且编辑视图就绪时立即插入；否则由 _on_loaded 加载后插入。"""
@@ -4426,7 +4431,7 @@ class MainWindow(QMainWindow):
         if kind == "book":
             toc = self._build_book_toc()
             if not toc:
-                self.show_status("该书暂无可用于生成目录的章节")
+                self.show_status(T("该书暂无可用于生成目录的章节", "This book has no chapters available for generating a TOC"))
                 return
             self._insert_toc_text(toc)
         else:
@@ -4436,7 +4441,7 @@ class MainWindow(QMainWindow):
     def _insert_toc_text(self, toc):
         """把目录文本插入到当前文档正文最前（取回当前正文后前置）。"""
         if not toc:
-            self.show_status("暂无可用于生成目录的标题/章节")
+            self.show_status(T("暂无可用于生成目录的标题/章节", "No headings/chapters available for generating a TOC"))
             return
 
         def on_md(md):
@@ -4445,7 +4450,7 @@ class MainWindow(QMainWindow):
             body, had = self._strip_leading_toc(text)
             new_md = toc.rstrip("\n") + "\n\n" + body.lstrip("\n")
             self._js_view(self._view, f"window.setMarkdown({js(new_md)})")
-            self.show_status("已更新目录" if had else "已在正文前插入目录")
+            self.show_status(T("已更新目录", "TOC updated") if had else "已在正文前插入目录")
         self._js_view(self._view, "window.getMarkdown()", on_md)
 
     @staticmethod
@@ -4485,7 +4490,7 @@ class MainWindow(QMainWindow):
         """从文件列表选择单个文件 → 移除其正文前（若有）的目录块。"""
         path = os.path.abspath(path)
         if not os.path.isfile(path):
-            self.show_status("文件不存在：" + path)
+            self.show_status(T("文件不存在：", "File does not exist: ") + path)
             return
         if self.file_path and os.path.normpath(self.file_path) == path:
             self._remove_toc_text()
@@ -4498,7 +4503,7 @@ class MainWindow(QMainWindow):
     def remove_toc_for_current(self):
         """从大纲右键等入口 → 移除当前活动文档的目录块。"""
         if not self.file_path:
-            self.show_status("当前没有打开的文档")
+            self.show_status(T("当前没有打开的文档", "No document currently open"))
             return
         self._remove_toc_text()
 
@@ -4507,10 +4512,10 @@ class MainWindow(QMainWindow):
             text = md if md is not None else ""
             body, had = self._strip_leading_toc(text)
             if not had:
-                self.show_status("该文档未包含目录")
+                self.show_status(T("该文档未包含目录", "This document does not contain a TOC"))
                 return
             self._js_view(self._view, f"window.setMarkdown({js(body)})")
-            self.show_status("已删除目录")
+            self.show_status(T("已删除目录", "TOC deleted"))
         self._js_view(self._view, "window.getMarkdown()", on_md)
 
     def _maybe_run_pending_toc_remove(self):
@@ -4591,17 +4596,17 @@ class MainWindow(QMainWindow):
         summary_path = os.path.abspath(summary_path)
         info = bookmode.read_book(os.path.dirname(summary_path))
         if not info:
-            self.show_status("无法解析书籍目录：" + summary_path)
+            self.show_status(T("无法解析书籍目录：", "Cannot parse book table of contents: ") + summary_path)
             return
         root = info["root"]
         toc_rel = "目录.md"
         if not self._remove_toc_entry_from_summary(root, toc_rel):
-            self.show_status("该书未包含目录")
+            self.show_status(T("该书未包含目录", "This book does not contain a TOC"))
             return
         try:
             bookmode.write_summary(summary_path, root)
         except OSError as e:
-            self.show_status("目录移除失败：" + str(e))
+            self.show_status(T("目录移除失败：", "TOC removal failed: ") + str(e))
             return
         # 删除目录页文件（仅限我们生成的 目录.md，避免误删）
         toc_path = os.path.normpath(os.path.join(info["summary_dir"], toc_rel))
@@ -4615,7 +4620,7 @@ class MainWindow(QMainWindow):
             self._load_book(info2)
         self._book_toc_page = None
         self._book_toc_rel = None
-        self.show_status("已删除书籍目录")
+        self.show_status(T("已删除书籍目录", "Book TOC deleted"))
 
     def _refresh_book_toc_page(self):
         """summary.md 章节变动后，按最新结构重建目录页（自动同步）。"""
@@ -4637,10 +4642,10 @@ class MainWindow(QMainWindow):
         try:
             self._write_text(self._book_toc_page, toc)
         except OSError as e:
-            self.show_status("目录页刷新失败：" + str(e))
+            self.show_status(T("目录页刷新失败：", "TOC page refresh failed: ") + str(e))
             return
         self._sync_open_doc_if_match(self._book_toc_page, toc)
-        self.show_status("目录已随 SUMMARY.md 自动更新")
+        self.show_status(T("目录已随 SUMMARY.md 自动更新", "TOC auto-updated with SUMMARY.md"))
 
     def _sync_open_doc_if_match(self, path, content):
         """若 path 正作为标签页打开，同步其内容与磁盘（活动标签则刷新视图）。"""
@@ -4707,7 +4712,7 @@ class MainWindow(QMainWindow):
         if not info:
             return
         self._load_book(info)
-        self.show_status("已恢复书籍：" + info["title"])
+        self.show_status(T("已恢复书籍：", "Book restored: ") + info["title"])
         # 恢复上次章节
         _lc = str(self._settings.value("lastBookChapter", "") or "")
         target = None
@@ -4794,11 +4799,11 @@ class MainWindow(QMainWindow):
                 if os.path.exists(_cand):
                     _fb = _cand
             if _fb:
-                self.show_status("未找到 %s，已回退打开 %s"
+                self.show_status(T("未找到 %s，已回退打开 %s", "Not found %s; fell back to opening %s")
                                  % (os.path.basename(p), os.path.basename(_fb)))
                 p = _fb
             else:
-                QMessageBox.warning(self, "打开失败", f"文件不存在：\n{p}")
+                QMessageBox.warning(self, T("打开失败", "Open failed"), f"文件不存在：\n{p}")
                 return
         self._load_path(p)
         # 携带 #锚点：打开后滚动定位（与 on_wikilink 同口径）
@@ -4824,9 +4829,9 @@ class MainWindow(QMainWindow):
         self._book["root"] = root
         try:
             bookmode.write_summary(self._book["summary_path"], root)
-            self.show_status("已更新书籍目录 " + os.path.basename(self._book["summary_path"]))
+            self.show_status(T("已更新书籍目录 ", "Book TOC updated ") + os.path.basename(self._book["summary_path"]))
         except OSError as e:
-            QMessageBox.warning(self, "写回失败", str(e))
+            QMessageBox.warning(self, T("写回失败", "Write-back failed"), str(e))
             return
         # v3.47.1（BOOK-TOC）：目录结构变动后，同步重建目录页
         self._refresh_book_toc_page()
@@ -4842,7 +4847,7 @@ class MainWindow(QMainWindow):
         self._sidebar.set_book(None)
         for _k in ("lastBook", "lastBookChapter", "lastBookScroll"):
             self._settings.remove(_k)
-        self.show_status("已关闭书籍")
+        self.show_status(T("已关闭书籍", "Book closed"))
 
     def _book_chapters_with_depth(self, info):
         """返回书籍全部 chapter 节点（按文档顺序），并就地标注 depth（嵌套层级）。"""
@@ -4863,7 +4868,7 @@ class MainWindow(QMainWindow):
         """书籍右键「导出整本书」派发：PDF / HTML / EPUB / Word。"""
         info = bookmode.read_book(summary_path)
         if not info:
-            QMessageBox.warning(self, "导出失败", "无法解析书籍：" + str(summary_path))
+            QMessageBox.warning(self, T("导出失败", "Export failed"), "无法解析书籍：" + str(summary_path))
             return
         # v3.47.1（BOOK-TOC）：导出前刷新目录页，保证导出物目录最新
         if (self._book and self._book_toc_page
@@ -4874,7 +4879,7 @@ class MainWindow(QMainWindow):
         chapters = [c for c in chapters
                     if c.get("abs_path") and os.path.exists(c["abs_path"])]
         if not chapters:
-            QMessageBox.information(self, "导出失败", "该书没有可导出的章节。")
+            QMessageBox.information(self, T("导出失败", "Export failed"), T("该书没有可导出的章节。", "This book has no exportable chapters."))
             return
         if fmt == "pdf":
             self._export_book_pdf(info, chapters)
@@ -4904,7 +4909,7 @@ class MainWindow(QMainWindow):
         if not path:
             return
         self._remember_dir("pdf", path)
-        self.show_status("正在导出整本书 PDF（并行渲染 %d 章）…" % len(chapters))
+        self.show_status(T("正在导出整本书 PDF（并行渲染 %d 章）…", "Exporting whole-book PDF (rendering %d chapters in parallel)…") % len(chapters))
         from bookexport import BookPdfExporter
         editor_html = os.path.join(os.path.dirname(os.path.abspath(__file__)), "editor.html")
         self._book_pdf_exp = BookPdfExporter(
@@ -4916,10 +4921,10 @@ class MainWindow(QMainWindow):
 
     def _book_pdf_done(self, ok_path, msg):
         if not ok_path:
-            self.show_status("整本书 PDF 导出失败")
-            QMessageBox.warning(self, "导出失败", msg or "未知错误")
+            self.show_status(T("整本书 PDF 导出失败", "Whole-book PDF export failed"))
+            QMessageBox.warning(self, T("导出失败", "Export failed"), msg or T("未知错误", "Unknown error"))
             return
-        self.show_status("已导出整本书 PDF · " + ok_path
+        self.show_status(T("已导出整本书 PDF · ", "Whole-book PDF exported · ") + ok_path
                         + ("（" + msg + "）" if msg else ""))
         self._export_done("PDF", ok_path)
 
@@ -4966,10 +4971,10 @@ class MainWindow(QMainWindow):
             self, "选择整本书 HTML 站点输出目录（每章生成一个 HTML）", default)
         if not out_dir:
             return
-        self.show_status("正在生成整本书 HTML 站点…")
+        self.show_status(T("正在生成整本书 HTML 站点…", "Generating whole-book HTML site…"))
         ok, msg, index_path = bookhtml.build_site(info, chapters, out_dir)
         if not ok:
-            QMessageBox.warning(self, "导出失败", msg)
+            QMessageBox.warning(self, T("导出失败", "Export failed"), msg)
             return
         # 本地 HTTP 服务器：http://127.0.0.1:<port>/index.html（可输入网址访问）
         url = None
@@ -4989,10 +4994,10 @@ class MainWindow(QMainWindow):
             except Exception:   # noqa: BLE001
                 pass
         if url:
-            self.show_status("已生成整本书 HTML 站点（%d 章）：%s"
+            self.show_status(T("已生成整本书 HTML 站点（%d 章）：%s", "Whole-book HTML site generated (%d chapters): %s")
                              % (len(chapters), url))
         else:
-            self.show_status("已生成整本书 HTML 站点（%d 章）：%s"
+            self.show_status(T("已生成整本书 HTML 站点（%d 章）：%s", "Whole-book HTML site generated (%d chapters): %s")
                              % (len(chapters), index_path))
 
     def _export_book_ebook(self, info, chapters, fmt):
@@ -5006,11 +5011,11 @@ class MainWindow(QMainWindow):
         if not path:
             return
         self._remember_dir(fmt, path)
-        self.show_status("正在导出整本书 %s…" % label)
+        self.show_status(T("正在导出整本书 %s…", "Exporting whole book %s…") % label)
         pandoc = self._pandoc_exe()
         if pandoc:
             if self._book_pandoc(pandoc, chapters, path, info, [], 300):
-                self.show_status("已导出整本书 %s · %s" % (label, path))
+                self.show_status(T("已导出整本书 %s · %s", "Whole book %s exported · %s") % (label, path))
                 self._export_done(label, path)
             return
         # 内置回退
@@ -5025,7 +5030,7 @@ class MainWindow(QMainWindow):
             ok, msg = exporters.write_docx(md, path, base_dir, title)
         self.show_status(msg)
         if not ok:
-            QMessageBox.warning(self, "导出失败", msg)
+            QMessageBox.warning(self, T("导出失败", "Export failed"), msg)
         else:
             self._export_done(label, path)
 
@@ -5039,10 +5044,10 @@ class MainWindow(QMainWindow):
         try:
             r = _sp.run(cmd, capture_output=True, timeout=timeout)
         except Exception as e:   # noqa: BLE001
-            QMessageBox.warning(self, "导出失败", str(e))
+            QMessageBox.warning(self, T("导出失败", "Export failed"), str(e))
             return False
         if r.returncode != 0:
-            QMessageBox.warning(self, "导出失败",
+            QMessageBox.warning(self, T("导出失败", "Export failed"),
                                 (r.stderr or b"").decode("utf-8", "replace")[-400:])
             return False
         return True
@@ -5050,13 +5055,13 @@ class MainWindow(QMainWindow):
     def on_book_reveal(self, book_dir):
         """书籍右键「打开所在文件」：在资源管理器打开书籍根目录。"""
         if not book_dir or not os.path.exists(book_dir):
-            QMessageBox.information(self, "打开所在文件",
-                                    "书籍目录不存在：" + str(book_dir))
+            QMessageBox.information(self, T("打开所在文件", "Open Containing File"),
+                                    T("书籍目录不存在：", "Book directory does not exist: ") + str(book_dir))
             return
         try:
             subprocess.Popen(["explorer", os.path.abspath(book_dir)])
         except OSError as e:
-            QMessageBox.critical(self, "打开失败", str(e))
+            QMessageBox.critical(self, T("打开失败", "Open failed"), str(e))
 
     def save_file(self) -> bool:
         if not self.file_path:
@@ -5077,7 +5082,7 @@ class MainWindow(QMainWindow):
                 self._update_title()
                 self._refresh_tab_texts()
                 self._update_save_cell()   # v3.40（UI-R7）：✓ 已保存（静默）
-                self.show_status(f"已保存 · {self.file_path}")
+                self.show_status(T(f"已保存 · {self.file_path}", f"Saved · {self.file_path}"))
                 # v3.48.30（FILE-SAVE）：保存后自动刷新侧栏文件列表
                 self._sidebar.refresh_after_save(self.file_path)
                 self.refresh_wiki()  # v3.44.37（BACKLINK-3）：保存后重建双链索引与反向链接
@@ -5089,7 +5094,7 @@ class MainWindow(QMainWindow):
                     self._refresh_book_toc_page()
             except OSError as e:
                 self._update_save_cell()
-                QMessageBox.critical(self, "保存失败", str(e))
+                QMessageBox.critical(self, T("保存失败", "Save failed"), str(e))
 
         self._js_active("window.getMarkdown()", cb)
         return True
@@ -5128,11 +5133,11 @@ class MainWindow(QMainWindow):
             + len(re.findall(r"<img[^>]*\ssrc=[\"'](?:https?:)?//", md))
         lines = []
         if kinds in ("docx", "epub") and math_n:
-            lines.append(f"· {math_n} 处块级公式：导出后将保留 LaTeX 源码并加标注（暂不渲染）")
+            lines.append(T(f"· {math_n} 处块级公式：导出后将保留 LaTeX 源码并加标注（暂不渲染）", f"· {math_n} block formulas: LaTeX source retained with annotations after export (not rendered yet)"))
         if kinds in ("docx", "epub") and mmd_n:
-            lines.append(f"· {mmd_n} 张 Mermaid 图表：将以已渲染的位图嵌入（不可再编辑）")
+            lines.append(T(f"· {mmd_n} 张 Mermaid 图表：将以已渲染的位图嵌入（不可再编辑）", f"· {mmd_n} Mermaid diagrams: embedded as rendered bitmaps (no longer editable)"))
         if img_n:
-            lines.append(f"· {img_n} 张网络图片：需联网才能显示（本地图片不受影响）")
+            lines.append(T(f"· {img_n} 张网络图片：需联网才能显示（本地图片不受影响）", f"· {img_n} network images: require internet to display (local images unaffected)"))
         if not lines:
             return True
         ret = QMessageBox.question(
@@ -5154,11 +5159,11 @@ class MainWindow(QMainWindow):
     def _export_done(self, label, path):
         """v3.32（P1-2①）：导出完成的收尾动作——打开该文件 / 打开所在文件夹。"""
         box = QMessageBox(self)
-        box.setWindowTitle("导出完成")
-        box.setText(f"已导出 {label}：\n{path}")
-        b_open = box.addButton("打开该文件", QMessageBox.YesRole)
-        b_dir = box.addButton("打开所在文件夹", QMessageBox.ActionRole)
-        box.addButton("完成", QMessageBox.NoRole)
+        box.setWindowTitle(T("导出完成", "Export Complete"))
+        box.setText(T(f"已导出 {label}：\n{path}", f"Exported {label}:\n{path}"))
+        b_open = box.addButton(T("打开该文件", "Open File"), QMessageBox.YesRole)
+        b_dir = box.addButton(T("打开所在文件夹", "Open Containing Folder"), QMessageBox.ActionRole)
+        box.addButton(T("完成", "Done"), QMessageBox.NoRole)
         box.exec()
         clicked = box.clickedButton()
         try:
@@ -5167,7 +5172,7 @@ class MainWindow(QMainWindow):
             elif clicked is b_dir:
                 openutil.open_in_folder(path)
         except OSError:
-            self.show_status("无法打开：系统缺少关联程序")
+            self.show_status(T("无法打开：系统缺少关联程序", "Cannot open: system lacks an associated program"))
         return
 
     # ================= v3.44.37（BACKLINK-1~3）：双链 / 反向链接 =================
@@ -5195,7 +5200,7 @@ class MainWindow(QMainWindow):
                     self._js_active("setTimeout(function(){ scrollToAnchor(%s); }, 400);"
                                     % json.dumps(anchor, ensure_ascii=False))
                 return
-            self.show_status("书籍中未找到章节：" + ti)
+            self.show_status(T("书籍中未找到章节：", "No chapter found in book: ") + ti)
             return
         idx = getattr(self, "_note_index", {}) or {}
         path = idx.get(ti)
@@ -5207,7 +5212,7 @@ class MainWindow(QMainWindow):
             return
         base = self._doc_dir() or getattr(self._sidebar, "_cur_dir", "") or ""
         if not base or not os.path.isdir(base):
-            self.show_status("无法定位笔记目录，无法新建笔记：" + ti)
+            self.show_status(T("无法定位笔记目录，无法新建笔记：", "Cannot locate notes folder; cannot create new note: ") + ti)
             return
         safe = "".join(c if c not in '\\/:*?"<>|' else "_" for c in ti)
         fp = os.path.join(base, safe + ".md")
@@ -5220,7 +5225,7 @@ class MainWindow(QMainWindow):
         try:
             self._write_text(fp, "# " + ti + "\n\n")
         except OSError as e:
-            self.show_status("新建笔记失败：" + str(e))
+            self.show_status(T("新建笔记失败：", "New note failed: ") + str(e))
             return
         self._add_recent(fp)
         self._load_path(fp)
@@ -5457,9 +5462,9 @@ class MainWindow(QMainWindow):
                         except OSError:
                             continue
         except (OSError, zipfile.BadZipFile) as e:
-            QMessageBox.warning(self, "归档失败", str(e))
+            QMessageBox.warning(self, T("归档失败", "Archive failed"), str(e))
             return
-        self.show_status(f"已归档工作区 · {n_file} 个文件 → {path}")
+        self.show_status(T(f"已归档工作区 · {n_file} 个文件 → {path}", f"Workspace archived · {n_file} files → {path}"))
         QMessageBox.information(
             self, "归档完成",
             f"已归档 {n_file} 个文件（含历史快照与图片资产）：\n{path}\n\n"
@@ -5525,7 +5530,7 @@ class MainWindow(QMainWindow):
             html, n_link = self._rewrite_md_links(html)
             with open(path, "w", encoding="utf-8") as f:
                 f.write(html)
-            self.show_status(f"已导出 HTML · {path}"
+            self.show_status(T(f"已导出 HTML · {path}", f"HTML exported · {path}")
                              + (f"（内嵌 {n_img} 张图片）" if n_img else "")
                              + (f"（{n_link} 条链接改为 .html）" if n_link else ""))
             self._export_done("HTML", path)
@@ -5551,11 +5556,11 @@ class MainWindow(QMainWindow):
             if vs is not None and vs.isVisible():
                 view = vs
         if not view.isVisible():
-            self.show_status("导出 PNG 失败：当前无可渲染视图")
+            self.show_status(T("导出 PNG 失败：当前无可渲染视图", "PNG export failed: no renderable view currently"))
             return
         pix = view.grab()
         if pix.isNull():
-            self.show_status("导出 PNG 失败：截图为空")
+            self.show_status(T("导出 PNG 失败：截图为空", "PNG export failed: screenshot is empty"))
             return
         out = QImage(pix.size(), QImage.Format_ARGB32_Premultiplied)
         out.fill(Qt.white)
@@ -5563,10 +5568,10 @@ class MainWindow(QMainWindow):
         p.drawImage(0, 0, pix.toImage())
         p.end()
         if out.save(path, "PNG"):
-            self.show_status("已导出 PNG 图片 · " + path)
+            self.show_status(T("已导出 PNG 图片 · ", "PNG image exported · ") + path)
             self._export_done("PNG", path)
         else:
-            self.show_status("导出 PNG 失败：保存失败")
+            self.show_status(T("导出 PNG 失败：保存失败", "PNG export failed: save failed"))
 
     def _rewrite_md_links(self, html):
         """v3.45.3（EXPORT-LINK）：导出 HTML 里指向本地 .md 的 <a href>
@@ -5708,10 +5713,12 @@ class MainWindow(QMainWindow):
         # v3.48.3（PDF-FIX）：旧版 html 为空时静默 return，表现为「点了导出没反应」。
         # 现在明确报错（JS 异常 / 空文档 / 视图未就绪都会走到这里）。
         if not html:
-            self.show_status("导出 PDF 失败：未能获取文章内容")
-            QMessageBox.warning(self, "导出 PDF 失败",
-                "未能从编辑器获取文章内容（可能当前视图未就绪或页面脚本报错）。\n"
-                "请切换到编辑视图后重试；若仍失败请把 ai.log / 控制台信息反馈。")
+            self.show_status(T("导出 PDF 失败：未能获取文章内容", "PDF export failed: could not retrieve document content"))
+            QMessageBox.warning(self, T("导出 PDF 失败", "PDF Export Failed"),
+                T("未能从编辑器获取文章内容（可能当前视图未就绪或页面脚本报错）。\n"
+                  "请切换到编辑视图后重试；若仍失败请把 ai.log / 控制台信息反馈。",
+                  "Could not get document content from the editor (the view may not be ready or the page script errored).\n"
+                  "Switch to the editing view and retry; if it still fails, send the ai.log / console output."))
             return
         path, _ = QFileDialog.getSaveFileName(
             self, "导出 PDF",
@@ -5758,10 +5765,11 @@ class MainWindow(QMainWindow):
         # v3.48.3（PDF-FIX）：加载失败不再静默 —— 旧版 ok=False 直接 return，
         # 表现为「点了导出没反应、也没有任何提示」
         if not ok:
-            self.show_status("导出 PDF 失败：内容页面加载失败")
+            self.show_status(T("导出 PDF 失败：内容页面加载失败", "PDF export failed: content page failed to load"))
             self._pdf_done_cleanup()
-            QMessageBox.warning(self, "导出 PDF 失败",
-                "导出内容页面加载失败，请重试；若持续失败请反馈。")
+            QMessageBox.warning(self, T("导出 PDF 失败", "PDF Export Failed"),
+                T("导出内容页面加载失败，请重试；若持续失败请反馈。",
+                  "The export content page failed to load; please retry. If it keeps failing, send feedback."))
             return
         try:
             page = self._pdf_view.page()
@@ -5781,9 +5789,9 @@ class MainWindow(QMainWindow):
             else:
                 page.printToPdf(self._pdf_path)
         except Exception as e:
-            self.show_status("导出 PDF 失败：%s" % e)
+            self.show_status(T("导出 PDF 失败：%s", "PDF export failed: %s") % e)
             self._pdf_done_cleanup()
-            QMessageBox.critical(self, "导出 PDF 失败", str(e))
+            QMessageBox.critical(self, T("导出 PDF 失败", "PDF Export Failed"), str(e))
 
     def _pdf_done_cleanup(self):
         """v3.48.3（PDF-FIX）：失败路径同样回收隐藏导出视图，避免句柄残留。"""
@@ -5822,7 +5830,7 @@ class MainWindow(QMainWindow):
 
     def _pdf_done(self, path, ok):
         if not ok:
-            self.show_status("导出 PDF 失败")
+            self.show_status(T("导出 PDF 失败", "PDF export failed"))
         else:
             n, msg = exporters.add_pdf_bookmarks(path, getattr(self, "_pending_toc", None))
             # v3.45.5（PDF-LINK-2）：本地 .md 链接注解 → 相对 .html 路径。
@@ -5832,7 +5840,7 @@ class MainWindow(QMainWindow):
                 path, {}, out_dir=os.path.dirname(os.path.abspath(path)))
             if m:
                 msg += f"，{m} 条链接改为相对 .html 路径"
-            self.show_status(f"已导出 PDF · {path}" + (f"（{msg}）" if n else f"（{msg}）"))
+            self.show_status(T(f"已导出 PDF · {path}", f"PDF exported · {path}") + (f"（{msg}）" if n else f"（{msg}）"))
             self._export_done("PDF", path)
         self._pending_toc = None
         if self._pdf_view:
@@ -5848,7 +5856,7 @@ class MainWindow(QMainWindow):
         self._pandoc_path = str(path or "").strip()
         self._settings.setValue("pandocPath", self._pandoc_path)
         found = self._pandoc_exe()
-        self.show_status(f"pandoc 路径已保存：{found}" if found
+        self.show_status(T(f"pandoc 路径已保存：{found}", f"Pandoc path saved: {found}") if found
                              else "pandoc 路径已保存（当前未探测到 pandoc，将使用内置导出）")
 
     # ---- v3.48.12（SEM-2）：本地语义搜索 ----
@@ -5856,7 +5864,7 @@ class MainWindow(QMainWindow):
         """本地语义搜索总开关（系统设置 → 通用 → 本地语义搜索）。"""
         self._sem_enabled = bool(on)
         self._settings.setValue("semSearchEnabled", bool(on))
-        self.show_status("本地语义搜索：开" if on else "本地语义搜索：关")
+        self.show_status(T("本地语义搜索：开", "Local semantic search: On") if on else "本地语义搜索：关")
 
     def sem_index_stats(self):
         """语义索引状态（设置页展示）。异常退化为空 dict。"""
@@ -5874,9 +5882,9 @@ class MainWindow(QMainWindow):
             idx = semsearch.SemIndex()
             idx.clear()
             idx.close()
-            self.show_status("语义索引已清除，下次语义搜索时自动重建")
+            self.show_status(T("语义索引已清除，下次语义搜索时自动重建", "Semantic index cleared; rebuilt automatically on next semantic search"))
         except Exception as e:
-            self.show_status(f"清除语义索引失败：{e}")
+            self.show_status(T(f"清除语义索引失败：{e}", f"Clear semantic index failed: {e}"))
 
     def _export_document(self, kind):
         """kind: 'docx' | 'epub'。优先 pandoc，未安装则回退内置实现。"""
@@ -5919,7 +5927,7 @@ class MainWindow(QMainWindow):
                 ok, msg = exporters.pandoc_convert(pandoc, md, path, kind, base_dir)
                 self.show_status(msg)
                 if not ok:
-                    QMessageBox.warning(self, f"导出 {label} 失败", msg)
+                    QMessageBox.warning(self, T(f"导出 {label} 失败", f"Export {label} failed"), msg)
                 return
             # v3.30.19（MMD-2）+ v3.44.31（MATH-EXP）：内置导出前把已渲染图表与公式位图化
             self._export_with_render(kind, label, md, path, base_dir, title)
@@ -6032,7 +6040,7 @@ class MainWindow(QMainWindow):
                 border_color=getattr(self, "_theme_border", "") or "#ddd")   # v3.38（HR-8②）
         self.show_status(msg)
         if not ok:
-            QMessageBox.warning(self, f"导出 {label} 失败", msg)
+            QMessageBox.warning(self, T(f"导出 {label} 失败", f"Export {label} failed"), msg)
         else:
             self._export_done(label, path)
 
@@ -6056,9 +6064,9 @@ class MainWindow(QMainWindow):
                 "发布新版本时请到下载页获取最新安装包。")
             return
         if not url.startswith(("http://", "https://")):
-            QMessageBox.warning(self, "检查更新", "更新源地址无效（须为 http/https）。")
+            QMessageBox.warning(self, T("检查更新", "Check for Updates"), T("更新源地址无效（须为 http/https）。", "Update source URL is invalid (must be http/https)."))
             return
-        self.show_status("正在检查更新…")
+        self.show_status(T("正在检查更新…", "Checking for updates…"))
         nam = QNetworkAccessManager(self)
 
         def _done(reply):
@@ -6072,14 +6080,14 @@ class MainWindow(QMainWindow):
             try:
                 info = json.loads(bytes(reply.readAll()).decode("utf-8"))
             except (ValueError, UnicodeDecodeError):
-                QMessageBox.warning(self, "检查更新", "更新源返回内容不是有效的 version.json。")
+                QMessageBox.warning(self, T("检查更新", "Check for Updates"), T("更新源返回内容不是有效的 version.json。", "Update source returned an invalid version.json."))
                 return
             remote = str(info.get("version") or "").strip()
             if not remote:
-                QMessageBox.warning(self, "检查更新", "version.json 中缺少 version 字段。")
+                QMessageBox.warning(self, T("检查更新", "Check for Updates"), T("version.json 中缺少 version 字段。", "version.json is missing the version field."))
                 return
             if self._ver_ge(remote, APP_VERSION):
-                QMessageBox.information(self, "检查更新",
+                QMessageBox.information(self, T("检查更新", "Check for Updates"),
                                         f"已是最新版本（v{APP_VERSION}）。")
                 return
             btn = QMessageBox.question(
@@ -6121,12 +6129,12 @@ class MainWindow(QMainWindow):
             log_fp = os.path.join(LOG_DIR, "mdEditor.log")
             with open(log_fp, "r", encoding="utf-8", errors="replace") as f:
                 tail = [ln.rstrip() for ln in f.readlines()[-50:]]
-            lines.append("--- 最近日志（50 行）---")
+            lines.append(T("--- 最近日志（50 行）---", "--- Recent logs (50 lines) ---"))
             lines.extend(tail or ["（日志为空）"])
         except OSError:
-            lines.append("（日志文件不可读）")
+            lines.append(T("（日志文件不可读）", "(log file not readable)"))
         QApplication.clipboard().setText("\n".join(lines))
-        self.show_status("诊断信息已复制到剪贴板，可粘贴给开发者")
+        self.show_status(T("诊断信息已复制到剪贴板，可粘贴给开发者", "Diagnostic info copied to clipboard; you can paste it to the developer"))
 
     def _about(self):
         """v3.29d（UX #29）：关于页显示版本号，并提供「查看更新日志」入口。"""
@@ -6148,9 +6156,9 @@ class MainWindow(QMainWindow):
             try:
                 openutil.open_path(log_md)     # 跨平台：系统默认程序打开
             except OSError:
-                self.show_status("无法打开更新日志")
+                self.show_status(T("无法打开更新日志", "Cannot open update log"))
         else:
-            self.show_status("未找到 CHANGELOG.md")
+            self.show_status(T("未找到 CHANGELOG.md", "CHANGELOG.md not found"))
 
     # ---- v3.38（HELP-1）：使用手册 ----
     def _manual_md(self):
@@ -6166,7 +6174,7 @@ class MainWindow(QMainWindow):
         """使用手册：独立非模态窗口，用编辑器内核只读渲染（滚动浏览）。"""
         if getattr(self, "_manual_dlg", None) is None:
             dlg = QDialog(self)
-            dlg.setWindowTitle(f"使用手册 · {APP_NAME}")
+            dlg.setWindowTitle(T(f"使用手册 · {APP_NAME}", f"User Manual · {APP_NAME}"))
             dlg.setWindowFlag(Qt.WindowMinMaxButtonsHint, True)
             dlg.resize(960, 720)
             v = QWebEngineView(dlg)
@@ -6194,7 +6202,7 @@ class MainWindow(QMainWindow):
         self._manual_dlg.show()
         self._manual_dlg.raise_()
         self._manual_dlg.activateWindow()
-        self.show_status("已打开使用手册（滚动浏览，Esc 关闭）")
+        self.show_status(T("已打开使用手册（滚动浏览，Esc 关闭）", "User manual opened (scroll to browse, Esc to close)"))
 
 
     # ---- 最近文件 ----
@@ -6304,7 +6312,7 @@ class MainWindow(QMainWindow):
         if persist:
             self._settings.setValue("ui/toolbarVisible", vis)
         if toast and not vis:
-            self.show_status("工具栏已隐藏：点击左侧边缘的 » 或按 Ctrl+Shift+B 可重新展开")
+            self.show_status(T("工具栏已隐藏：点击左侧边缘的 » 或按 Ctrl+Shift+B 可重新展开", "Toolbar hidden: click the » at the left edge or press Ctrl+Shift+B to expand again"))
 
     # ---- 模式切换（写作 / 源码 / 分屏）----
     def _mode_label(self):
@@ -6327,11 +6335,11 @@ class MainWindow(QMainWindow):
         rb = getattr(self, "_ribbon_body", None)
         if rb is not None:
             rb.sync_mode(self._mode)
-        # 状态栏模式格
+        # 状态栏模式格 / status-bar mode cell
         cell = getattr(self, "_cell_mode", None)
         if cell is not None:
-            cell.setText(name.replace("模式", "") or "写作")
-        # 菜单里的模式单选同步勾选状态
+            cell.setText(name.replace("模式", "") or T("写作", "Writing"))
+        # 菜单里的模式单选同步勾选状态 / sync the mode radio state in the menu
         act = getattr(self, "_mode_acts", {}).get(self._mode)
         if act and not act.isChecked():
             act.setChecked(True)
@@ -6362,7 +6370,7 @@ class MainWindow(QMainWindow):
                 self._push_text(text)
                 self._stack.setCurrentIndex(1)
                 self._update_mode_button()
-                self.show_status("分屏模式：左侧源码编辑 · 右侧实时预览")
+                self.show_status(T("分屏模式：左侧源码编辑 · 右侧实时预览", "Split mode: source editing on left · live preview on right"))
             self._js_view(self._view, "window.getMarkdown()", apply)
             return
         # 回到单栏（写作 或 源码）
@@ -6418,7 +6426,7 @@ class MainWindow(QMainWindow):
             qk.blockSignals(False)
         self._js_active(
             f"window.setMode({{typewriter: {str(self._typewriter).lower()}}})")
-        self.show_status("打字机模式：开" if self._typewriter else "打字机模式：关")
+        self.show_status(T("打字机模式：开", "Typewriter mode: On") if self._typewriter else "打字机模式：关")
 
     def toggle_focus(self):
         self._focus = not getattr(self, "_focus", False)
@@ -6431,7 +6439,7 @@ class MainWindow(QMainWindow):
             qk.setChecked(self._focus)
             qk.blockSignals(False)
         self._js_active(f"window.setMode({{focus: {str(self._focus).lower()}}})")
-        self.show_status("专注模式：开" if self._focus else "专注模式：关")
+        self.show_status(T("专注模式：开", "Focus mode: On") if self._focus else "专注模式：关")
 
     def toggle_fullscreen(self):
         if self.isFullScreen():
@@ -6881,7 +6889,7 @@ class MainWindow(QMainWindow):
         vis = not body.isVisible()
         body.setVisible(vis)
         self._ribbon_collapsed = not vis
-        self.show_status("功能区已折叠（Ctrl+F1 还原）" if not vis else "功能区已展开")
+        self.show_status(T("功能区已折叠（Ctrl+F1 还原）", "Ribbon collapsed (Ctrl+F1 to restore)") if not vis else "功能区已展开")
 
     def _on_ribbon_tab(self, pid):
         """页签切换：切页 + 外观页刷新勾选；收拢模式下点页签临时展开功能区。"""
@@ -6917,7 +6925,7 @@ class MainWindow(QMainWindow):
         if body is not None:
             body.setVisible(pinned)
             self._ribbon_collapsed = not pinned
-        self.show_status("功能区已固定（始终展开）" if pinned
+        self.show_status(T("功能区已固定（始终展开）", "Ribbon pinned (always expanded)") if pinned
                          else "功能区已设为自动收拢（点页签临时展开，点文档自动收起）")
 
     def _is_descendant(self, child, ancestor):
@@ -7005,7 +7013,7 @@ class MainWindow(QMainWindow):
             act.setChecked(tid == name)
         if persist:
             self._settings.setValue("theme", name)
-        self.show_status(f"主题：{styles.theme_label(name)}")
+        self.show_status(T(f"主题：{styles.theme_label(name)}", f"Theme: {styles.theme_label(name)}"))
 
     def set_uistyle(self, sid):
         """v3.39.15（UISTYLE-1）：切换界面风格（仅 Qt 层观感皮肤，编辑器主题不变）。
@@ -7019,7 +7027,7 @@ class MainWindow(QMainWindow):
         self._settings.setValue("uiStyle", sid)
         self.apply_theme(self._theme, persist=False)
         # v3.43.0：菜单名是纯净名（无编号 / 后缀），状态栏与菜单保持一致
-        self.show_status(f"界面风格：{uistyles.menu_style_label(sid)}")
+        self.show_status(T(f"界面风格：{uistyles.menu_style_label(sid)}", f"UI style: {uistyles.menu_style_label(sid)}"))
 
     def set_zoom(self, factor):
         """编辑区字号缩放（对所有视图生效并持久化）。"""
@@ -7033,12 +7041,12 @@ class MainWindow(QMainWindow):
         cell = getattr(self, "_cell_zoom", None)
         if cell is not None:
             cell.setText(f"{int(round(self._zoom * 100))}%")
-        self.show_status(f"编辑区缩放：{int(round(self._zoom * 100))}%")
+        self.show_status(T(f"编辑区缩放：{int(round(self._zoom * 100))}%", f"Editor zoom: {int(round(self._zoom * 100))}%"))
 
     def set_autosave(self, on):
         self._autosave = bool(on)
         self._settings.setValue("autosave", self._autosave)
-        self.show_status("自动保存：开" if self._autosave else "自动保存：关")
+        self.show_status(T("自动保存：开", "Auto-save: On") if self._autosave else "自动保存：关")
 
     def set_code_lang(self, lang):
         """设置代码块默认语言（插入代码块时预选），即时下发到编辑器并持久化。"""
@@ -7046,7 +7054,7 @@ class MainWindow(QMainWindow):
         self._code_lang = lang
         self._settings.setValue("codeLang", lang)
         self._js_active(f"window.setDefaultCodeLang({js(lang)})")
-        self.show_status(f"代码块默认语言：{lang}")
+        self.show_status(T(f"代码块默认语言：{lang}", f"Code block default language: {lang}"))
 
     def set_code_prefs(self, lnum=None, style=None):
         """v3.25：设置代码块行号显示 / 默认代码风格，即时下发并持久化。
@@ -7076,14 +7084,14 @@ class MainWindow(QMainWindow):
         self._outline_level = level
         self._settings.setValue("outlineLevel", level)
         self._sidebar.set_outline_level(level)
-        self.show_status(f"大纲显示级别：{level} 级")
+        self.show_status(T(f"大纲显示级别：{level} 级", f"Outline display level: {level}"))
 
     def set_outline_words(self, on):
         """v3.31.2（#3）：大纲分节字数后缀显示开关，持久化并原地刷新后缀。"""
         self._outline_words = bool(on)
         self._settings.setValue("outlineWords", self._outline_words)
         self._sidebar.set_outline_words(self._outline_words)
-        self.show_status("大纲分节字数：" + ("已显示" if self._outline_words else "已隐藏"))
+        self.show_status(T("大纲分节字数：", "Outline section word count: ") + ("已显示" if self._outline_words else "已隐藏"))
 
     def set_outline_filter(self, level):
         """v3.43.0（OUT-LOOK）：大纲级别过滤（0=全部 / 1~3=只看该级及其祖先链）。
@@ -7098,7 +7106,7 @@ class MainWindow(QMainWindow):
         self._outline_filter = level
         self._settings.setValue("ui/outlineFilter", level)
         self._sidebar.set_outline_filter(level)
-        self.show_status("大纲过滤：" + ("全部标题" if level == 0 else f"只看 H1–H{level}"))
+        self.show_status(T("大纲过滤：", "Outline filter: ") + ("全部标题" if level == 0 else f"只看 H1–H{level}"))
 
     def set_startup_action(self, mode):
         """v3.38（OUT-5）/ v3.44（SESSION）：启动时行为 ——
@@ -7229,7 +7237,7 @@ class MainWindow(QMainWindow):
         for v in (self._view, self._view_src, self._view_prev):
             if v is not None:
                 self._js_view(v, f"window.setParaIndent({n})")
-        self.show_status(f"段首缩进：{n} 格" if n else "段首缩进：无")
+        self.show_status(T(f"段首缩进：{n} 格", f"Paragraph indent: {n}") if n else "段首缩进：无")
 
     def set_h1_center(self, on):
         """v3.31.2（#9）：标题 1 全局居中，持久化并全视图即时生效。"""
@@ -7239,7 +7247,7 @@ class MainWindow(QMainWindow):
         for v in (self._view, self._view_src, self._view_prev):
             if v is not None:
                 self._js_view(v, f"window.setH1Center({s})")
-        self.show_status("标题 1 居中：" + ("开" if self._h1_center else "关"))
+        self.show_status(T("标题 1 居中：", "Heading 1 centered: ") + ("开" if self._h1_center else "关"))
 
     def set_file_list_mode(self, mode):
         """设置文件列表显示模式：current=跟随当前文档（默认）/ blank=空白项。"""
@@ -7250,7 +7258,7 @@ class MainWindow(QMainWindow):
         self._file_list_mode = mode
         self._settings.setValue("fileListMode", mode)
         self._sidebar.set_file_mode(mode)
-        self.show_status("文件列表：空白项" if mode == "blank" else "文件列表：跟随当前文档")
+        self.show_status(T("文件列表：空白项", "File list: blank item") if mode == "blank" else "文件列表：跟随当前文档")
 
     # ================= 斜杠（/）菜单配置 =================
     def _slash_cfg(self):
@@ -7278,7 +7286,7 @@ class MainWindow(QMainWindow):
         self._settings.setValue("slashSubChart", cleaned["chart"])
         self._settings.setValue("slashSubMath", cleaned["math"])
         self._js_active(f"window.setSlashMenuConfig({js(json.dumps(self._slash_cfg()))})")
-        self.show_status("斜杠菜单设置已保存")
+        self.show_status(T("斜杠菜单设置已保存", "Slash menu settings saved"))
 
     # ================= v3.32.2（TPL-C）自定义模板 =================
     # v3.36（TPL-E）：模板体系统一 —— 内置模板也落 templates.json，与自建模板
@@ -7347,7 +7355,7 @@ class MainWindow(QMainWindow):
                           ensure_ascii=False, indent=2)
             return True
         except OSError as e:
-            self.show_status(f"模板保存失败：{e}")
+            self.show_status(T(f"模板保存失败：{e}", f"Template save failed: {e}"))
             return False
 
     def _load_custom_templates(self):
@@ -7405,7 +7413,7 @@ class MainWindow(QMainWindow):
         if not self._write_template_file(cleaned):
             return False
         self._sync_custom_templates()
-        self.show_status(f"模板已保存（{len(cleaned)} 个）")
+        self.show_status(T(f"模板已保存（{len(cleaned)} 个）", f"Templates saved ({len(cleaned)})"))
         return True
 
     def make_template_from_file(self, path):
@@ -7419,7 +7427,7 @@ class MainWindow(QMainWindow):
         try:
             size = os.path.getsize(p)
         except OSError as e:
-            QMessageBox.warning(self, "设为模板", f"无法读取该文件：{e}")
+            QMessageBox.warning(self, T("设为模板", "Set as Template"), T(f"无法读取该文件：{e}", f"Failed to read the file: {e}"))
             return
         if size > TPL_MAX_BYTES:
             QMessageBox.warning(
@@ -7431,10 +7439,10 @@ class MainWindow(QMainWindow):
             with open(p, "r", encoding="utf-8", errors="replace") as f:
                 content = f.read()
         except OSError as e:
-            QMessageBox.warning(self, "设为模板", f"无法读取该文件：{e}")
+            QMessageBox.warning(self, T("设为模板", "Set as Template"), T(f"无法读取该文件：{e}", f"Failed to read the file: {e}"))
             return
         if not content.strip():
-            QMessageBox.warning(self, "设为模板", "该文件内容为空，无法作为模板。")
+            QMessageBox.warning(self, T("设为模板", "Set as Template"), T("该文件内容为空，无法作为模板。", "The file is empty and cannot be used as a template."))
             return
 
         base = os.path.splitext(os.path.basename(p))[0]
@@ -7444,7 +7452,7 @@ class MainWindow(QMainWindow):
                 and getattr(self, "_dirty", False)):
             label += "\n注意：该文件有未保存的修改，模板内容取磁盘上的版本（可先 Ctrl+S）。"
         dlg = QInputDialog(self)
-        dlg.setWindowTitle("设为模板")
+        dlg.setWindowTitle(T("设为模板", "Set as Template"))
         dlg.setLabelText(label)
         dlg.setTextValue(default)
         le = dlg.findChild(QLineEdit)
@@ -7456,12 +7464,12 @@ class MainWindow(QMainWindow):
 
         name = normalize_template_name(dlg.textValue())
         if not name:
-            self.show_status("模板名称为空，未创建")
+            self.show_status(T("模板名称为空，未创建", "Template name empty; not created"))
             return
         renamed = unique_template_name(name, [t.get("name") for t in self._custom_templates])
         self._custom_templates.append({"name": renamed, "content": content})
         if self.save_custom_templates(self._custom_templates):
-            self.show_status(f"已设为模板：{renamed}" + ("（名称重复，已自动编号）" if renamed != name else ""))
+            self.show_status(T(f"已设为模板：{renamed}", f"Set as template: {renamed}") + ("（名称重复，已自动编号）" if renamed != name else ""))
         else:
             self._custom_templates.pop()   # 落盘失败：撤销内存追加，避免与磁盘不一致
 
@@ -7523,7 +7531,7 @@ class MainWindow(QMainWindow):
                 self._insert_image_file(p)
                 img_cnt += 1
         if img_cnt > 1:
-            self.show_status(f"已插入 {img_cnt} 张图片")
+            self.show_status(T(f"已插入 {img_cnt} 张图片", f"Inserted {img_cnt} images"))
 
     # ---------- v3.48.35（DROP-MD）：应用级 .md 拖放 ----------
     def _install_app_drop_filter(self):
@@ -7577,7 +7585,7 @@ class MainWindow(QMainWindow):
                     ev.acceptProposedAction()   # 必须 accept，否则 Qt 不投递 Drop
                     if ev.type() == QEvent.Drop:
                         self.open_file(_md_p)
-                        self.show_status('已打开拖入的文档：%s'
+                        self.show_status(T('已打开拖入的文档：%s', 'Opened dragged-in document: %s')
                                          % os.path.basename(_md_p))
                     return True
         # v3.44.9（ZEN-HOVER）：极简（zen）模式下菜单栏默认隐藏；鼠标移到窗口顶部
@@ -7675,7 +7683,7 @@ class MainWindow(QMainWindow):
         if not readonly:
             # v3.48.36（AI-MENUS）：菜单项可在 系统设置 → AI 菜单 自定义
             from ai_pane import ai_menu_items
-            ai_menu = menu.addMenu("AI优化")
+            ai_menu = menu.addMenu(T("AI优化", "AI Optimize"))
             for _it in ai_menu_items(self._settings, "ctx"):
                 ai_menu.addAction(
                     _it["label"],
@@ -7686,15 +7694,15 @@ class MainWindow(QMainWindow):
             # 「AI优化」（见 _ai_doc_action_for_path）。
             menu.addSeparator()
         if not readonly:
-            menu.addAction("撤销", lambda: page.triggerAction(QWebEnginePage.Undo))
-            menu.addAction("重做", lambda: page.triggerAction(QWebEnginePage.Redo))
+            menu.addAction(T("撤销", "Undo"), lambda: page.triggerAction(QWebEnginePage.Undo))
+            menu.addAction(T("重做", "Redo"), lambda: page.triggerAction(QWebEnginePage.Redo))
             menu.addSeparator()
-            menu.addAction("剪切", lambda: page.triggerAction(QWebEnginePage.Cut))
-        menu.addAction("复制", lambda: page.triggerAction(QWebEnginePage.Copy))
+            menu.addAction(T("剪切", "Cut"), lambda: page.triggerAction(QWebEnginePage.Cut))
+        menu.addAction(T("复制", "Copy"), lambda: page.triggerAction(QWebEnginePage.Copy))
         if not readonly:
-            menu.addAction("粘贴", lambda: page.triggerAction(QWebEnginePage.Paste))
+            menu.addAction(T("粘贴", "Paste"), lambda: page.triggerAction(QWebEnginePage.Paste))
         menu.addSeparator()
-        menu.addAction("全选", lambda: page.triggerAction(QWebEnginePage.SelectAll))
+        menu.addAction(T("全选", "Select All"), lambda: page.triggerAction(QWebEnginePage.SelectAll))
         menu.exec(view.mapToGlobal(pos))
 
     # ================= 退出 =================
@@ -8000,7 +8008,7 @@ class AIBridge(QObject):
             self._mw._push_text(text)   # 双栏源码视图仍走原路径（源码态无快照栈）
             self._mw._dirty = True
             self._mw._update_title()
-            self._mw.show_status("已用 AI 优化结果整体替换文档 · Ctrl+Z 可撤销 · Ctrl+S 保存")
+            self._mw.show_status(T("已用 AI 优化结果整体替换文档 · Ctrl+Z 可撤销 · Ctrl+S 保存", "Replaced document with AI optimize result · Ctrl+Z to undo · Ctrl+S to save"))
             if callback:
                 callback(True, "")
             return

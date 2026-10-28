@@ -393,7 +393,7 @@ class RibbonTabsRow(QFrame):
         # 文件蓝钮：弹出既有「文件」QMenu（同源不复制）
         self.filebtn = QToolButton(self)
         self.filebtn.setObjectName("ribFileBtn")
-        self.filebtn.setText("文件")
+        self.filebtn.setText(T("文件", "File"))
         self.filebtn.setFont(QFont("Microsoft YaHei", 9))
         self.filebtn.setCursor(Qt.PointingHandCursor)
         self.filebtn.setStyleSheet(
@@ -480,7 +480,7 @@ class RibbonTabsRow(QFrame):
         """v3.44.27(REQ1)：把固定 / 收拢状态明确反映到图钉钮（颜色 + 文案 + 提示）。"""
         self._pinned = pinned
         if pinned:
-            self.pinbtn.setText("固定")
+            self.pinbtn.setText(T("固定", "Pin"))
             self.pinbtn.setToolTip(
                 "功能区已固定（始终展开）。点击切换为「自动收拢」")
             self.pinbtn.setStyleSheet(
@@ -489,7 +489,7 @@ class RibbonTabsRow(QFrame):
                 "QToolButton:hover{background:%s;}"
                 % (self._p["accent"], self._p["accent2"], self._p["hlbg"]))
         else:
-            self.pinbtn.setText("收拢")
+            self.pinbtn.setText(T("收拢", "Collapse"))
             self.pinbtn.setToolTip(
                 "功能区自动收拢（点页签临时展开，点文档自动收起）。"
                 "点击切换为「固定」")

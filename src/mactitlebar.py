@@ -184,7 +184,7 @@ class MacTitleBar(QFrame):
         self._btn_menu = QToolButton(self)
         self._btn_menu.setObjectName("macMenuBtn")
         self._btn_menu.setText("☰")
-        self._btn_menu.setToolTip("菜单（文件 / 编辑 / 视图 / 工具 / 帮助）")
+        self._btn_menu.setToolTip(T("菜单（文件 / 编辑 / 视图 / 工具 / 帮助）", "Menu (File / Edit / View / Tools / Help)"))
         self._btn_menu.setCursor(Qt.PointingHandCursor)
         self._btn_menu.setCheckable(True)
         self._btn_menu.setFixedSize(30, 30)
@@ -249,7 +249,7 @@ class MacTitleBar(QFrame):
         # ── 居中文档标题（绝对定位，与设计稿一致）──
         self._title = QLabel(self)
         self._title.setObjectName("macTitle")
-        self._title.setText("未命名")
+        self._title.setText(T("未命名", "Untitled"))
 
         # ── 右端视图状态区：反_parent mainwindow._vsz_corner（单一状态源不复制）──
         self._vsz = getattr(win, "_vsz_corner", None)
@@ -279,7 +279,7 @@ class MacTitleBar(QFrame):
     def _light(self, parent, objname, tip, slot):
         b = QToolButton(parent)
         b.setObjectName(objname)
-        b.setText("")           # 纯色无符号（提示靠 tooltip）
+        b.setText("")           # 纯色无符号（提示靠 tooltip）/ solid color, no glyph (hint shown via tooltip)
         b.setToolTip(tip)
         b.setCursor(Qt.PointingHandCursor)
         b.setFixedSize(12, 12)
@@ -293,7 +293,7 @@ class MacTitleBar(QFrame):
 
     # ── 文档标题（mainwindow.setWindowTitle 覆写转发）──
     def set_doc_title(self, text):
-        self._title.setText(text or "未命名")
+        self._title.setText(text or T("未命名", "Untitled"))
         self._reposition_title()
 
     def _reposition_title(self):

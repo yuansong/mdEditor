@@ -2928,7 +2928,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       s2.removeAllRanges();
       s2.addRange(rg2);
     }
-    toastStatus('已插入命令：' + cmd);
+    toastStatus(T_js('已插入命令：') + cmd);
   }
   function buildCmdPop(btn, cb) {
     var CP = document.getElementById('cmdpop');
@@ -4005,7 +4005,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       ? mcDescs[mcDescs.length - 1].off + mcDescs[mcDescs.length - 1].len
       : cur.off + cur.len;
     var hit = mcFindWord(text, word, from);
-    if (hit < 0) { toastStatus('没有更多相同的「' + word + '」'); return; }
+    if (hit < 0) { toastStatus(T_js('没有更多相同的「') + word + T_js('」')); return; }
     if (!mcDescs.length && folded) {
       /* v3.48.16：首次 Ctrl+D（光标折叠）仅选中当前词（VS Code 语义），
          不开多光标；再次 Ctrl+D（已有词选区）才把当前词与下一个相同词
@@ -4016,14 +4016,14 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       sel0.removeAllRanges();
       sel0.addRange(r0);
       setTimeout(function () { mcSilent = false; }, 0);
-      toastStatus('已选中「' + word + '」，再按 Ctrl+D 加选下一个');
+      toastStatus(T_js('已选中「') + word + T_js('」，再按 Ctrl+D 加选下一个'));
       return;
     }
     if (!mcDescs.length)
       mcDescs = [{ idx: state.editIdx, off: cur.off, len: cur.len }];
     mcDescs.push({ idx: state.editIdx, off: hit, len: word.length });
     mcRestore();
-    toastStatus('已选第 ' + mcDescs.length + ' 个相同词（Esc 退出）');
+    toastStatus(T_js('已选第 ') + mcDescs.length + T_js(' 个相同词（Esc 退出）'));
   }
   /* Alt+点击：增删光标（普通点击的选区变化由 selectionchange 收敛） */
   ED.addEventListener('mousedown', function (e) {
@@ -4547,8 +4547,8 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   var FMT_MARKER_NAMES = { '**': '粗体', '*': '斜体', '~~': '删除线', '==': '高亮', '`': '行内码' };
   var FMT_ACT_NAMES = { bold: '粗体', italic: '斜体', strike: '删除线', mark: '高亮',
                         code: '行内码', underline: '下划线', clearfmt: '清除格式', link: '链接' };
-  function _fmtActName(a) { return FMT_ACT_NAMES[a] || a || '单元格格式'; }
-  function _markerName(m) { return FMT_MARKER_NAMES[m] || ('包裹 ' + m); }
+  function _fmtActName(a) { return T_js(FMT_ACT_NAMES[a]) || a || T_js('单元格格式'); }
+  function _markerName(m) { return T_js(FMT_MARKER_NAMES[m]) || (T_js('包裹') + ' ' + m); }
   function _fmtSnippet(s) {
     s = String(s == null ? '' : s);
     if (s.length > 160) s = s.slice(0, 90) + ' ⋯ ' + s.slice(-60);
@@ -4993,7 +4993,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         caret = a + open.length;
       }
     }
-    _fmtLogRec('下划线', raw, newText, _hitA >= 0 ? '取消' : null);   /* v3.39.8（FMT-LOG） */
+    _fmtLogRec(T_js('下划线'), raw, newText, _hitA >= 0 ? T_js('取消') : null);   /* v3.39.8（FMT-LOG） */
     state.raw[state.editIdx] = newText;
     el.textContent = newText;
     setCaretSel(el, caret, caretLen);
@@ -5287,7 +5287,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       d.setAttribute('data-i', String(i));
       d.innerHTML = '<span class="em-c">' + it[1] + '</span>' +
         '<span class="em-k">:' + esc(it[0]) + '</span>' +
-        '<span class="em-n">' + esc(it[2]) + '</span>';
+        '<span class="em-n">' + esc(EMOJI_EN[it[0]] || it[2]) + '</span>';
       EP.appendChild(d);
     }
   }
@@ -10649,7 +10649,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
             state.raw.push('[^' + numW + ']:');
             rebuild();
             markDirty(); scheduleSnapshot();
-            toastStatus('脚注 [^' + numW + '] 已插入，定义已追加到文末');
+            toastStatus(T_js('脚注 [^') + numW + T_js('] 已插入，定义已追加到文末'));
           }
           return;
         }
@@ -10912,7 +10912,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       }
       return;
     }
-    toastStatus('未找到脚注定义 [^' + fid + ']');
+    toastStatus(T_js('未找到脚注定义 [^') + fid + T_js(']'));
   }
   function fnJumpToRef(fmEl) {
     var idm = (fmEl.textContent || '').match(/\[([^\]\s]+)\]/);
@@ -10925,7 +10925,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       fnFlash(refs[k].closest('.fnref') || refs[k]);
       return;
     }
-    toastStatus('未找到脚注 [^' + fid + '] 的引用位置');
+    toastStatus(T_js('未找到脚注 [^') + fid + T_js('] 的引用位置'));
   }
   ED.addEventListener('click', function (e) {
     if (window.__previewLock) return;
@@ -11044,7 +11044,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     btns.forEach(function (b) {
       var el = document.createElement('button');
       el.innerHTML = b[0];
-      el.title = b[2];
+      el.title = T_js(b[2]);
       /* 关键修复：mousedown 阻止默认行为并阻断冒泡，
          保证点击按钮时选区不塌陷、其他全局处理器不关闭浮层 */
       el.addEventListener('mousedown', function (e) {
@@ -11207,7 +11207,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   /* v3.29d（S2/C1）：JS → Qt 状态栏 toast 通道 —— 主窗口每秒轮询 takeToast()
      取走并显示（3 秒自动还原），供「删除可撤销」「模式提示」等轻量反馈 */
   var __toastMsg = '';
-  function toastStatus(msg) { __toastMsg = msg; }
+  function toastStatus(msg) { __toastMsg = T_js(msg); }
   window.takeToast = function () {
     var m = __toastMsg; __toastMsg = '';
     return m || null;
@@ -11584,11 +11584,11 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     })(nodes);
     if (!found) return false;
     var pre, post, name;
-    if (action === 'bold') { pre = '**'; post = '**'; name = '粗体'; }
-    else if (action === 'italic') { pre = '*'; post = '*'; name = '斜体'; }
-    else if (action === 'strike') { pre = '~~'; post = '~~'; name = '删除线'; }
-    else if (action === 'mark') { pre = '=='; post = '=='; name = '高亮'; }
-    else if (action === 'underline') { pre = '<u>'; post = '</u>'; name = '下划线'; }
+    if (action === 'bold') { pre = '**'; post = '**'; name = T_js('粗体'); }
+    else if (action === 'italic') { pre = '*'; post = '*'; name = T_js('斜体'); }
+    else if (action === 'strike') { pre = '~~'; post = '~~'; name = T_js('删除线'); }
+    else if (action === 'mark') { pre = '=='; post = '=='; name = T_js('高亮'); }
+    else if (action === 'underline') { pre = '<u>'; post = '</u>'; name = T_js('下划线'); }
     else return false;                                 /* link 等不走直改 */
     var rs = found.rs, re = found.re;
     /* v3.38（FMTB-7）：旧 `rs < pre.length` 守卫把「码紧邻文字」的整选外侧
@@ -11645,7 +11645,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       state.raw[idx] = raw.slice(0, _cutL) +
                        raw.slice(_cutL + pre.length, _cutR - post.length) +
                        raw.slice(_cutR);
-      toastStatus('已取消' + name + '（行内码外侧）');
+      toastStatus(T_js('已取消') + name + T_js('（行内码外侧）'));
     } else {
       var _nw = raw.slice(0, rs) + pre + raw.slice(rs, re) + post +
                 raw.slice(re);
@@ -11660,7 +11660,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         return true;
       }
       state.raw[idx] = _nw;
-      toastStatus('已应用' + name + '（行内码外侧）');
+      toastStatus(T_js('已应用') + name + T_js('（行内码外侧）'));
     }
     _fmtLogRec(name, raw, state.raw[idx], wasOn ? '码外侧取消' : '码外侧包裹');   /* v3.39.8（FMT-LOG） */
     markDirty(); scheduleSnapshot(); rebuild();
@@ -12308,7 +12308,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     if (_rej19) { window.__clrDbg.rejected = 'plain-text'; return; }
     if (cleaned !== selected) {
       var newText = raw.slice(0, a) + cleaned + raw.slice(b);
-      _fmtLogRec('清除格式', raw, newText);   /* v3.39.8（FMT-LOG） */
+      _fmtLogRec(T_js('清除格式'), raw, newText);   /* v3.39.8（FMT-LOG） */
       state.raw[state.editIdx] = newText;
       el.textContent = newText;
       setCaret(el, a + cleaned.length);
@@ -12444,7 +12444,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         inner = (txt && txt !== head) ? (head + '|' + txt) : head;
       }
       state.raw[ctx.idx] = raw.slice(0, ctx.off) + '[[' + inner + ']]' + raw.slice(ctx.off + ctx.len);
-      toastStatus('已插入本书链接：' + addr);
+      toastStatus(T_js('已插入本书链接：') + addr);
     } else {
       state.raw[ctx.idx] = raw.slice(0, ctx.off) + '[' + txt + '](' + addr + ')' + raw.slice(ctx.off + ctx.len);
     }
@@ -13069,10 +13069,10 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     var q = (slashState && slashState.query || '').toLowerCase();
     if (!q) return items;
     return items.filter(function (it) {
-      if (it.lb.toLowerCase().indexOf(q) !== -1) return true;
+      if (it.lb.toLowerCase().indexOf(q) !== -1 || T_js(it.lb).toLowerCase().indexOf(q) !== -1) return true;
       /* 子项匹配时保留父项，便于直接进入二级选择 */
       return !!(it.children || []).some(function (c) {
-        return c.lb.toLowerCase().indexOf(q) !== -1;
+        return c.lb.toLowerCase().indexOf(q) !== -1 || T_js(c.lb).toLowerCase().indexOf(q) !== -1;
       });
     });
   }
@@ -13102,7 +13102,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   }
   function openSub(anchorEl, items, title, onPick, defIdx) {
     subCtx = { items: items, onPick: onPick, act: defIdx || 0 };
-    SUB.innerHTML = (title ? '<div class="cap">' + title + '</div>' : '') +
+    SUB.innerHTML = (title ? '<div class="cap">' + T_js(title) + '</div>' : '') +
       items.map(function (it, k) {
         return '<div class="si' + (k === subCtx.act ? ' act' : '') + '" data-k="' + k + '">' +
           '<span class="ic">' + it.ic + '</span><span class="lb">' + T_js(it.lb) + '</span>' +
@@ -13517,7 +13517,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       }
     }
     rebuild(); markDirty(); scheduleSnapshot();
-    toastStatus('已按出现顺序重排 ' + order.length + ' 个脚注编号');
+    toastStatus(T_js('已按出现顺序重排 ') + order.length + T_js(' 个脚注编号'));
   }
   /* v3.30.19（FN-5）：清理未引用的脚注定义（孤儿定义） */
   function cleanOrphanFndefs() {
@@ -13532,7 +13532,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     }
     if (!state.raw.length) state.raw = [''];
     rebuild(); markDirty(); scheduleSnapshot();
-    toastStatus(removed ? '已清理 ' + removed + ' 条未引用的脚注定义' : '没有未引用的脚注定义');
+    toastStatus(removed ? T_js('已清理 ') + removed + T_js(' 条未引用的脚注定义') : '没有未引用的脚注定义');
   }
   window.__fnRenum = function () { renumberFootnotes(); return 'OK'; };   /* 测试接口 */
   window.__fnClean = function () { cleanOrphanFndefs(); return 'OK'; };
@@ -14144,7 +14144,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     if (act.indexOf('mmdalign:') === 0) {
       var mAl21 = act.slice(9);
       updateMmdAttrs(i, { align: mAl21 === 'l' ? 'l' : (mAl21 === 'r' ? 'r' : null) });
-      toastStatus('图表对齐：' + (mAl21 === 'l' ? '靠左' : mAl21 === 'r' ? '靠右' : '居中'));
+      toastStatus(T_js('图表对齐：') + (mAl21 === 'l' ? T_js('靠左') : mAl21 === 'r' ? T_js('靠右') : T_js('居中')));
       /* v3.39.9（MMD-22）：点击对齐后菜单自动刷新 —— 不关闭，按最新状态
          重建（当前项隐藏、其余两项并排），位置沿用打开时坐标 */
       showSpecialBlockMenuAt(i, BM._mx || 120, BM._my || 120);
@@ -14181,7 +14181,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       if (spI) {
         spI.align = (alI === 'l' || alI === 'r') ? alI : '';
         writeFigure(i, spI);
-        toastStatus('图片对齐：' + (alI === 'l' ? '靠左' : alI === 'r' ? '靠右' : '居中'));
+        toastStatus(T_js('图片对齐：') + (alI === 'l' ? T_js('靠左') : alI === 'r' ? T_js('靠右') : T_js('居中')));
       }
       return;
     }
@@ -14264,12 +14264,12 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     var cur = blockInfo(state.raw[idx]).type;
     /* v3.24：代码块菜单精简 —— 转为标题 / 段落 / 列表 / 引用对代码块没有意义，只留块操作 */
     if (cur === 'fence') {
-      BM.innerHTML = '<div class="cap">当前块：代码块</div>' +
-        '<div class="mi" data-act="dup"><span style="width:18px;text-align:center">⧉</span>复制块</div>' +
-        '<div class="mi" data-act="up"><span style="width:18px;text-align:center">⬆</span>上移</div>' +
-        '<div class="mi" data-act="down"><span style="width:18px;text-align:center">⬇</span>下移</div>' +
+      BM.innerHTML = '<div class="cap">' + T_js('当前块：代码块') + '</div>' +
+        '<div class="mi" data-act="dup"><span style="width:18px;text-align:center">⧉</span>' + T_js('复制块') + '</div>' +
+        '<div class="mi" data-act="up"><span style="width:18px;text-align:center">⬆</span>' + T_js('上移') + '</div>' +
+        '<div class="mi" data-act="down"><span style="width:18px;text-align:center">⬇</span>' + T_js('下移') + '</div>' +
         '<div class="sep"></div>' +
-        '<div class="mi danger" data-act="del"><span style="width:18px;text-align:center">🗑</span>删除块</div>';
+        '<div class="mi danger" data-act="del"><span style="width:18px;text-align:center">🗑</span>' + T_js('删除块') + '</div>';
       var fr = BH.style.display === 'flex'
         ? BH.getBoundingClientRect()
         : (ED.children[idx] ? ED.children[idx].getBoundingClientRect() : BH.getBoundingClientRect());
@@ -14278,21 +14278,21 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       placePop(BM, fr.right + 6, fr.top - 6);
       return;
     }
-    var html = '<div class="cap">当前块：' + typeLabel(cur) + '</div>';
+    var html = '<div class="cap">' + T_js('当前块：') + T_js(typeLabel(cur)) + '</div>';
     /* 转为拆分为 5 项：标题 / 段落 / 列表 / 代码块 / 引用
        （v3.30.18（QUO-5）：引用块内不再显示「转为引用」自身 no-op 项） */
-    html += '<div class="mi has-sub" data-act="to-h"><span style="width:18px;text-align:center">H</span>标题</div>';
-    html += '<div class="mi" data-act="to:p"><span style="width:18px;text-align:center">¶</span>段落</div>';
-    html += '<div class="mi has-sub" data-act="to-list"><span style="width:18px;text-align:center">•</span>列表</div>';
-    html += '<div class="mi" data-act="to:fence"><span style="width:18px;text-align:center">‹›</span>代码块</div>';
+    html += '<div class="mi has-sub" data-act="to-h"><span style="width:18px;text-align:center">H</span>' + T_js('标题') + '</div>';
+    html += '<div class="mi" data-act="to:p"><span style="width:18px;text-align:center">¶</span>' + T_js('段落') + '</div>';
+    html += '<div class="mi has-sub" data-act="to-list"><span style="width:18px;text-align:center">•</span>' + T_js('列表') + '</div>';
+    html += '<div class="mi" data-act="to:fence"><span style="width:18px;text-align:center">‹›</span>' + T_js('代码块') + '</div>';
     if (cur !== 'quote')
-      html += '<div class="mi" data-act="to:quote"><span style="width:18px;text-align:center">❝</span>引用</div>';
+      html += '<div class="mi" data-act="to:quote"><span style="width:18px;text-align:center">❝</span>' + T_js('引用') + '</div>';
     html += '<div class="sep"></div>';
-    html += '<div class="mi" data-act="dup"><span style="width:18px;text-align:center">⧉</span>复制块</div>';
-    html += '<div class="mi" data-act="up"><span style="width:18px;text-align:center">⬆</span>上移</div>';
-    html += '<div class="mi" data-act="down"><span style="width:18px;text-align:center">⬇</span>下移</div>';
+    html += '<div class="mi" data-act="dup"><span style="width:18px;text-align:center">⧉</span>' + T_js('复制块') + '</div>';
+    html += '<div class="mi" data-act="up"><span style="width:18px;text-align:center">⬆</span>' + T_js('上移') + '</div>';
+    html += '<div class="mi" data-act="down"><span style="width:18px;text-align:center">⬇</span>' + T_js('下移') + '</div>';
     html += '<div class="sep"></div>';
-    html += '<div class="mi danger" data-act="del"><span style="width:18px;text-align:center">🗑</span>删除块</div>';
+    html += '<div class="mi danger" data-act="del"><span style="width:18px;text-align:center">🗑</span>' + T_js('删除块') + '</div>';
     BM.innerHTML = html;
     var r = BH.style.display === 'flex'
       ? BH.getBoundingClientRect()
@@ -14365,22 +14365,22 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     handleIdx = idx;
     /* v3.39.4（MENU-3）：图片分支加宽菜单（.wide），其它类型还原默认宽度 */
     BM.classList.toggle('wide', kind === 'image');
-    var html = '<div class="cap">当前块：' + (SPEC_LABEL[kind] || '块') + '</div>';
+    var html = '<div class="cap">' + T_js('当前块：') + (T_js(SPEC_LABEL[kind]) || T_js('块')) + '</div>';
     if (kind === 'table') {
       /* v3.31.3（TBL-3）：表格标注移入本菜单，位置在「删除块」上方 */
-      html += '<div class="mi" data-act="cap"><span style="width:18px;text-align:center">🏷</span>表格标注</div>';
-      html += '<div class="mi danger" data-act="del"><span style="width:18px;text-align:center">🗑</span>删除块</div>';
+      html += '<div class="mi" data-act="cap"><span style="width:18px;text-align:center">🏷</span>' + T_js('表格标注') + '</div>';
+      html += '<div class="mi danger" data-act="del"><span style="width:18px;text-align:center">🗑</span>' + T_js('删除块') + '</div>';
       html += '<div class="sep"></div>';
-      html += '<div class="mi" data-act="resetsize"><span style="width:18px;text-align:center">↺</span>还原尺寸</div>';
-      html += '<div class="mi" data-act="dup"><span style="width:18px;text-align:center">⧉</span>复制块</div>';
-      html += '<div class="mi" data-act="up"><span style="width:18px;text-align:center">⬆</span>上移</div>';
-      html += '<div class="mi" data-act="down"><span style="width:18px;text-align:center">⬇</span>下移</div>';
+      html += '<div class="mi" data-act="resetsize"><span style="width:18px;text-align:center">↺</span>' + T_js('还原尺寸') + '</div>';
+      html += '<div class="mi" data-act="dup"><span style="width:18px;text-align:center">⧉</span>' + T_js('复制块') + '</div>';
+      html += '<div class="mi" data-act="up"><span style="width:18px;text-align:center">⬆</span>' + T_js('上移') + '</div>';
+      html += '<div class="mi" data-act="down"><span style="width:18px;text-align:center">⬇</span>' + T_js('下移') + '</div>';
     } else if (kind === 'hr') {
-      html += '<div class="mi" data-act="dup"><span style="width:18px;text-align:center">⧉</span>复制块</div>';
-      html += '<div class="mi" data-act="up"><span style="width:18px;text-align:center">⬆</span>上移</div>';
-      html += '<div class="mi" data-act="down"><span style="width:18px;text-align:center">⬇</span>下移</div>';
+      html += '<div class="mi" data-act="dup"><span style="width:18px;text-align:center">⧉</span>' + T_js('复制块') + '</div>';
+      html += '<div class="mi" data-act="up"><span style="width:18px;text-align:center">⬆</span>' + T_js('上移') + '</div>';
+      html += '<div class="mi" data-act="down"><span style="width:18px;text-align:center">⬇</span>' + T_js('下移') + '</div>';
       html += '<div class="sep"></div>';
-      html += '<div class="mi danger" data-act="del"><span style="width:18px;text-align:center">🗑</span>删除块</div>';
+      html += '<div class="mi danger" data-act="del"><span style="width:18px;text-align:center">🗑</span>' + T_js('删除块') + '</div>';
     } else if (kind === 'image') {
       /* v3.30.17：图片右键菜单（替代悬浮按钮条）—— 重置尺寸恒显；
          存储项按当前存储方式动态显示：相对路径 → 转内嵌 + 修改图片名称；
@@ -14394,13 +14394,13 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       var _spCur = figFromRaw(state.raw[idx]);
       var _curAl = _spCur ? (_spCur.align || 'c') : 'c';
       html += '<div class="mirow">' +
-        (_curAl !== 'l' ? '<div class="mi" data-act="imgalign:l"><span style="width:18px;text-align:center">⭰</span>靠左</div>' : '') +
-        (_curAl !== 'c' ? '<div class="mi" data-act="imgalign:c"><span style="width:18px;text-align:center">⊙</span>居中</div>' : '') +
-        (_curAl !== 'r' ? '<div class="mi" data-act="imgalign:r"><span style="width:18px;text-align:center">⭲</span>靠右</div>' : '') +
+        (_curAl !== 'l' ? '<div class="mi" data-act="imgalign:l"><span style="width:18px;text-align:center">⭰</span>' + T_js('靠左') + '</div>' : '') +
+        (_curAl !== 'c' ? '<div class="mi" data-act="imgalign:c"><span style="width:18px;text-align:center">⊙</span>' + T_js('居中') + '</div>' : '') +
+        (_curAl !== 'r' ? '<div class="mi" data-act="imgalign:r"><span style="width:18px;text-align:center">⭲</span>' + T_js('靠右') + '</div>' : '') +
         '</div>';
       html += '<div class="mirow">' +
-        '<div class="mi" data-act="imgreset"><span style="width:18px;text-align:center">↺</span>重置尺寸</div>' +
-        '<div class="mi" data-act="imgsize"><span style="width:18px;text-align:center">⤢</span>大小设置</div>' +
+        '<div class="mi" data-act="imgreset"><span style="width:18px;text-align:center">↺</span>' + T_js('重置尺寸') + '</div>' +
+        '<div class="mi" data-act="imgsize"><span style="width:18px;text-align:center">⤢</span>' + T_js('大小设置') + '</div>' +
         '</div>';
       /* v3.38（IMG-13）：存储项动态显示 ——「全部网络图片转本地」更名
          「转本地存储」且仅当前图片为网络图片时显示；未保存文档时置灰
@@ -14410,90 +14410,90 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       var _canStore = !!window.__docDir || _isAbs;
       /* v3.30.19（IMG-6）+ v3.38（IMG-13）：转本地存储 —— 仅当前图片为网络图片时显示 */
       if (_isRemote)
-        html += '<div class="mi" data-act="imglocalall"><span style="width:18px;text-align:center">⤓</span>转本地存储</div>';
+        html += '<div class="mi" data-act="imglocalall"><span style="width:18px;text-align:center">⤓</span>' + T_js('转本地存储') + '</div>';
       if (_isrc && !_isData && !_isRemote) {
         if (_canStore) {
-          html += '<div class="mi" data-act="imgmode"><span style="width:18px;text-align:center">🔄</span>转化为内嵌式存储</div>';
-          html += '<div class="mi" data-act="imgrename"><span style="width:18px;text-align:center">✏</span>修改图片名称</div>';
+          html += '<div class="mi" data-act="imgmode"><span style="width:18px;text-align:center">🔄</span>' + T_js('转化为内嵌式存储') + '</div>';
+          html += '<div class="mi" data-act="imgrename"><span style="width:18px;text-align:center">✏</span>' + T_js('修改图片名称') + '</div>';
         } else {
           /* v3.38（IMG-12）：未保存文档时不再整组静默消失 —— 置灰条目说明原因 */
-          html += '<div class="mi dis" data-act="imgstorewait"><span style="width:18px;text-align:center">⤓</span>转存本地（请先保存文档）</div>';
+          html += '<div class="mi dis" data-act="imgstorewait"><span style="width:18px;text-align:center">⤓</span>' + T_js('转存本地（请先保存文档）') + '</div>';
         }
       } else if (!_isRemote && _canStore) {
-        html += '<div class="mi" data-act="imgmode"><span style="width:18px;text-align:center">🔄</span>转化为相对路径存储</div>';
+        html += '<div class="mi" data-act="imgmode"><span style="width:18px;text-align:center">🔄</span>' + T_js('转化为相对路径存储') + '</div>';
       } else if (!_isRemote) {
         /* v3.38（IMG-12）：未保存文档时不再整组静默消失 —— 置灰条目说明原因 */
-        html += '<div class="mi dis" data-act="imgstorewait"><span style="width:18px;text-align:center">⤓</span>转存本地（请先保存文档）</div>';
+        html += '<div class="mi dis" data-act="imgstorewait"><span style="width:18px;text-align:center">⤓</span>' + T_js('转存本地（请先保存文档）') + '</div>';
       }
       /* v3.39.4（MENU-3）：③ 替换图片 + 显示图片同行；④ 复制图片 + 复制块同行。
          「显示图片」= 应用内大图预览（Esc / 点遮罩关闭）；「复制图片」=
          位图进剪贴板（可粘贴到微信 / Word）；「复制块」= 文档内复制一份 */
       html += '<div class="mirow">' +
-        '<div class="mi" data-act="imgreplace"><span style="width:18px;text-align:center">🔁</span>替换图片</div>' +
-        '<div class="mi" data-act="viewimg"><span style="width:18px;text-align:center">👁</span>显示图片</div>' +
+        '<div class="mi" data-act="imgreplace"><span style="width:18px;text-align:center">🔁</span>' + T_js('替换图片') + '</div>' +
+        '<div class="mi" data-act="viewimg"><span style="width:18px;text-align:center">👁</span>' + T_js('显示图片') + '</div>' +
         '</div>';
       /* v3.39.6（IMG-CROP）：裁剪图片 + v3.39.8（MENU-5）：图注移至裁剪后
          同级并排一行（用户指令：图注移到裁剪后面，同一层级并列显示） */
       html += '<div class="mirow">' +
-        '<div class="mi" data-act="imgcrop"><span style="width:18px;text-align:center">✂</span>裁剪图片</div>' +
-        '<div class="mi" data-act="edit"><span style="width:18px;text-align:center">✎</span>图注</div>' +
+        '<div class="mi" data-act="imgcrop"><span style="width:18px;text-align:center">✂</span>' + T_js('裁剪图片') + '</div>' +
+        '<div class="mi" data-act="edit"><span style="width:18px;text-align:center">✎</span>' + T_js('图注') + '</div>' +
         '</div>';
       html += '<div class="mirow">' +
-        '<div class="mi" data-act="copyimg"><span style="width:18px;text-align:center">🖼</span>复制图片</div>' +
-        '<div class="mi" data-act="dup"><span style="width:18px;text-align:center">⧉</span>复制块</div>' +
+        '<div class="mi" data-act="copyimg"><span style="width:18px;text-align:center">🖼</span>' + T_js('复制图片') + '</div>' +
+        '<div class="mi" data-act="dup"><span style="width:18px;text-align:center">⧉</span>' + T_js('复制块') + '</div>' +
         '</div>';
       html += '<div class="sep"></div>';
       /* v3.39.2（MENU-2）：上移 / 下移并排一行 */
       html += '<div class="mirow">' +
-        '<div class="mi" data-act="up"><span style="width:18px;text-align:center">⬆</span>上移</div>' +
-        '<div class="mi" data-act="down"><span style="width:18px;text-align:center">⬇</span>下移</div>' +
+        '<div class="mi" data-act="up"><span style="width:18px;text-align:center">⬆</span>' + T_js('上移') + '</div>' +
+        '<div class="mi" data-act="down"><span style="width:18px;text-align:center">⬇</span>' + T_js('下移') + '</div>' +
         '</div>';
       html += '<div class="sep"></div>';
-      html += '<div class="mi danger" data-act="del"><span style="width:18px;text-align:center">🗑</span>删除块</div>';
+      html += '<div class="mi danger" data-act="del"><span style="width:18px;text-align:center">🗑</span>' + T_js('删除块') + '</div>';
     } else if (kind === 'chart') {
       /* v3.34（MMD-11）：图表块右键菜单 —— 在通用操作之上新增「图表主题」
          二级子菜单（跟随界面 + 六套自定义主题，当前项 ✓），免去去设置面板换主题 */
       /* v3.39.9（MMD-22）：编辑源码 + 图注 并排一行 */
       html += '<div class="mirow">' +
-        '<div class="mi" data-act="edit"><span style="width:18px;text-align:center">✎</span>' + SPEC_EDIT[kind] + '</div>' +
-        '<div class="mi" data-act="mmdcap"><span style="width:18px;text-align:center">🏷</span>图注</div>' +
+        '<div class="mi" data-act="edit"><span style="width:18px;text-align:center">✎</span>' + T_js(SPEC_EDIT[kind]) + '</div>' +
+        '<div class="mi" data-act="mmdcap"><span style="width:18px;text-align:center">🏷</span>' + T_js('图注') + '</div>' +
         '</div>';
       /* v3.39.9（MMD-22）：重置尺寸 + 大小设置 并排一行 */
       html += '<div class="mirow">' +
-        '<div class="mi" data-act="mmdreset"><span style="width:18px;text-align:center">⭯</span>重置尺寸</div>' +
-        '<div class="mi" data-act="mmdsize"><span style="width:18px;text-align:center">⤢</span>大小设置</div>' +
+        '<div class="mi" data-act="mmdreset"><span style="width:18px;text-align:center">⭯</span>' + T_js('重置尺寸') + '</div>' +
+        '<div class="mi" data-act="mmdsize"><span style="width:18px;text-align:center">⤢</span>' + T_js('大小设置') + '</div>' +
         '</div>';
       /* v3.39.9（MMD-22）：对齐三态（l/c/r）—— 隐藏当前项，其余两项并排一行；
          点击后菜单按最新状态自动刷新（保持打开） */
       var _mfi21 = parseFenceInfo(String(state.raw[idx] || '').split('\n')[0]);
       var _mAl21 = (_mfi21.attrs && _mfi21.attrs.align) || 'c';
       html += '<div class="mirow">' +
-        (_mAl21 !== 'l' ? '<div class="mi" data-act="mmdalign:l"><span style="width:18px;text-align:center">⭰</span>靠左</div>' : '') +
-        (_mAl21 !== 'c' ? '<div class="mi" data-act="mmdalign:c"><span style="width:18px;text-align:center">⊙</span>居中</div>' : '') +
-        (_mAl21 !== 'r' ? '<div class="mi" data-act="mmdalign:r"><span style="width:18px;text-align:center">⭲</span>靠右</div>' : '') +
+        (_mAl21 !== 'l' ? '<div class="mi" data-act="mmdalign:l"><span style="width:18px;text-align:center">⭰</span>' + T_js('靠左') + '</div>' : '') +
+        (_mAl21 !== 'c' ? '<div class="mi" data-act="mmdalign:c"><span style="width:18px;text-align:center">⊙</span>' + T_js('居中') + '</div>' : '') +
+        (_mAl21 !== 'r' ? '<div class="mi" data-act="mmdalign:r"><span style="width:18px;text-align:center">⭲</span>' + T_js('靠右') + '</div>' : '') +
         '</div>';
       if (window.__docDir)
-        html += '<div class="mi" data-act="mmdtoimg"><span style="width:18px;text-align:center">🖼</span>转化为图片</div>';
+        html += '<div class="mi" data-act="mmdtoimg"><span style="width:18px;text-align:center">🖼</span>' + T_js('转化为图片') + '</div>';
       else
-        html += '<div class="mi dis" data-act="mmdtoimgwait"><span style="width:18px;text-align:center">🖼</span>转化为图片（请先保存文档）</div>';
-      html += '<div class="mi" data-act="mmd-theme-sub"><span style="width:18px;text-align:center">🎨</span>图表主题<span style="float:right;opacity:.55">›</span></div>';
-      html += '<div class="mi" data-act="dup"><span style="width:18px;text-align:center">⧉</span>复制块</div>';
+        html += '<div class="mi dis" data-act="mmdtoimgwait"><span style="width:18px;text-align:center">🖼</span>' + T_js('转化为图片（请先保存文档）') + '</div>';
+      html += '<div class="mi" data-act="mmd-theme-sub"><span style="width:18px;text-align:center">🎨</span>' + T_js('图表主题') + '<span style="float:right;opacity:.55">›</span></div>';
+      html += '<div class="mi" data-act="dup"><span style="width:18px;text-align:center">⧉</span>' + T_js('复制块') + '</div>';
       /* v3.39.2（MENU-2）：上移 / 下移并排一行 */
       html += '<div class="mirow">' +
-        '<div class="mi" data-act="up"><span style="width:18px;text-align:center">⬆</span>上移</div>' +
-        '<div class="mi" data-act="down"><span style="width:18px;text-align:center">⬇</span>下移</div>' +
+        '<div class="mi" data-act="up"><span style="width:18px;text-align:center">⬆</span>' + T_js('上移') + '</div>' +
+        '<div class="mi" data-act="down"><span style="width:18px;text-align:center">⬇</span>' + T_js('下移') + '</div>' +
         '</div>';
       html += '<div class="sep"></div>';
-      html += '<div class="mi danger" data-act="del"><span style="width:18px;text-align:center">🗑</span>删除块</div>';
+      html += '<div class="mi danger" data-act="del"><span style="width:18px;text-align:center">🗑</span>' + T_js('删除块') + '</div>';
     } else {
       /* v3.30.17 补回：公式块右键菜单 —— 编辑源码 + 复制块 + 上移 / 下移 / 删除块
          （重写图片分支时曾误删此兜底分支，导致公式右键只剩标题无菜单项） */
-      html += '<div class="mi" data-act="edit"><span style="width:18px;text-align:center">✎</span>' + (SPEC_EDIT[kind] || '编辑') + '</div>';
-      html += '<div class="mi" data-act="dup"><span style="width:18px;text-align:center">⧉</span>复制块</div>';
-      html += '<div class="mi" data-act="up"><span style="width:18px;text-align:center">⬆</span>上移</div>';
-      html += '<div class="mi" data-act="down"><span style="width:18px;text-align:center">⬇</span>下移</div>';
+      html += '<div class="mi" data-act="edit"><span style="width:18px;text-align:center">✎</span>' + T_js(SPEC_EDIT[kind] || '编辑') + '</div>';
+      html += '<div class="mi" data-act="dup"><span style="width:18px;text-align:center">⧉</span>' + T_js('复制块') + '</div>';
+      html += '<div class="mi" data-act="up"><span style="width:18px;text-align:center">⬆</span>' + T_js('上移') + '</div>';
+      html += '<div class="mi" data-act="down"><span style="width:18px;text-align:center">⬇</span>' + T_js('下移') + '</div>';
       html += '<div class="sep"></div>';
-      html += '<div class="mi danger" data-act="del"><span style="width:18px;text-align:center">🗑</span>删除块</div>';
+      html += '<div class="mi danger" data-act="del"><span style="width:18px;text-align:center">🗑</span>' + T_js('删除块') + '</div>';
     }
     BM.innerHTML = html;
     activePop = 'block';
@@ -14635,8 +14635,8 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     /* v3.30.10（HP-3）：手柄 tooltip 显示块类型 —— 悬停即见「标题 3 / 引用 /
        图表」等，无需点开菜单确认；与状态栏「当前块」互为冗余确认通道 */
     var hSpec = specialBlockKind(handleIdx);
-    BH.title = hSpec ? typeLabel(hSpec)
-      : typeLabel(blockInfo(state.raw[handleIdx] || '').type);
+    BH.title = T_js(hSpec ? typeLabel(hSpec)
+      : typeLabel(blockInfo(state.raw[handleIdx] || '').type));
     BH.style.display = 'flex';
     BH.style.left = Math.max(4, r.left - 28) + 'px';
     BH.style.top = (r.top + 3) + 'px';
@@ -18009,7 +18009,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       var el = document.createElement('button');
       el.type = 'button';
       el.textContent = b[0];
-      el.title = b[2];
+      el.title = T_js(b[2]);
       el.addEventListener('mousedown', function (ev) { ev.preventDefault(); ev.stopPropagation(); });
       el.addEventListener('click', function (ev) { ev.stopPropagation(); b[1](); });
       OB.appendChild(el);
@@ -18115,7 +18115,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       if (style2) {
         sp2.style = style2;
         writeFigure(idx2, sp2);
-        toastStatus('图片大小已更新：' + style2.replace(/;/g, ' '));
+        toastStatus(T_js('图片大小已更新：') + style2.replace(/;/g, ' '));
       }
       pop.classList.remove('show');
     }
@@ -18162,7 +18162,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
           !window.__docDir) {
         toastStatus('请先保存文档（Ctrl+S）再裁剪：相对路径图片要按文档目录才能加载');
       } else {
-        toastStatus('图片加载失败，无法裁剪（请检查图片路径是否有效：' + _csrc31 + '）');
+        toastStatus(T_js('图片加载失败，无法裁剪（请检查图片路径是否有效：') + _csrc31 + T_js('）'));
       }
       return;
     }
@@ -18729,7 +18729,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       try {
         var url = cv.toDataURL('image/png');
         sendImgReq({ act: 'mmdToImg', idx: idx, dataUrl: url });
-      } catch (e1) { toastStatus('图表转换为图片失败：' + e1.message); }
+      } catch (e1) { toastStatus(T_js('图表转换为图片失败：') + e1.message); }
     };
     img.onerror = function () { toastStatus('图表转换为图片失败'); };
     img.src = 'data:image/svg+xml;base64,' + svg64;
@@ -19060,8 +19060,9 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   rebuild();
   updateStats();
   rzWatchStart(ED);   /* [RZDBG] 表格 DOM 变异观察器 */
-  /* ============ i18n 引擎（界面中英双语；由 Python 端 window.__setLang 驱动） ============ */
+  /* ============ i18n 引擎 / i18n engine（界面中英双语 UI bilingual zh/en；由 Python 端 window.__setLang 驱动 / driven by Python-side window.__setLang） ============ */
   var I18N_LANG = 'zh';
+  // 中文原文 -> 英文译文 字典 / zh source text -> en translation dict (kept in sync with src/i18n.py EN)
   var I18N_EN = {
     '标题':'Heading','标题 1':'Heading 1','标题 2':'Heading 2','标题 3':'Heading 3','标题 4':'Heading 4',
     '标题 5':'Heading 5','标题 6':'Heading 6','列表':'List','无序列表':'Bulleted List','有序列表':'Numbered List',
@@ -19083,8 +19084,309 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     '删除行':'Delete Row','向左插入列':'Insert Column Left','向右插入列':'Insert Column Right','删除列':'Delete Column',
     '合并单元格':'Merge Cells','拆分单元格（选择行 × 列）':'Split Cells (select rows × cols)','还原单元格（拆回原格）':'Restore Cell (split back)',
     '上移该行':'Move Row Up','下移该行':'Move Row Down','左移该列':'Move Column Left','右移该列':'Move Column Right',
-    '左对齐':'Align Left','居中':'Center','右对齐':'Align Right','清空内容':'Clear Content'
+    '左对齐':'Align Left','居中':'Center','右对齐':'Align Right','清空内容':'Clear Content',
+    ' 个脚注编号':' footnote numbers',
+    ' 条未引用的脚注定义':' unreferenced footnote definitions',
+    '] 已插入，定义已追加到文末':"'] inserted; definition appended at end",
+    '] 的引用位置':"'s reference position",
+    '」，再按 Ctrl+D 加选下一个':"', press Ctrl+D to add next",
+    '图片加载失败，无法裁剪（请检查图片路径是否有效：':'Image load failed; cannot crop (check if path is valid: ',
+    '图片大小已更新：':'Image size updated: ',
+    '图表源码已更新':'Chart source updated',
+    '图表转换为图片失败：':'Chart-to-image failed: ',
+    '复制失败，请手动选择复制':'Copy failed; select manually',
+    '复制失败，请用 Ctrl+C':'Copy failed; use Ctrl+C',
+    '已关闭本块自动换行（长行横向滚动）':'Auto-wrap off for this block (long lines scroll horizontally)',
+    '已关闭本块行数显示':'Line numbers hidden for this block',
+    '已取消':'Off ',
+    '已复制到剪贴板':'Copied to clipboard',
+    '已复制选中内容':'Selected content copied',
+    '已应用':'On ',
+    '已开启本块自动换行':'Auto-wrap on for this block',
+    '已开启本块行数显示':'Line numbers shown for this block',
+    '已按出现顺序重排 ':'Reordered by appearance: ',
+    '已插入命令：':'Inserted command: ',
+    '已插入本书链接：':'Inserted book link: ',
+    '已清理 ':'Cleaned ',
+    '已移除单元格图表':'Cell chart removed',
+    '已进入全屏编辑（Esc 或右上角 ✕ 退出）':'Entered fullscreen editing (Esc or X to exit)',
+    '已选中「':'Selected "',
+    '已选中分割线':'Divider selected',
+    '已选中分割线，Delete / Backspace 删除 · Esc 取消':'Divider selected; Delete/Backspace to remove · Esc to cancel',
+    '未找到脚注 [^':'Footnote not found [^',
+    '未找到脚注定义 [^':'Footnote definition not found [^',
+    '标题已向左对齐':'Heading aligned left',
+    '标题已居中':'Heading centered',
+    '没有更多相同的「':'No more identical "',
+    '没有未引用的脚注定义':'No unreferenced footnote definitions',
+    '脚注 [^':'Footnote [^',
+    '（行内码外侧）':' (outside inline code)',
+    '当前块：':'Current block: ',
+    '当前块：代码块':'Current block: Code Block',
+    '正文段落':'Paragraph',
+    '块':'Block',
+    '图片块':'Image Block',
+    '图表块':'Chart Block',
+    '公式块':'Math Block',
+    '表格块':'Table Block',
+    '编辑图注':'Edit Caption',
+    '编辑源码':'Edit Source',
+    '编辑公式':'Edit Formula',
+    '编辑':'Edit',
+    '靠左':'Align Left',
+    '靠右':'Align Right',
+    '表格标注':'Table Caption',
+    '还原尺寸':'Reset Size',
+    '重置尺寸':'Reset Size',
+    '大小设置':'Set Size',
+    '转本地存储':'Save Locally',
+    '转化为内嵌式存储':'Convert to Embedded',
+    '修改图片名称':'Rename Image',
+    '转存本地（请先保存文档）':'Save Locally (Save the document first)',
+    '转化为相对路径存储':'Convert to Relative Path',
+    '替换图片':'Replace Image',
+    '显示图片':'View Image',
+    '裁剪图片':'Crop Image',
+    '图注':'Caption',
+    '复制图片':'Copy Image',
+    '转化为图片':'Convert to Image',
+    '转化为图片（请先保存文档）':'Convert to Image (Save the document first)',
+    '图表主题':'Chart Theme',
+    '跟随界面主题':'Follow UI Theme',
+    '段落':'Paragraph',
+    '复制块':'Duplicate Block',
+    '上移':'Move Up',
+    '下移':'Move Down',
+    '晴空':'Azure',
+    '薄荷':'Mint',
+    '暖沙':'Sepia',
+    '石墨':'Graphite',
+    '暗夜':'Night',
+    '琥珀':'Amber',
+    '黑白':'Mono',
+    '删除整个块':'Delete Block',
+    '行内代码':'Inline Code',
+    '清除格式':'Clear Format',
+    '标题向左对齐':'Align Heading Left',
+    '标题居中':'Center Heading',
+    '行内码':'Inline Code',
+    '单元格格式':'Cell Format',
+    '包裹':'Wrap',
+    '下划线':'Underline',
+    '取消':'Off',
+    '上标':'Superscript',
+    '下标':'Subscript',
+    '分式':'Fraction',
+    '根式':'Square Root',
+    '求和':'Sum',
+    '积分':'Integral',
+    '极限':'Limit',
+    '导数':'Derivative',
+    '偏导数':'Partial Derivative',
+    '向量':'Vector',
+    '向量箭头':'Vector Arrow',
+    '矩阵':'Matrix',
+    '希腊字母':'Greek Letters',
+    '无穷':'Infinity',
+    '约等于':'Approximately',
+    '不等于':'Not Equal',
+    '角度':'Angle',
+    '垂直':'Perpendicular',
+    '平行':'Parallel',
+    '因为所以':'Because / Therefore',
+    '属于':'Element Of',
+    '并集交集':'Union / Intersection',
+    '加减':'Plus / Minus',
+    '乘':'Times',
+    '度数':'Degrees',
+    '圆周率':'Pi',
+    '会议纪要':'Meeting Notes',
+    '周报':'Weekly Report',
+    '需求文档':'Requirements',
+    '设计文档':'Design Doc',
+    '技术笔记':'Tech Notes',
+    '项目文档':'Project Doc',
+    '评审记录':'Review Notes',
+    '论文骨架':'Paper Outline',
+    '##quotetip':'##quotetip',
+    '不支持跨行 / 跨项应用行内格式，请逐行选择后再试':'Inline formatting across lines / items is unsupported; select line by line and retry',
+    '代码内容含 ``` 行，已阻止写入以免破坏围栏结构':'Code contains a ``` line; write blocked to protect the fence structure',
+    '光标不在表格块内':'Cursor is not inside a table block',
+    '右键粘贴受 WebView 安全限制，请用 Ctrl+V':'Right-click paste is restricted by WebView security; use Ctrl+V',
+    '图片加载失败，无法裁剪':'Image failed to load; cannot crop',
+    '图片地址为空，无法复制':'Image address is empty; cannot copy',
+    '图片地址为空，无法预览':'Image address is empty; cannot preview',
+    '图片对齐：':'Image alignment: ',
+    '图片预览失败：无法加载该地址':'Image preview failed: cannot load that address',
+    '图表大小已更新':'Chart size updated',
+    '图表对齐：':'Chart alignment: ',
+    '图表尚未渲染完成，无法转换为图片':'Chart not finished rendering; cannot convert to image',
+    '图表已转换为图片（单向，不可转回图表）':'Chart converted to image (one-way; cannot convert back)',
+    '图表转换为图片失败':'Chart-to-image conversion failed',
+    '图表转换为图片失败：尺寸无效':'Chart-to-image conversion failed: invalid size',
+    '多光标模式下没有选区，格式未应用':'No selection in multi-cursor mode; format not applied',
+    '已删除公式，Ctrl+Z 可撤销':'Formula deleted (Ctrl+Z to undo)',
+    '已删除图表，Ctrl+Z 可撤销':'Chart deleted (Ctrl+Z to undo)',
+    '已删除块，Ctrl+Z 可撤销':'Block deleted (Ctrl+Z to undo)',
+    '已复制块':'Block duplicated',
+    '已复制选中内容（跨段）':'Selected content copied (across paragraphs)',
+    '已替换图片':'Image replaced',
+    '已移除链接':'Link removed',
+    '已裁剪，原图文件保留 · Ctrl+Z 可撤销':'Cropped; original file kept · Ctrl+Z to undo',
+    '已转换为分割线（hr）':'Converted to horizontal rule (hr)',
+    '已退出全屏编辑':'Exited fullscreen editing',
+    '已选中':'Selected',
+    '已选第 ':'Selected ',
+    ' 个相同词（Esc 退出）':' identical words (Esc to exit)',
+    '开始下载网络图片到 assets…':'Downloading web image to assets…',
+    '引用内代码块暂不支持该操作，可双击转源码修改':'Code block inside a quote does not support this; double-click to edit source',
+    '引用内的富内容块暂不支持直接编辑，双击可转入源码态修改':'Rich block inside a quote is not directly editable; double-click to enter source',
+    '找不到图片元素，无法裁剪':'Image element not found; cannot crop',
+    '替换图片失败：无法解析该图片块':'Image replace failed: cannot parse the image block',
+    '未发现网络图片':'No web image found',
+    '未发现脚注引用，未重排':'No footnote reference found; not reordered',
+    '未在单元格中找到所选文字':'Selected text not found in the cell',
+    '未在该单元格中找到公式':'No formula found in that cell',
+    '未在该单元格中找到图表':'No chart found in that cell',
+    '未找到脚注定义':'Footnote definition not found',
+    '未找到脚注':'Footnote not found',
+    ' 的引用位置':"'s reference position",
+    '正在生成裁剪图片…':'Generating cropped image…',
+    '没有更多相同的':'No more identical',
+    '源码 / 分屏 / 预览模式下不可用多光标':'Multi-cursor unavailable in source / split / preview mode',
+    '源码 / 分屏模式下不可用块菜单，切回写作模式可用':'Block menu unavailable in source / split mode; switch back to writing mode',
+    '源码 / 分屏模式下不可用插入菜单，切回写作模式后按 / 使用':'Insert menu unavailable in source / split mode; switch back and press /',
+    '码外侧已紧邻同类格式标记，插入会造成标记歧义，请调整选区后再试':'Marker adjacent outside the code; insertion would be ambiguous. Adjust selection',
+    '网络图片已全部转存到 assets':'All web images saved to assets',
+    '网络图片裁剪需先保存文档（结果要落盘 assets），或先「转本地存储」':'Cropping web image needs the document saved first (output goes to assets), or convert to local storage first',
+    '请先保存文档（Ctrl+S）再裁剪：相对路径图片要按文档目录才能加载':'Save the document first (Ctrl+S) before cropping: relative images need the doc folder',
+    '请先保存文档（Ctrl+S）：转存本地需要用文档名生成 assets 目录':'Save the document first (Ctrl+S): local saving needs the doc name to build the assets folder',
+    '请先保存文档，再下载网络图片到 assets':'Save the document first, then download web images to assets',
+    '请先保存文档，再执行「转化为图片」':'Save the document first, then run “Convert to Image”',
+    '请先把光标放到一个词上':'Place the cursor on a word first',
+    '请先把光标放进要操作的块':'Place the cursor in the block to operate on first',
+    '请先清空单元格内容再插入图表':'Clear the cell content before inserting a chart',
+    '请先点击一个文本块':'Click a text block first',
+    '请选择单元格内的纯文本':'Select plain text inside the cell',
+    '选区横穿已有行内格式标记，请调整选区后再试':'Selection crosses existing inline markers; adjust and retry',
+    '选区紧邻同类格式标记，插入会造成标记歧义，请调整选区后再试':'Selection is next to the same marker; insertion would be ambiguous. Adjust selection',
+    '链接地址已更新':'Link address updated',
+    '脚注定义需位于文末，已取消移动':'Footnote def must be at the end; move canceled',
+    '菜单已随滚动收起':'Menu collapsed on scroll',
+    '行内代码内容内不支持叠加行内格式（可点 T× 连码壳一起清除）':'Inline code cannot stack another inline format (use T× to clear the code shell too)',
+    '表格单元格内不支持该块类型':'That block type is unsupported inside a table cell',
+    '裁剪写回取消：图片块已变化（裁剪结果文件已生成）':'Crop write-back canceled: image block changed (crop result file already generated)',
+    '裁剪写回失败：图片块已发生变化，请重试':'Crop write-back failed: image block changed; please retry',
+    '裁剪区域过小，请扩大选区后再试':'Crop region too small; enlarge the selection and retry',
+    '该操作仅作用于主光标，已退出多光标':'This operation applies only to the main cursor; exited multi-cursor',
+    '该输入操作暂不支持多光标同步，已退出多光标':'This input is not multi-cursor synced yet; exited multi-cursor'
   };
+  // Emoji 名称 -> 英文标签 字典 / emoji name -> English label dict (used by the emoji picker)
+  var EMOJI_EN = {
+    'smile':'Smile',
+    'grin':'Grin',
+    'wink':'Wink',
+    'sunglasses':'Cool',
+    'expressionless':'Blank face',
+    'pensive':'Pensive',
+    'cry':'Cry',
+    'angry':'Angry',
+    'sleeping':'Sleeping',
+    'nerd':'Nerd',
+    'shrug':'Shrug',
+    'thumbsup':'Thumbs up',
+    'clap':'Clap',
+    'muscle':'Flexed biceps',
+    'point_up':'Point up',
+    'victory':'Victory',
+    'fist':'Fist',
+    'brain':'Brain',
+    'sparkling_heart':'Sparkling heart',
+    'yellow_heart':'Yellow heart',
+    'purple_heart':'Purple heart',
+    'sparkles':'Sparkles',
+    'zap':'Zap',
+    'umbrella':'Umbrella',
+    'moon':'Moon',
+    'airplane':'Airplane',
+    'bike':'Bicycle',
+    'anchor':'Anchor',
+    'watch':'Watch',
+    'email':'Email',
+    'keyboard':'Keyboard',
+    'camera':'Camera',
+    'bulb':'Light bulb',
+    'mag':'Magnifying glass',
+    'key':'Key',
+    'gear':'Gear',
+    'pushpin':'Pushpin',
+    'memo':'Memo',
+    'notebook':'Notebook',
+    'open_file_folder':'Open folder',
+    'chart_with_upwards_trend':'Upwards trend',
+    'bar_chart':'Bar chart',
+    'abacus':'Abacus',
+    'outbox_tray':'Outbox',
+    'loudspeaker':'Loudspeaker',
+    'exclamation':'Exclamation',
+    'white_check_mark':'Check mark',
+    'o':'Circle',
+    'confetti_ball':'Confetti ball',
+    'trophy':'Trophy',
+    'dart':'Direct hit',
+    'musical_note':'Musical note',
+    'microphone':'Microphone',
+    'art':'Artist palette',
+    'ticket':'Ticket',
+    'rose':'Rose',
+    'four_leaf_clover':'Four leaf clover',
+    'palm_tree':'Palm tree',
+    'herb':'Herb',
+    'cookie':'Cookie',
+    'lollipop':'Lollipop',
+    'beer':'Beer',
+    'pizza':'Pizza',
+    'sushi':'Sushi',
+    'dango':'Dango',
+    'orange':'Orange',
+    'grape':'Grapes',
+    'corn':'Corn',
+    'dog':'Dog',
+    'hamster':'Hamster',
+    'bear':'Bear',
+    'tiger':'Tiger',
+    'pig':'Pig',
+    'chicken':'Chicken',
+    'eagle':'Eagle',
+    'bee':'Bee',
+    'bug':'Bug',
+    'turtle':'Turtle',
+    'dolphin':'Dolphin',
+    'octopus':'Octopus',
+    'monkey_face':'Monkey face',
+    '100_points':'Hundred',
+    'anger':'Anger',
+    'hole':'Hole',
+    'syringe':'Syringe',
+    'telescope':'Telescope',
+    'roller_coaster':'Roller coaster',
+    'soccer':'Soccer',
+    'baseball':'Baseball',
+    '8ball':'Pool 8 ball',
+    'swimmer':'Swimmer',
+    'dart_board':'Darts',
+    'flag_cn':'China',
+    'flag_gb':'UK',
+    'flag_fr':'France',
+    'heavy_plus_sign':'Heavy plus',
+    'heavy_multiplication_x':'Heavy multiplication',
+    'arrow_right':'Right arrow',
+    'arrow_down':'Down arrow',
+    'infinity':'Infinity',
+    'registered':'Registered'
+  };
+
+  // 前端取词：英文环境返回 en / EN[zh]，中文环境返回 zh / front-end lookup: EN mode returns en/EN[zh], ZH mode returns zh
   function T_js(zh, en) {
     if (I18N_LANG === 'en') {
       if (en != null) return en;
@@ -19093,6 +19395,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     return zh;
   }
   window.T_js = T_js;
+  // Python 端切换语言时调用：刷新 data-zh / data-zh-title 的 DOM 文本 / called by Python on language switch: refresh data-zh / data-zh-title DOM text
   window.__setLang = function (lang) {
     I18N_LANG = (lang === 'en') ? 'en' : 'zh';
     try {

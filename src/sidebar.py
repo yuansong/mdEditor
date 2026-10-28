@@ -61,18 +61,18 @@ class GlobalSearchPanel(QWidget):
         super().__init__(parent)
         self._win = win
         self.search_edit = QLineEdit(self)
-        self.search_edit.setPlaceholderText("在当前文件夹内搜索（支持正则）…")
+        self.search_edit.setPlaceholderText(T("在当前文件夹内搜索（支持正则）…", "Search in current folder (regex supported)…"))
         self.search_edit.setClearButtonEnabled(True)
         self.search_ext = QComboBox(self)
-        self.search_ext.addItem("全部", "")
-        self.search_ext.addItem("仅 .md", ".md")
-        self.search_ext.addItem("仅 .txt", ".txt")
-        self.search_btn = QPushButton("搜索", self)
+        self.search_ext.addItem(T("全部", "All"), "")
+        self.search_ext.addItem(T("仅 .md", "Markdown only"), ".md")
+        self.search_ext.addItem(T("仅 .txt", "Text only"), ".txt")
+        self.search_btn = QPushButton(T("搜索", "Search"), self)
         # v3.29d（UX #20）：「仅文件名」复选框 —— 只按文件名匹配，不搜正文
-        self.search_nameonly = QCheckBox("仅文件名", self)
-        self.search_nameonly.setToolTip("只按文件名搜索（不改文档内容检索）")
+        self.search_nameonly = QCheckBox(T("仅文件名", "File name only"), self)
+        self.search_nameonly.setToolTip(T("只按文件名搜索（不改文档内容检索）", "Search by file name only (does not search document content)"))
         # v3.48.12（SEM-3）：语义搜索开关（本地 TF-IDF + 同义词，首次使用自动建索引）
-        self.search_sem = QCheckBox("语义搜索", self)
+        self.search_sem = QCheckBox(T("语义搜索", "Semantic Search"), self)
         self.search_sem.setToolTip(
             "本地语义搜索：按含义关联查找（离线计算，内容不外传）；\n"
             "首次使用自动建立索引，之后随文档改动增量更新")
@@ -80,7 +80,7 @@ class GlobalSearchPanel(QWidget):
         self.search_scope = QLabel("", self)
         self.search_scope.setObjectName("searchScope")
         self.search_scope.setWordWrap(True)
-        self.search_info = QLabel("输入关键词后回车开始搜索", self)
+        self.search_info = QLabel(T("输入关键词后回车开始搜索", "Type a keyword and press Enter to search"), self)
         self.search_info.setObjectName("searchInfo")
         self.search_info.setWordWrap(True)
         self.search_tree = QTreeWidget(self)
@@ -205,7 +205,7 @@ class GlobalSearchPanel(QWidget):
         """在当前文件夹内跨文件搜索关键词。"""
         query = self.search_edit.text()
         if not query.strip():
-            self.search_info.setText("请输入关键词")
+            self.search_info.setText(T("请输入关键词", "Please enter a keyword"))
             return
         root = self._win.search_root()
         # v3.48.12（SEM-3）：勾选语义搜索且功能启用 → 走本地语义检索（后台建索引）
@@ -222,7 +222,7 @@ class GlobalSearchPanel(QWidget):
 
         self.search_tree.clear()
         name_only = self.search_nameonly.isChecked()   # v3.29d（UX #20）
-        self.search_scope.setText(f"范围：{root}" + ("（仅文件名）" if name_only else ""))
+        self.search_scope.setText(T(f"范围：{root}", f"Scope: {root}") + ("（仅文件名）" if name_only else ""))
         ext = self.search_ext.currentData() or ""
         QApplication.setOverrideCursor(Qt.WaitCursor)
         hits, files, truncated = 0, 0, False
@@ -258,7 +258,7 @@ class GlobalSearchPanel(QWidget):
             QApplication.restoreOverrideCursor()
 
         if not groups:
-            self.search_info.setText(f"未找到匹配「{query}」")
+            self.search_info.setText(T(f"未找到匹配「{query}」", f"No match found for '{query}'"))
             return
         for path, rows in groups.items():
             top = QTreeWidgetItem([f"{os.path.basename(path)}  ({len(rows)})"])
@@ -277,7 +277,7 @@ class GlobalSearchPanel(QWidget):
                 child.setData(0, Qt.UserRole, ("hit", path, no))
                 top.addChild(child)
             if len(rows) > 60:
-                more = QTreeWidgetItem([f"… 该文件还有 {len(rows) - 60} 处匹配"])
+                more = QTreeWidgetItem([T(f"… 该文件还有 {len(rows) - 60} 处匹配", f"... and {len(rows) - 60} more matches in this file")])
                 more.setData(0, Qt.UserRole, ("more", path))
                 top.addChild(more)
             self.search_tree.addTopLevelItem(top)
@@ -328,8 +328,8 @@ class GlobalSearchPanel(QWidget):
         self._sem_worker = None
         self.search_tree.clear()
         ext = self.search_ext.currentData() or ""
-        self.search_scope.setText(f"范围：{root}（语义搜索）")
-        self.search_info.setText("正在准备语义索引…")
+        self.search_scope.setText(T(f"范围：{root}（语义搜索）", f"Scope: {root} (semantic search)"))
+        self.search_info.setText(T("正在准备语义索引…", "Preparing semantic index…"))
         w = semsearch.SemIndexWorker(root, ext, query, limit=60)
         w.progress.connect(self._on_sem_progress)
         w.finished.connect(self._on_sem_done)
@@ -346,7 +346,7 @@ class GlobalSearchPanel(QWidget):
         for r in results:
             groups.setdefault(r["path"], []).append(r)
         if not groups:
-            self.search_info.setText("未找到语义相关的内容（可换个说法，或改用普通搜索）")
+            self.search_info.setText(T("未找到语义相关的内容（可换个说法，或改用普通搜索）", "No semantically related content found (try different wording, or use regular search)"))
             return
         for path, rows in groups.items():
             top = QTreeWidgetItem([f"{os.path.basename(path)}  ({len(rows)})"])
@@ -359,7 +359,7 @@ class GlobalSearchPanel(QWidget):
             for r in rows[:60]:
                 snippet = re.sub(r"\s+", " ", r["text"]).strip()[:110]
                 child = QTreeWidgetItem([f"{r['pct']}% · {r['line']}: {snippet}"])
-                child.setToolTip(0, f"{path}:{r['line']}（相关度 {r['pct']}%）")
+                child.setToolTip(0, T(f"{path}:{r['line']}（相关度 {r['pct']}%）", f"{path}:{r['line']} ({r['pct']}% relevance)"))
                 child.setData(0, Qt.UserRole, ("hit", path, r["line"]))
                 top.addChild(child)
             self.search_tree.addTopLevelItem(top)
@@ -376,9 +376,9 @@ class GlobalSearchPanel(QWidget):
     def _on_sem_fail(self, msg):
         """语义链路异常 → 自动回退普通搜索（不阻塞用户）。"""
         try:
-            self._win.show_status(f"语义搜索失败（{msg}），已回退普通搜索")
+            self._win.show_status(T(f"语义搜索失败（{msg}），已回退普通搜索", f"Semantic search failed ({msg}); fell back to regular search"))
         except Exception:
-            self.search_info.setText(f"语义搜索失败（{msg}），已回退普通搜索")
+            self.search_info.setText(T(f"语义搜索失败（{msg}），已回退普通搜索", f"Semantic search failed ({msg}); fell back to regular search"))
         self.search_sem.blockSignals(True)
         self.search_sem.setChecked(False)
         self.search_sem.blockSignals(False)
@@ -541,10 +541,12 @@ class Sidebar(QWidget):
     TAB_FILES, TAB_OUTLINE, TAB_BOOK, TAB_BACKLINKS = 0, 1, 2, 3
     MD_EXTS = (".md", ".markdown", ".mdown", ".txt")
     # v3.48.35（FILE-SCOPE）：文件列表显示范围（互斥三选一）
-    # all = 文件夹 + 全部文件；dirs = 仅文件夹；md = 文件夹 + Markdown（默认）
-    SCOPES = (("all", "显示所有文件"),
+    # md   = 仅 Markdown 文件（不含文件夹）
+    # dirs = Markdown 文件 + 文件夹
+    # all  = 全部文件 + 文件夹
+    SCOPES = (("md", "仅显示 Markdown 文件"),
               ("dirs", "显示文件夹"),
-              ("md", "仅显示 Markdown 文件"))
+              ("all", "显示所有文件"))
     SCOPE_DEFAULT = "md"
 
     # v3.44.34（BOOK-1）：书籍页签对外信号
@@ -606,9 +608,9 @@ class Sidebar(QWidget):
         tab_row = QHBoxLayout(tabcap)
         tab_row.setContentsMargins(0, 0, 0, 0)
         tab_row.setSpacing(2)
-        self.btn_files = QToolButton(tabcap, text="文件")   # v3.44.3（DESIGN01）：设计稿页签名
-        self.btn_book = QToolButton(tabcap, text="书籍")     # v3.44.34（BOOK-1）+ 书籍目录页签
-        self.btn_outline = QToolButton(tabcap, text="大纲")      # v3.43.0
+        self.btn_files = QToolButton(tabcap, text=T("文件", "Files"))   # v3.44.3（DESIGN01）：设计稿页签名
+        self.btn_book = QToolButton(tabcap, text=T("书籍", "Book"))     # v3.44.34（BOOK-1）+ 书籍目录页签
+        self.btn_outline = QToolButton(tabcap, text=T("大纲", "Outline"))      # v3.43.0
         # v3.48.30（TAB-FIX）：顶部导航固定三项（文件/书籍/大纲）——
         # 反链页签按钮移除（224px 侧栏挤不下四个页签，实测全部被省略成「…」）；
         # 反链面板与数据层保留（select_tab(TAB_BACKLINKS) 仍可用，暂无入口）
@@ -634,14 +636,14 @@ class Sidebar(QWidget):
         self.btn_ol_refresh = QToolButton(self)
         self.btn_ol_refresh.setText("⟳")
         self.btn_ol_refresh.setObjectName("olTool")
-        self.btn_ol_refresh.setToolTip("重建大纲（按当前过滤与显示级别重新生成）")
+        self.btn_ol_refresh.setToolTip(T("重建大纲（按当前过滤与显示级别重新生成）", "Rebuild outline (regenerate by current filter and display level)"))
         self.btn_ol_refresh.setCursor(Qt.PointingHandCursor)
         self.btn_ol_refresh.setFixedSize(22, 22)
         self.btn_ol_refresh.clicked.connect(self.refresh_outline)
         self.btn_ol_fold = QToolButton(self)
         self.btn_ol_fold.setText("⌄")
         self.btn_ol_fold.setObjectName("olTool")
-        self.btn_ol_fold.setToolTip("折叠全部 / 展开全部（大纲树）")
+        self.btn_ol_fold.setToolTip(T("折叠全部 / 展开全部（大纲树）", "Collapse all / Expand all (outline tree)"))
         self.btn_ol_fold.setCursor(Qt.PointingHandCursor)
         self.btn_ol_fold.setFixedSize(22, 22)
         self.btn_ol_fold.clicked.connect(self.toggle_outline_fold)
@@ -655,8 +657,8 @@ class Sidebar(QWidget):
         self.file_header = QPushButton(self)
         self.file_header.setObjectName("fileHeader")
         self.file_header.setCursor(Qt.PointingHandCursor)
-        self.file_header.setText("此电脑")
-        self.file_header.setToolTip("双击返回上一级目录")
+        self.file_header.setText(T("此电脑", "This PC"))
+        self.file_header.setToolTip(T("双击返回上一级目录", "Double-click to go to the parent directory"))
         self.file_header.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.file_header.installEventFilter(self)
         self._cur_dir = None      # None = 「此电脑」层（显示所有盘符）
@@ -684,7 +686,7 @@ class Sidebar(QWidget):
         self._crumb_lay = QHBoxLayout(self.crumbs)
         self._crumb_lay.setContentsMargins(10, 2, 10, 2)
         self._crumb_lay.setSpacing(1)
-        self.crumbs.setToolTip("双击返回上一级目录；悬停查看完整路径")
+        self.crumbs.setToolTip(T("双击返回上一级目录；悬停查看完整路径", "Double-click to go to the parent directory; hover to view the full path"))
         self.crumbs.installEventFilter(self)
         self._crumb_full = ""      # 完整路径（悬停浮层展示用）
         # v3.45.7（CRUMB-2）：悬停/靠近时浮出完整路径浮层，随鼠标向右逐步展开
@@ -707,7 +709,7 @@ class Sidebar(QWidget):
         self._crumb_up.setIconSize(QSize(16, 16))
         self._crumb_up.setCursor(Qt.PointingHandCursor)
         self._crumb_up.setFixedSize(22, 22)
-        self._crumb_up.setToolTip("返回上一级目录")
+        self._crumb_up.setToolTip(T("返回上一级目录", "Go to parent directory"))
         self._crumb_up.clicked.connect(self.go_up)
         self.file_panel = QWidget(self)
         fp_lay = QVBoxLayout(self.file_panel)
@@ -720,7 +722,7 @@ class Sidebar(QWidget):
         # 保留列表原有排序与选中态。交互参考 Source Insight 文件查找。
         self.file_filter = QLineEdit(self)
         self.file_filter.setObjectName("fileFilter")
-        self.file_filter.setPlaceholderText("筛选文件（实时，不区分大小写）")
+        self.file_filter.setPlaceholderText(T("筛选文件（实时，不区分大小写）", "Filter files (real-time, case-insensitive)"))
         self.file_filter.setClearButtonEnabled(True)   # 行内清除钮（×）
         # v3.48.35（DROP-MD）：筛选框不接受拖放 —— 否则把 .md 拖进来只会
         # 在框里粘出一串路径；关掉后 drop 冒泡到主窗口，按「打开文档」处理。
@@ -823,7 +825,7 @@ class Sidebar(QWidget):
         self.btn_bl_refresh = QToolButton(self)
         self.btn_bl_refresh.setText("⟳")
         self.btn_bl_refresh.setObjectName("olTool")
-        self.btn_bl_refresh.setToolTip("重建反向链接（重新扫描笔记库）")
+        self.btn_bl_refresh.setToolTip(T("重建反向链接（重新扫描笔记库）", "Rebuild backlinks (rescan notes library)"))
         self.btn_bl_refresh.setCursor(Qt.PointingHandCursor)
         self.btn_bl_refresh.setFixedSize(22, 22)
         self.btn_bl_refresh.clicked.connect(self._on_bl_refresh)
@@ -1015,19 +1017,19 @@ class Sidebar(QWidget):
         if item is None:
             # 空白处：管理操作作用于当前所在文件夹
             if d and self._file_mode != "blank":
-                menu.addAction("新建 Markdown 文件", lambda: self._file_new_file(d))
-                menu.addAction("新建文件夹", lambda: self._file_new_dir(d))
+                menu.addAction(T("新建 Markdown 文件", "New Markdown File"), lambda: self._file_new_file(d))
+                menu.addAction(T("新建文件夹", "New Folder"), lambda: self._file_new_dir(d))
                 menu.addSeparator()
-                sort_menu = menu.addMenu("排序方式")   # v3.39（FL-5）
+                sort_menu = menu.addMenu(T("排序方式", "Sort By"))   # v3.39（FL-5）
                 for _label, _mode in (("名称升序", 0), ("名称降序", 1),
                                       ("修改时间 新→旧", 2)):
                     sort_menu.addAction(_label,
                                         lambda m=_mode: self._set_sort_mode(m))
                 menu.addSeparator()
-                menu.addAction("刷新", self._refresh_files)
+                menu.addAction(T("刷新", "Refresh"), self._refresh_files)
             elif self._cur_dir is None and self._pinned_dirs():
                 # v3.39（FL-6）：「此电脑」层空白右键 —— 清理失效固定项
-                menu.addAction("清理失效的固定目录", self._clean_dead_pins)
+                menu.addAction(T("清理失效的固定目录", "Clean Invalid Pinned Folders"), self._clean_dead_pins)
             if menu.isEmpty():
                 return
             menu.exec(self.file_list.mapToGlobal(pos))
@@ -1037,40 +1039,40 @@ class Sidebar(QWidget):
             return
         kind, p = data
         if kind == "dir":
-            menu.addAction("进入文件夹", lambda: self._on_file_dbl(item))
+            menu.addAction(T("进入文件夹", "Enter Folder"), lambda: self._on_file_dbl(item))
             # v3.39（FL-6）：固定 / 取消固定
             menu.addSeparator()
             if p in self._pinned_dirs():
-                menu.addAction("取消固定", lambda: self._unpin_dir(p))
+                menu.addAction(T("取消固定", "Unpin"), lambda: self._unpin_dir(p))
             else:
-                menu.addAction("固定此目录", lambda: self._pin_dir(p))
+                menu.addAction(T("固定此目录", "Pin This Folder"), lambda: self._pin_dir(p))
         elif kind == "ext":                    # v3.39（FL-4）
-            menu.addAction("用外部程序打开", lambda: self._win.open_external(p))
+            menu.addAction(T("用外部程序打开", "Open With External Program"), lambda: self._win.open_external(p))
         else:
-            menu.addAction("打开", lambda: self._win.open_file(p))
-        menu.addAction("在资源管理器中显示", lambda: self._win.show_in_explorer(p))
+            menu.addAction(T("打开", "Open"), lambda: self._win.open_file(p))
+        menu.addAction(T("在资源管理器中显示", "Show in File Explorer"), lambda: self._win.show_in_explorer(p))
         if kind == "file":
-            menu.addAction("用外部程序打开", lambda: self._win.open_external(p))
+            menu.addAction(T("用外部程序打开", "Open With External Program"), lambda: self._win.open_external(p))
             # v3.48.31（MENU-AI）：「AI优化」—— 对该文件整篇发起预设改写
             # （原正文选区右键的「整篇优化」迁到此处：语义由「当前活动文档」
             #  变为「右键所指文件」，未打开的文件先打开，就绪后再发起）。
             # v3.48.36（AI-MENUS）：菜单项可在 系统设置 → AI 菜单 自定义
             from ai_pane import ai_menu_items
-            ai_menu = menu.addMenu("AI优化")
+            ai_menu = menu.addMenu(T("AI优化", "AI Optimize"))
             for _it in ai_menu_items(self._win._settings, "doc"):
                 ai_menu.addAction(
                     _it["label"],
                     lambda k=_it["key"], pr=_it["prompt"], pp=p:
                     self._win._ai_doc_action_for_path(k, pp, pr))
             # v3.35（TPL-D）：把该文档收编为自定义模板（追加到 / 菜单与悬浮模板菜单）
-            menu.addAction("设为模板…", lambda: self._win.make_template_from_file(p))
+            menu.addAction(T("设为模板…", "Set as Template…"), lambda: self._win.make_template_from_file(p))
             # v3.48.31：原「插入目录 / 删除目录」两项已从文件列表移除 ——
             # 它们是**书籍**功能（给整本书生成 / 移除「目录」页），挂在文件
             # 列表上会误触且常因目标文档异步未就绪而无反应；书籍入口保留在
             # 书籍树右键菜单（插入目录 / 删除目录）。
         menu.addSeparator()
-        menu.addAction("重命名", lambda: self._file_rename(p))
-        menu.addAction("删除（移入回收站）", lambda: self._file_delete(p))
+        menu.addAction(T("重命名", "Rename"), lambda: self._file_rename(p))
+        menu.addAction(T("删除（移入回收站）", "Delete (Move to Recycle Bin)"), lambda: self._file_delete(p))
         menu.exec(self.file_list.mapToGlobal(pos))
 
     def go_up(self):
@@ -1147,7 +1149,7 @@ class Sidebar(QWidget):
                 if self._dir_usable(p):
                     it.setToolTip(p)
                 else:
-                    it.setToolTip(p + "\n（目录已失效，可右键取消固定）")
+                    it.setToolTip(p + T("\n（目录已失效，可右键取消固定）", "\n(Directory invalid; right-click to unpin)"))
                     it.setForeground(self._muted_color())
                 self.file_list.addItem(it)
             if pins:
@@ -1189,10 +1191,14 @@ class Sidebar(QWidget):
                     return 0.0
             files.sort(key=_mtime, reverse=True)
             others.sort(key=_mtime, reverse=True)
-        # v3.48.35（FILE-SCOPE）：按显示范围裁剪（文件夹恒在，便于继续下钻）
-        if self._scope == "dirs":
-            files, others = [], []
-        elif self._scope == "md":
+        # v3.48.35（FILE-SCOPE）：按显示范围裁剪
+        # md   = 仅 Markdown 文件（不显示文件夹）
+        # dirs = Markdown 文件 + 文件夹
+        # all  = 全部文件 + 文件夹
+        if self._scope == "md":
+            others = []
+            dirs = []
+        elif self._scope == "dirs":
             others = []
         for n in dirs:
             p = os.path.join(self._cur_dir, n)
@@ -1210,7 +1216,7 @@ class Sidebar(QWidget):
             p = os.path.join(self._cur_dir, n)
             it = QListWidgetItem(icon_file(), n)
             it.setData(Qt.UserRole, ("ext", p))
-            it.setToolTip(p + "\n（非 Markdown 文件，将用外部程序打开）")
+            it.setToolTip(p + T("\n（非 Markdown 文件，将用外部程序打开）", "\n(Non-Markdown file; will open with external program)"))
             it.setForeground(self._muted_color())
             self.file_list.addItem(it)
         # 高亮当前文件
@@ -1249,7 +1255,9 @@ class Sidebar(QWidget):
         """目录切换时清空筛选框（筛选针对当前目录陈列，跨目录无意义）。
 
         直接 setText("") 会触发 textChanged → _apply_file_filter 即时复位为全显示，
-        随后 _refresh_files 重建列表并再次应用（空筛选 = 全显），无副作用。"""
+        随后 _refresh_files 重建列表并再次应用（空筛选 = 全显），无副作用。
+        Directly calling setText("") fires textChanged → _apply_file_filter resets to show all;
+        _refresh_files then rebuilds the list and re-applies (empty filter = show all); no side effects. """
         f = getattr(self, "file_filter", None)
         if f is not None and f.text():
             f.setText("")
@@ -1269,8 +1277,9 @@ class Sidebar(QWidget):
         m = QMenu(self)
         grp = QActionGroup(m)
         grp.setExclusive(True)
+        scope_en = {"md": "Markdown Only", "dirs": "Show Folders", "all": "Show All Files"}
         for key, label in self.SCOPES:
-            a = QAction(label, m)
+            a = QAction(T(label, scope_en.get(key, label)), m)
             a.setCheckable(True)
             a.setChecked(key == self._scope)
             a.triggered.connect(lambda _c=False, k=key: self._set_scope(k))
@@ -1297,8 +1306,42 @@ class Sidebar(QWidget):
         label = dict(self.SCOPES).get(getattr(self, "_scope", self.SCOPE_DEFAULT), "")
         btn = getattr(self, "btn_scope", None)
         if btn is not None:
-            btn.setToolTip("显示范围：%s\n（点击切换：显示所有文件 / 显示文件夹 / "
-                           "仅显示 Markdown 文件）" % label)
+            btn.setToolTip(T("显示范围：%s\n（点击切换：仅显示 Markdown 文件 / 显示文件夹 / 显示所有文件）" % label,
+                             "Show scope: %s\n(Click to switch: Markdown only / Show folders / Show all files)" % label))
+
+    # ============ v3.49（I18N）：语言切换后刷新侧栏持久文案 ============
+    def _retranslate(self):
+        """界面语言变更后即时刷新侧栏持久控件文案。
+
+        右键菜单 / 上下文菜单均在弹出时即时调用 T() 取词，无需在此处理；
+        此处仅覆盖构建期写入的持久标签（页签、搜索面板、范围钮、文件头、大纲工具钮）。
+        """
+        self.btn_files.setText(T("文件", "Files"))
+        self.btn_book.setText(T("书籍", "Book"))
+        self.btn_outline.setText(T("大纲", "Outline"))
+        if getattr(self, "search_edit", None) is not None:
+            self.search_edit.setPlaceholderText(
+                T("在当前文件夹内搜索（支持正则）…", "Search in current folder (regex supported)…"))
+        if getattr(self, "search_ext", None) is not None:
+            for i in range(self.search_ext.count()):
+                key = self.search_ext.itemData(i)
+                if key == "":
+                    self.search_ext.setItemText(i, T("全部", "All"))
+                elif key == ".md":
+                    self.search_ext.setItemText(i, T("仅 .md", "Markdown only"))
+                elif key == ".txt":
+                    self.search_ext.setItemText(i, T("仅 .txt", "Text only"))
+        if getattr(self, "search_sem", None) is not None:
+            self.search_sem.setText(T("语义搜索", "Semantic Search"))
+        self._update_scope_btn()
+        self._update_file_header()
+        if getattr(self, "btn_ol_refresh", None) is not None:
+            self.btn_ol_refresh.setToolTip(
+                T("重建大纲（按当前过滤与显示级别重新生成）",
+                  "Rebuild outline (regenerate by current filter and display level)"))
+        if getattr(self, "btn_ol_fold", None) is not None:
+            self.btn_ol_fold.setToolTip(
+                T("折叠全部 / 展开全部（大纲树）", "Collapse all / Expand all (outline tree)"))
 
     # ============ v3.39（FL-5）：排序方式 ============
     def _sort_mode(self):
@@ -1324,7 +1367,7 @@ class Sidebar(QWidget):
         if p in pins:
             return
         if len(pins) >= self.PIN_MAX:
-            self._win.show_status("固定目录最多 %d 个，请先取消固定再试" % self.PIN_MAX)
+            self._win.show_status(T("固定目录最多 %d 个，请先取消固定再试", "At most %d pinned folders; unpin one first") % self.PIN_MAX)
             return
         pins.append(p)
         self._win._settings.setValue("sidebar/pinnedDirs", pins)
@@ -1342,7 +1385,7 @@ class Sidebar(QWidget):
         self._win._settings.setValue("sidebar/pinnedDirs", pins)
         if self._cur_dir is None:
             self._refresh_files()
-        self._win.show_status("已清理失效的固定目录")
+        self._win.show_status(T("已清理失效的固定目录", "Cleared invalid pinned folders"))
 
     def _muted_color(self):
         """主题禁用色（FL-4 灰显 / FL-6 失效固定项）。"""
@@ -1365,16 +1408,19 @@ class Sidebar(QWidget):
         # （设计稿只有 页签行 + 面包屑路径 + 列表），路径统一由面包屑承担；
         # 仅 blank 模式保留头行提示。双击面包屑返回上一级的习惯不变。
         if self._file_mode == "blank":
-            self.file_header.setText("空白")
-            self.file_header.setToolTip("文件列表已设置为空白项\n（可在 系统设置→通用 修改）")
+            self.file_header.setText(T("空白", "Blank"))
+            self.file_header.setToolTip(T("文件列表已设置为空白项\n（可在 系统设置→通用 修改）",
+                                          "File list set to blank item\n(change in Settings → General)"))
             self.file_header.setVisible(True)
             self._rebuild_crumbs()   # v3.39（FL-1）：blank 模式隐藏面包屑
             return
         self.file_header.setVisible(False)
         if self._cur_dir is None:
-            self.file_header.setToolTip("我的电脑（顶层）\n列表为所有盘符")
+            self.file_header.setToolTip(T("我的电脑（顶层）\n列表为所有盘符",
+                                          "My Computer (top level)\nLists all drives"))
         else:
-            self.file_header.setToolTip(self._cur_dir + "\n双击返回上一级目录")
+            self.file_header.setToolTip(self._cur_dir + T("\n双击返回上一级目录",
+                                                          "\nDouble-click to go to the parent directory"))
         self._rebuild_crumbs()
 
     # ============ v3.39（FL-1）：面包屑路径条 ============
@@ -1494,7 +1540,7 @@ class Sidebar(QWidget):
             b = QToolButton(self.crumbs)
             b.setText("…")
             b.setObjectName("crumbDots")
-            b.setToolTip("已折叠 %d 级上层目录（含「此电脑」），点击展开" % (len(hidden) + 1))
+            b.setToolTip(T("已折叠 %d 级上层目录（含「此电脑」），点击展开", "Collapsed %d upper directory levels (including 'This PC'); click to expand") % (len(hidden) + 1))
             b.setCursor(Qt.PointingHandCursor)
             b.setAutoRaise(True)
             b_css = (
@@ -1614,17 +1660,17 @@ class Sidebar(QWidget):
             return
         self.outline.setCurrentItem(item)
         menu = QMenu(self)
-        act_jump = menu.addAction("跳转到此处")
-        act_copy = menu.addAction("复制标题文本")
+        act_jump = menu.addAction(T("跳转到此处", "Jump to Here"))
+        act_copy = menu.addAction(T("复制标题文本", "Copy Heading Text"))
         menu.addSeparator()
-        act_exp = menu.addAction("展开子节点")
-        act_col = menu.addAction("折叠子节点")
+        act_exp = menu.addAction(T("展开子节点", "Expand Children"))
+        act_col = menu.addAction(T("折叠子节点", "Collapse Children"))
         menu.addSeparator()
-        act_top = menu.addAction("移到开头")
-        act_end = menu.addAction("移到末尾")
+        act_top = menu.addAction(T("移到开头", "Move to Start"))
+        act_end = menu.addAction(T("移到末尾", "Move to End"))
         menu.addSeparator()
         # v3.47.1（TOC-FIX）：大纲右键可直接删除文档已插入的目录块
-        act_del = menu.addAction("删除文档目录")
+        act_del = menu.addAction(T("删除文档目录", "Delete Document TOC"))
         act = menu.exec(self.outline.viewport().mapToGlobal(pos))
         if act is act_jump:
             self._on_outline_clicked(item)
@@ -1633,7 +1679,7 @@ class Sidebar(QWidget):
             QApplication.clipboard().setText(str(text))
             win = getattr(self, "_win", None)
             if win is not None and hasattr(win, "show_status"):
-                win.show_status("已复制标题文本")
+                win.show_status(T("已复制标题文本", "Heading text copied"))
         elif act is act_exp:
             self._set_children_expanded(item, True)
         elif act is act_col:
@@ -1703,7 +1749,7 @@ class Sidebar(QWidget):
     def set_backlinks(self, title, items):
         """刷新反链列表。items = [(src_path, line, snippet), ...]（已按文件聚合）。"""
         self.bl_list.clear()
-        self.bl_info.setText(f"「{title}」被 {len(items)} 处引用" if items
+        self.bl_info.setText(T(f"「{title}」被 {len(items)} 处引用", f"'{title}' is referenced by {len(items)} locations") if items
                              else f"「{title}」暂未被引用")
         if not items:
             self.bl_list.setVisible(False)
@@ -1807,7 +1853,7 @@ class Sidebar(QWidget):
             # v3.45.3（BOOK-6）：只显示子章节名（文件名移到状态栏，见
             # bookEntrySelected）；无对应文件的章节标题静音灰。
             # 只 setText 不挂单元控件 —— 否则委托与单元各画一次出现「重影」。
-            item.setText(0, node["title"] or "（未命名）")
+            item.setText(0, node["title"] or T("（未命名）", "(Untitled)"))
             item.setIcon(0, self._book_node_icon(node))   # v3.45.8（REQ2）：绿/红 📚
             if not node.get("path"):
                 item.setForeground(0, QColor(150, 150, 150))
@@ -1883,23 +1929,23 @@ class Sidebar(QWidget):
         # ---- 整书节点 ----
         if node["kind"] == "book":
             menu = QMenu(self)
-            act_open_dir = menu.addAction("打开所在文件")
+            act_open_dir = menu.addAction(T("打开所在文件", "Open Containing File"))
             menu.addSeparator()
-            m_export = menu.addMenu("导出整本书")
+            m_export = menu.addMenu(T("导出整本书", "Export Whole Book"))
             act_pdf = m_export.addAction("导出 PDF（含书签 / 页码）")
             act_epub = m_export.addAction("导出 EPUB")
             act_html = m_export.addAction("导出 HTML 站点（多页）")
             act_docx = m_export.addAction("导出 Word (docx)")
             menu.addSeparator()
-            act_new = menu.addAction("新增章节")
-            act_edit_summary = menu.addAction("编辑目录")
-            act_insert_toc = menu.addAction("插入目录")
+            act_new = menu.addAction(T("新增章节", "Add Chapter"))
+            act_edit_summary = menu.addAction(T("编辑目录", "Edit TOC"))
+            act_insert_toc = menu.addAction(T("插入目录", "Insert TOC"))
             has_toc = bool(getattr(getattr(self, "_win", None),
                                   "_book_toc_page", None))
-            act_remove_toc = menu.addAction("删除目录")
+            act_remove_toc = menu.addAction(T("删除目录", "Delete TOC"))
             if not has_toc:
                 act_remove_toc.setEnabled(False)
-            act_close = menu.addAction("关闭书籍")
+            act_close = menu.addAction(T("关闭书籍", "Close Book"))
             choice = menu.exec(tree.mapToGlobal(pos))
             if choice is None:
                 return
@@ -1928,15 +1974,15 @@ class Sidebar(QWidget):
         menu = QMenu(self)
         is_chapter = (node["kind"] == "chapter")
         if is_chapter and node.get("path"):
-            act_open = menu.addAction("打开")
-        act_edit = menu.addAction("编辑")
-        act_del = menu.addAction("删除")
+            act_open = menu.addAction(T("打开", "Open"))
+        act_edit = menu.addAction(T("编辑", "Edit"))
+        act_del = menu.addAction(T("删除", "Delete"))
         menu.addSeparator()
-        act_child = menu.addAction("新增子章节")
-        act_sib = menu.addAction("新增同级章节")
+        act_child = menu.addAction(T("新增子章节", "Add Subchapter"))
+        act_sib = menu.addAction(T("新增同级章节", "Add Sibling Chapter"))
         menu.addSeparator()
-        act_out = menu.addAction("上移一层")
-        act_in = menu.addAction("下移一层")
+        act_out = menu.addAction(T("上移一层", "Move Up One Level"))
+        act_in = menu.addAction(T("下移一层", "Move Down One Level"))
         # 层级升降可用性（顶层章节不可再上移；无前驱同级不可下移）
         _p = item.parent()
         _can_out = bool(_p is not None and _p.parent() is not None)
@@ -1974,14 +2020,14 @@ class Sidebar(QWidget):
         其它章节对该文件的相对链接不会自动重写（已知限制）。
         """
         dlg = QDialog(self)
-        dlg.setWindowTitle("编辑章节")
+        dlg.setWindowTitle(T("编辑章节", "Edit Chapter"))
         form = QFormLayout(dlg)
         e_title = QLineEdit(node["title"] or "")
         e_file = QLineEdit(node.get("path") or "")
-        e_file.setPlaceholderText("相对路径，如 guide/intro.md")
+        e_file.setPlaceholderText(T("相对路径，如 guide/intro.md", "Relative path, e.g. guide/intro.md"))
         form.addRow("目录名", e_title)
         form.addRow("Markdown 文件", e_file)
-        hint = QLabel("修改文件名将重命名磁盘上的 .md 文件；其它章节对该文件的相对链接不会自动更新。")
+        hint = QLabel(T("修改文件名将重命名磁盘上的 .md 文件；其它章节对该文件的相对链接不会自动更新。", "Changing the file name renames the .md file on disk; relative links from other chapters to this file will not be updated automatically."))
         hint.setStyleSheet("color:#9aa0a6;font-size:11px")
         hint.setWordWrap(True)
         form.addRow(hint)
@@ -1994,10 +2040,10 @@ class Sidebar(QWidget):
         new_title = e_title.text().strip()
         new_file = e_file.text().strip()
         if not new_title:
-            QMessageBox.warning(self, "编辑章节", "目录名不能为空。")
+            QMessageBox.warning(self, T("编辑章节", "Edit Chapter"), T("目录名不能为空。", "Directory name cannot be empty."))
             return
         if new_file and not re.search(r"\.(md|markdown|mdown)$", new_file, re.I):
-            QMessageBox.warning(self, "编辑章节",
+            QMessageBox.warning(self, T("编辑章节", "Edit Chapter"),
                                 "Markdown 文件名须以 .md / .markdown / .mdown 结尾。")
             return
         # 文件名变更 → 重命名磁盘文件
@@ -2006,21 +2052,21 @@ class Sidebar(QWidget):
             new_abs = self._book_resolve_path(new_file)
             if old_abs and new_abs and os.path.exists(old_abs) and old_abs != new_abs:
                 if os.path.exists(new_abs):
-                    QMessageBox.warning(self, "编辑章节",
+                    QMessageBox.warning(self, T("编辑章节", "Edit Chapter"),
                                         "目标文件已存在，未重命名：" + new_file)
                     return
                 try:
                     os.makedirs(os.path.dirname(new_abs) or ".", exist_ok=True)
                     os.rename(old_abs, new_abs)
                 except OSError as e:
-                    QMessageBox.warning(self, "重命名失败", str(e))
+                    QMessageBox.warning(self, T("重命名失败", "Rename failed"), str(e))
                     return
             node["path"] = new_file
             node["abs_path"] = new_abs
         node["title"] = new_title
         # v3.45.3（BOOK-6）：章节项只显示目录名（纯文本，无单元控件），
         # 重命名后同步刷新文本即可。
-        item.setText(0, new_title or "（未命名）")
+        item.setText(0, new_title or T("（未命名）", "(Untitled)"))
         # v3.45.8：从控件树重建 root 再写回 SUMMARY（修复旧版 emit 陈旧 root 导致新增/编辑/删除重启丢失）
         self._on_book_dropped()
 
@@ -2038,11 +2084,11 @@ class Sidebar(QWidget):
 
         v3.45.7（REQ2）：标题输入时自动联动文件名（除非用户手动改过文件名）。"""
         dlg = QDialog(self)
-        dlg.setWindowTitle("新增章节")
+        dlg.setWindowTitle(T("新增章节", "Add Chapter"))
         form = QFormLayout(dlg)
         e_title = QLineEdit(title0)
         e_file = QLineEdit(self._slugify(title0))
-        e_file.setPlaceholderText("相对路径，如 chapter/intro.md")
+        e_file.setPlaceholderText(T("相对路径，如 chapter/intro.md", "Relative path, e.g. chapter/intro.md"))
         form.addRow("章节名称", e_title)
         form.addRow("Markdown 文件", e_file)
         file_manual = {"v": False}
@@ -2065,10 +2111,10 @@ class Sidebar(QWidget):
         title = e_title.text().strip()
         fname = e_file.text().strip()
         if not title:
-            QMessageBox.warning(self, "新增章节", "章节名称不能为空。")
+            QMessageBox.warning(self, T("新增章节", "Add Chapter"), T("章节名称不能为空。", "Chapter name cannot be empty."))
             return None
         if not re.search(r"\.(md|markdown|mdown)$", fname, re.I):
-            QMessageBox.warning(self, "新增章节",
+            QMessageBox.warning(self, T("新增章节", "Add Chapter"),
                                 "Markdown 文件名须以 .md / .markdown / .mdown 结尾。")
             return None
         return title, fname
@@ -2259,12 +2305,12 @@ class Sidebar(QWidget):
             self._refresh_files()
             self._update_file_header()
             if toast:
-                self._win.show_status("文件列表默认路径为空或不可用，已回退到「此电脑」")
+                self._win.show_status(T("文件列表默认路径为空或不可用，已回退到「此电脑」", "File list default path is empty or unavailable; fell back to 'This PC'"))
             return False
         self.set_root(target)
         self.highlight_dir(target)
         if toast:
-            self._win.show_status(f"文件列表已定位到默认路径 · {target}")
+            self._win.show_status(T(f"文件列表已定位到默认路径 · {target}", f"File list located at default path · {target}"))
         return True
 
     def restore_initial_dir(self, once=False):
@@ -2438,7 +2484,7 @@ class Sidebar(QWidget):
             it.setToolTip(0, h["text"])
             self._outline_items[h["index"]] = it   # v3.31（#8）：字数后缀原地更新用
             if real > self._outline_level:
-                it.setToolTip(0, h["text"] + f"\n（{real} 级标题，双击可展开/折叠）")
+                it.setToolTip(0, h["text"] + T(f"\n（{real} 级标题，双击可展开/折叠）", f"\n({real}-level heading, double-click to expand/collapse)"))
             # 挂到最近上级标题（h4 -> 最近的 h3；无 h3 时逐级向上找）
             parent = None
             for pl in range(real - 1, 0, -1):
@@ -2456,9 +2502,9 @@ class Sidebar(QWidget):
             it.setExpanded(real < self._outline_level)
         # v3.44.9（OUT-STRIP2）：底部「N 个标题」计数行已移除；仅保留空态引导
         if not shown:
-            ph = QTreeWidgetItem(["用 # 开始一行即可出现在大纲"])
+            ph = QTreeWidgetItem([T("用 # 开始一行即可出现在大纲", "Start a line with # to appear in the outline")])
             ph.setDisabled(True)
-            ph.setToolTip(0, "任意一行以 # 开头即成为标题，会出现在这里")
+            ph.setToolTip(0, T("任意一行以 # 开头即成为标题，会出现在这里", "Any line starting with # becomes a heading and appears here"))
             self.outline.addTopLevelItem(ph)
         self.outline.blockSignals(False)
         self._update_outline_words(headings or [])   # v3.31（#8）：分节字数后缀
@@ -2503,7 +2549,7 @@ class Sidebar(QWidget):
         self.set_outline(self._last_headings)
         win = getattr(self, "_win", None)
         if win is not None and hasattr(win, "show_status"):
-            win.show_status("大纲已重建")
+            win.show_status(T("大纲已重建", "Outline rebuilt"))
 
     def toggle_outline_fold(self):
         """折叠全部 / 展开全部（按当前是否还有展开节点自动取反）。"""
@@ -2569,7 +2615,7 @@ class Sidebar(QWidget):
 
     # ================= v3.31.2 文件页管理操作（自「目录」页迁入） =================
     def _file_new_file(self, d):
-        name, ok = QInputDialog.getText(self, "新建 Markdown 文件", "文件名：",
+        name, ok = QInputDialog.getText(self, "新建 Markdown 文件", T("文件名：", "File name:"),
                                         text="未命名.md")
         if not ok:
             return
@@ -2580,19 +2626,19 @@ class Sidebar(QWidget):
             name += ".md"
         p = os.path.join(d, name)
         if os.path.exists(p):
-            QMessageBox.warning(self, "新建文件", "同名文件已存在。")
+            QMessageBox.warning(self, T("新建文件", "New File"), T("同名文件已存在。", "A file with the same name already exists."))
             return
         try:
             with open(p, "w", encoding="utf-8") as f:
                 f.write("# " + os.path.splitext(name)[0] + "\n\n")
         except OSError as e:
-            QMessageBox.critical(self, "新建文件", str(e))
+            QMessageBox.critical(self, T("新建文件", "New File"), str(e))
             return
         self._refresh_files()
         self._win.open_file(p)
 
     def _file_new_dir(self, d):
-        name, ok = QInputDialog.getText(self, "新建文件夹", "文件夹名：")
+        name, ok = QInputDialog.getText(self, T("新建文件夹", "New Folder"), T("文件夹名：", "Folder name:"))
         if not ok:
             return
         name = name.strip()
@@ -2600,34 +2646,34 @@ class Sidebar(QWidget):
             return
         p = os.path.join(d, name)
         if os.path.exists(p):
-            QMessageBox.warning(self, "新建文件夹", "同名文件夹已存在。")
+            QMessageBox.warning(self, T("新建文件夹", "New Folder"), T("同名文件夹已存在。", "A folder with the same name already exists."))
             return
         try:
             os.makedirs(p)
         except OSError as e:
-            QMessageBox.critical(self, "新建文件夹", str(e))
+            QMessageBox.critical(self, T("新建文件夹", "New Folder"), str(e))
             return
         self._refresh_files()
 
     def _file_rename(self, p):
         base = os.path.basename(p)
-        new, ok = QInputDialog.getText(self, "重命名", "新名称：", text=base)
+        new, ok = QInputDialog.getText(self, T("重命名", "Rename"), T("新名称：", "New name:"), text=base)
         if not ok:
             return
         new = new.strip()
         if not new or new == base:
             return
         if any(ch in new for ch in '\\/:*?"<>|'):
-            QMessageBox.warning(self, "重命名", "名称不能包含 \\/:*?\"<>| 等字符。")
+            QMessageBox.warning(self, T("重命名", "Rename"), "名称不能包含 \\/:*?\"<>| 等字符。")
             return
         np = os.path.join(os.path.dirname(p), new)
         if os.path.exists(np):
-            QMessageBox.warning(self, "重命名", "目标名称已存在。")
+            QMessageBox.warning(self, T("重命名", "Rename"), T("目标名称已存在。", "Target name already exists."))
             return
         try:
             os.rename(p, np)
         except OSError as e:
-            QMessageBox.critical(self, "重命名", str(e))
+            QMessageBox.critical(self, T("重命名", "Rename"), str(e))
             return
         self._win.rename_current_file(p, np)
         if os.path.abspath(p) == os.path.abspath(self._cur_file or ""):
@@ -2638,10 +2684,10 @@ class Sidebar(QWidget):
         is_cur = p == getattr(self._win, "file_path", None)
         tip = ("\n注意：这是当前正在编辑的文件，删除后请不要再保存该标签\n"
                "（否则会以原内容重建同名文件）。") if is_cur else ""
-        if QMessageBox.question(self, "删除确认",
+        if QMessageBox.question(self, T("删除确认", "Confirm Deletion"),
                                 f"确定把\n{p}\n移入回收站吗？{tip}",
                                 QMessageBox.Ok | QMessageBox.Cancel) != QMessageBox.Ok:
             return
         if self._win.recycle_path(p):
             self._refresh_files()
-            self._win.show_status("已移入回收站：" + p)
+            self._win.show_status(T("已移入回收站：", "Moved to Recycle Bin: ") + p)

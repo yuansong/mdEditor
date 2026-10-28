@@ -1,17 +1,26 @@
 # -*- coding: utf-8 -*-
 """国际化（i18n）基础设施：界面语言读取 / 保存 + T() 取词。
+Internationalization (i18n) infrastructure: language read/save + T() lookup.
 
-设计要点
+设计要点 / Design notes
 --------
 - 以「中文原文」为 key，英文译文存于 EN 字典（zh -> en）。
+  Chinese source text is the key; English translations live in the EN dict (zh -> en).
 - ``T(zh)`` 在中文环境下原样返回；英文环境下返回 EN[zh]，缺失译文时
   回退到调用方传入的 en 参数（若有）或原中文，**绝不抛错、绝不显示 key**。
+  ``T(zh)`` returns zh as-is in Chinese mode; in English mode it returns EN[zh],
+  falling back to the caller's en arg (if given) or the original zh —
+  never raises, never displays the key.
 - 动态串（含 f-string 变量）请用 ``T(f"中文{n}", f"English {n}")`` 形式，
   英文模式直接返回已格式化的 en 参数。
+  For dynamic strings (with f-string vars), use ``T(f"中文{n}", f"English {n}")``;
+  English mode returns the already-formatted en arg.
 - 语言存于 QSettings("WorkBuddy", "WorkBuddyMarkdown") 的 "language" 键，
   "zh" / "en" 二选一，缺省 "zh"。
+  Language is stored under QSettings("WorkBuddy","WorkBuddyMarkdown") key "language";
+  "zh"/"en", default "zh".
 
-用法
+用法 / Usage
 ----
     from i18n import T, get_lang, set_lang
     self.setWindowTitle(T("系统设置"))
@@ -256,10 +265,12 @@ def set_lang(lang):
 
 
 def T(zh, en=None):
-    """按当前语言取词。
+    """按当前语言取词。/ Look up a term by the current UI language.
 
     - 中文环境：返回 zh（en 参数被忽略）。
+      Chinese mode: returns zh (the en arg is ignored).
     - 英文环境：优先返回 en 参数，否则返回 EN[zh]，再否则返回 zh（回退）。
+      English mode: returns the en arg first, else EN[zh], else falls back to zh.
     """
     if get_lang() == "en":
         if en is not None:

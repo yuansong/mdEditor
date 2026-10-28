@@ -19,6 +19,7 @@ import subprocess
 import uuid
 import zipfile
 import mdutil   # v3.45（BOOKLINK-E）：锚点 slug 与编辑器同源
+from i18n import T   # v3.49（I18N）：导出产物中的中文文案随界面语言
 
 _log = logging.getLogger("mdEditor.export")
 
@@ -228,7 +229,7 @@ def plain_inline(text):
     parts = []
     for t in parse_inline(text):
         if t.get("image"):
-            parts.append(t.get("alt") or "图片")
+            parts.append(t.get("alt") or T("图片", "image"))
         elif t.get("fnref"):
             parts.append("[" + t["fnref"] + "]")
         elif t.get("math") is not None:
@@ -777,7 +778,7 @@ def _blocks_to_xhtml(blocks, base_dir, images, mmd_png=None, math_png=None,
                 # v3.30.19（MMD-2）：图表 PNG 随 EPUB 打包内嵌
                 img_name = f"mmd-{len(images) + 1}.png"
                 images[img_name] = mmd_png[code]
-                out.append(f'<p><img src="images/{img_name}" alt="图表"/></p>')
+                out.append(f'<p><img src="images/{img_name}" alt="{T("图表", "chart")}"/></p>')
                 continue
             if lang == "math":
                 # v3.44.31（MATH-EXP）：已位图化的公式（B: 前缀区分块级）直接内嵌
@@ -785,7 +786,7 @@ def _blocks_to_xhtml(blocks, base_dir, images, mmd_png=None, math_png=None,
                 if png and os.path.isfile(png):
                     img_name = f"math_{uuid.uuid4().hex[:8]}.png"
                     images[img_name] = png
-                    out.append(f'<p><img class="mblock" src="images/{img_name}" alt="公式"/></p>')
+                    out.append(f'<p><img class="mblock" src="images/{img_name}" alt="{T("公式", "formula")}"/></p>')
                     continue
             if lang in ("mermaid", "math"):
                 label = "图表（Mermaid 源码）" if lang == "mermaid" else "公式（LaTeX 源码）"

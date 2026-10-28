@@ -1492,11 +1492,11 @@ class TwoPaneMergeMixin:
         from PySide6.QtWidgets import QMenu
         menu = QMenu(self)
         spans = self._mp_frag_spans(obj, side)   # 右键不清选区，可直接读
-        act_frag = (menu.addAction("合并所选内容") if spans else None)
+        act_frag = (menu.addAction(T("合并所选内容", "Merge Selected Content")) if spans else None)
         act_sl = act_sr = None
         if spans:
-            act_sl = menu.addAction("选中采用（左）")
-            act_sr = menu.addAction("选中采用（右）")
+            act_sl = menu.addAction(T("选中采用（左）", "Use Selected (Left)"))
+            act_sr = menu.addAction(T("选中采用（右）", "Use Selected (Right)"))
         act_left = menu.addAction(self.mp_all_left_text)
         act_right = menu.addAction(self.mp_all_right_text)
         chosen = menu.exec(gpos)

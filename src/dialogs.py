@@ -126,7 +126,7 @@ class FindDialog(_ThemedDialog):
         self.help_btn = QToolButton(self)
         self.help_btn.setObjectName("helpBtn")
         self.help_btn.setText("?")
-        self.help_btn.setToolTip("常用正则表达式写法")
+        self.help_btn.setToolTip(T("常用正则表达式写法", "Common regex patterns"))
         self.help_btn.setCursor(Qt.PointingHandCursor)
         self.help_btn.clicked.connect(self._show_regex_help)
 
@@ -142,7 +142,7 @@ class FindDialog(_ThemedDialog):
         # v3.29：全局搜索改为常显按钮（与当前文件查找同页，不再二选一切换）
         b_global = QPushButton(T("全局搜索"))
         b_global.setObjectName("scopeBtn")
-        b_global.setToolTip("在当前文件夹的全部文档中搜索（结果见下方列表）")
+        b_global.setToolTip(T("在当前文件夹的全部文档中搜索（结果见下方列表）", "Search across all documents in the current folder (results below)"))
         b_global.clicked.connect(self._run_global)
 
         # ---- 行 1：搜索框 + 帮助 + 当前文件导航 + 全局搜索 ----
@@ -246,7 +246,7 @@ class FindDialog(_ThemedDialog):
         self.search_panel.search_info.setVisible(True)
         self.search_panel.search_ext.setVisible(True)
         self.search_panel.search_tree.setVisible(True)
-        self.setWindowTitle("查找 / 替换" if self._replace_mode else "查找")
+        self.setWindowTitle(T("查找 / 替换", "Find / Replace") if self._replace_mode else "查找")
         if not glob:
             self.find_edit.setFocus()
         # v3.48.18（FIND-UI）：不再 adjustSize() —— 它会把窗口压到 sizeHint，
@@ -346,10 +346,10 @@ class FindDialog(_ThemedDialog):
         ms = data.get("matches") or []
         n = int(data.get("count") or 0)
         if not ms:
-            tree.addTopLevelItem(QTreeWidgetItem(["当前文件：无匹配"]))
+            tree.addTopLevelItem(QTreeWidgetItem([T("当前文件：无匹配", "Current file: no match")]))
             return
         cap = "（已达上限，仅显示前 500 处）" if n >= 500 else ""
-        top = QTreeWidgetItem([f"当前文件 · {n} 处匹配{cap}　（点击跳转）"])
+        top = QTreeWidgetItem([T(f"当前文件 · {n} 处匹配{cap}　（点击跳转）", f"Current file · {n} matches{cap} (click to jump)")])
         f = top.font(0)
         f.setBold(True)
         top.setFont(0, f)
@@ -394,13 +394,13 @@ class FindDialog(_ThemedDialog):
         n = data.get("count", 0)
         # v3.29b：结果提示独立成行（warn 态高亮「未找到」），位于搜索框与结果之间
         if n == 0:
-            self.count_lbl.setText("未找到匹配内容")
+            self.count_lbl.setText(T("未找到匹配内容", "No matches found"))
             self.count_lbl.setProperty("warn", True)
-            self._win._status.setText("未找到匹配内容")
+            self._win._status.setText(T("未找到匹配内容", "No matches found"))
         else:
-            self.count_lbl.setText(f"共 {n} 处匹配")
+            self.count_lbl.setText(T(f"共 {n} 处匹配", f"Total {n} matches"))
             self.count_lbl.setProperty("warn", False)
-            self._win._status.setText(f"共 {n} 处匹配")
+            self._win._status.setText(T(f"共 {n} 处匹配", f"Total {n} matches"))
         self.count_lbl.setVisible(bool(str(n).strip()) and n >= 0)
         st = self.count_lbl.style()
         st.unpolish(self.count_lbl)
@@ -665,8 +665,10 @@ class SettingsDialog(_ThemedDialog):
         zrow.addWidget(self.zoom_slider, 1)
         zrow.addWidget(self.zoom_lbl)
         gview.addLayout(zrow)
-        zoom_hint = QLabel("· 只缩放编辑区显示字号，不影响导出的 Markdown 与 HTML\n"
-                           "· Ctrl+= / Ctrl+- 可快速缩放，点击状态栏百分比格重置 100%")
+        zoom_hint = QLabel(T("· 只缩放编辑区显示字号，不影响导出的 Markdown 与 HTML\n"
+                             "· Ctrl+= / Ctrl+- 可快速缩放，点击状态栏百分比格重置 100%",
+                             "· Scales only the editor display font size; does not affect exported Markdown and HTML\n"
+                             "· Ctrl+= / Ctrl+- zoom quickly; click the status-bar percentage cell to reset to 100%"))
         zoom_hint.setObjectName("pageHint")
         zoom_hint.setWordWrap(True)
         gview.addWidget(zoom_hint)
@@ -722,9 +724,12 @@ class SettingsDialog(_ThemedDialog):
         crow.addWidget(self.code_lnum_box)
         crow.addStretch(1)
         gcode.addLayout(crow)
-        code_hint = QLabel("· 新插入 / 重新渲染的代码块使用以上默认配置\n"
-                           "· 代码块顶部语言栏的「风格」按钮可对单个代码块临时切换\n"
-                           "· 全局默认代码风格在「外观 → 代码风格」切换（经典 / 深色 / 护眼 / 极简）")
+        code_hint = QLabel(T("· 新插入 / 重新渲染的代码块使用以上默认配置\n"
+                             "· 代码块顶部语言栏的「风格」按钮可对单个代码块临时切换\n"
+                             "· 全局默认代码风格在「外观 → 代码风格」切换（经典 / 深色 / 护眼 / 极简）",
+                             "· Newly inserted / re-rendered code blocks use the above defaults\n"
+                             "· The 'Style' button on a code block's top language bar can temporarily switch a single block\n"
+                             "· The global default code style is switched in 'Appearance → Code Style' (Classic / Dark / Eye-care / Minimal)"))
         code_hint.setObjectName("pageHint")
         code_hint.setWordWrap(True)
         gcode.addWidget(code_hint)
@@ -737,8 +742,10 @@ class SettingsDialog(_ThemedDialog):
         self.fmt_log_box.setChecked(bool(getattr(self._win, "_fmt_log", False)))
         self.fmt_log_box.toggled.connect(self._win.set_fmt_log)
         gflog.addWidget(self.fmt_log_box)
-        flog_hint = QLabel("· 日志写入 %APPDATA%\\mdEditor\\fmtlog\\，帮助菜单 →「格式化操作日志」可查看 / 导出\n"
-                           "· 关闭后立即停止记录（即时生效，已写入的文件保留）")
+        flog_hint = QLabel(T("· 日志写入 %APPDATA%\\mdEditor\\fmtlog\\，帮助菜单 →「格式化操作日志」可查看 / 导出\n"
+                             "· 关闭后立即停止记录（即时生效，已写入的文件保留）",
+                             "· Logs are written to %APPDATA%\\mdEditor\\fmtlog\\; the Help menu → 'Format Operation Log' can view / export\n"
+                             "· Recording stops immediately after turning off (takes effect instantly; already written files are kept)"))
         flog_hint.setObjectName("pageHint")
         flog_hint.setWordWrap(True)
         gflog.addWidget(flog_hint)
@@ -906,14 +913,14 @@ class SettingsDialog(_ThemedDialog):
         except Exception:
             st = {}
         if not st or not st.get("db"):
-            self.sem_info.setText("索引尚未建立（首次语义搜索时自动创建）")
+            self.sem_info.setText(T("索引尚未建立（首次语义搜索时自动创建）", "Index not built yet (created automatically on first semantic search)"))
             return
         size_mb = st.get("size", 0) / 1048576.0
         txt = (f"索引：{st.get('files', 0)} 个文件 · {st.get('chunks', 0)} 个段落块"
                f" · {size_mb:.1f} MB")
         if st.get("updated"):
             txt += f" · 更新于 {st['updated']}"
-        self.sem_info.setText(txt + f"\n位置：{st.get('db', '')}")
+        self.sem_info.setText(txt + T(f"\n位置：{st.get('db', '')}", f"\nLocation: {st.get('db', '')}"))
 
     def _on_sem_rebuild(self):
         self._win.sem_rebuild_index()
@@ -1044,14 +1051,17 @@ class SettingsDialog(_ThemedDialog):
         self._sync_sem_info()
         srow_sem = QHBoxLayout()
         self.sem_rebuild_btn = QPushButton(T("重建索引"), page)
-        self.sem_rebuild_btn.setToolTip("清空当前索引；下次语义搜索时按目录内容自动重建")
+        self.sem_rebuild_btn.setToolTip(T("清空当前索引；下次语义搜索时按目录内容自动重建", "Clear the current index; rebuilt automatically from the folder on next semantic search"))
         self.sem_rebuild_btn.clicked.connect(self._on_sem_rebuild)
         srow_sem.addWidget(self.sem_rebuild_btn)
         srow_sem.addStretch(1)
         gsem.addLayout(srow_sem)
-        sem_hint = QLabel("· 纯本地计算（TF-IDF 向量 + 同义词扩展），文档内容不外传\n"
-                          "· 索引位于 %APPDATA%\\mdEditor\\semindex，不在项目目录、不入 Git\n"
-                          "· 索引随文档改动自动增量更新；关闭后全局搜索按普通全文检索")
+        sem_hint = QLabel(T("· 纯本地计算（TF-IDF 向量 + 同义词扩展），文档内容不外传\n"
+                            "· 索引位于 %APPDATA%\\mdEditor\\semindex，不在项目目录、不入 Git\n"
+                            "· 索引随文档改动自动增量更新；关闭后全局搜索按普通全文检索",
+                            "· Purely local computation (TF-IDF vectors + synonym expansion); document content never leaves your machine\n"
+                            "· Index is at %APPDATA%\\mdEditor\\semindex, not in the project directory, not in Git\n"
+                            "· Index auto-increments with document changes; after turning off, global search uses regular full-text search"))
         sem_hint.setObjectName("pageHint")
         sem_hint.setWordWrap(True)
         gsem.addWidget(sem_hint)
@@ -1063,7 +1073,7 @@ class SettingsDialog(_ThemedDialog):
         orow.addWidget(QLabel(T("显示级别（超过该级别的标题默认折叠）")))
         self.outline_level_box = QComboBox(page)
         for n in range(1, 7):
-            self.outline_level_box.addItem(f"{n} 级", n)
+            self.outline_level_box.addItem(T(f"{n} 级", f"{n} levels"), n)
         self.outline_level_box.setCurrentIndex(
             max(0, int(getattr(self._win, "_outline_level", 3)) - 1))
         self.outline_level_box.currentIndexChanged.connect(self._on_outline_level)
@@ -1167,7 +1177,7 @@ class SettingsDialog(_ThemedDialog):
         prow.addWidget(QLabel(T("段首缩进（每段首行空出的格数）")))
         self.para_indent_box = QComboBox(page)
         for _pn in range(0, 5):
-            self.para_indent_box.addItem(f"{_pn} 格" if _pn else "无（0 格）", _pn)
+            self.para_indent_box.addItem(T(f"{_pn} 格", f"{_pn} cells") if _pn else "无（0 格）", _pn)
         _pi = int(getattr(self._win, "_para_indent", 0) or 0)
         _piidx = self.para_indent_box.findData(_pi)
         self.para_indent_box.setCurrentIndex(_piidx if _piidx >= 0 else 0)
@@ -1180,8 +1190,10 @@ class SettingsDialog(_ThemedDialog):
         self.h1_center_box.toggled.connect(self._win.set_h1_center)
         gpara.addWidget(self.h1_center_box)
 
-        para_hint = QLabel("· 段首缩进仅作用于段落首行（列表 / 引用 / 表格不受影响），导出 HTML 同步生效\n"
-                           "· 标题 1 居中为全局默认；格式栏「⇔」按钮可对单个标题 1 覆盖（优先级更高）")
+        para_hint = QLabel(T("· 段首缩进仅作用于段落首行（列表 / 引用 / 表格不受影响），导出 HTML 同步生效\n"
+                             "· 标题 1 居中为全局默认；格式栏「⇔」按钮可对单个标题 1 覆盖（优先级更高）",
+                             "· Paragraph indent applies only to the first line of paragraphs (lists / quotes / tables unaffected); also applies on HTML export\n"
+                             "· Heading 1 centering is a global default; the format bar '⇔' button can override a single Heading 1 (higher priority)"))
         para_hint.setObjectName("pageHint")
         para_hint.setWordWrap(True)
         gpara.addWidget(para_hint)
@@ -1298,8 +1310,8 @@ class SettingsDialog(_ThemedDialog):
         title = QLabel(T("AI 菜单"))
         title.setObjectName("pageTitle")
         lay.addWidget(title)
-        info = QLabel("自定义两处「AI优化」菜单的菜单项名称与提示词。"
-                      "提示词留空表示使用内置提示词（翻译会按内容语种自动定向）。设置即时生效。")
+        info = QLabel(T("自定义两处「AI优化」菜单的菜单项名称与提示词。提示词留空表示使用内置提示词（翻译会按内容语种自动定向）。设置即时生效。",
+                         "Customize the menu item names and prompts for the two 'AI Optimize' menus. Leaving a prompt empty means using the built-in prompt (translation auto-targets by content language). Settings apply immediately."))
         info.setWordWrap(True)
         info.setObjectName("pageTitle")
         info.setStyleSheet("font-size:11.5px; font-weight:400;")
@@ -1444,11 +1456,11 @@ class SettingsDialog(_ThemedDialog):
         ed_label = QLineEdit(label0)
         form.addWidget(ed_label, 1)
         v.addLayout(form)
-        v.addWidget(QLabel("提示词（内置项已预填内置提示词，保持原样即继续使用内置；"
-                           "自定义提示词请写明「只输出结果文本本身，不要附加解释」）"))
+        v.addWidget(QLabel(T("提示词（内置项已预填内置提示词，保持原样即继续使用内置；自定义提示词请写明「只输出结果文本本身，不要附加解释」）",
+                             "Prompt (built-in items are pre-filled with the built-in prompt; keeping as-is continues using it; for custom prompts, specify 'output only the result text itself, no extra explanation')")))
         ed_prompt = QPlainTextEdit(prompt0)
-        ed_prompt.setPlaceholderText("例如：请把下面的文本改写成 FAQs 问答对，"
-                                     "每条以「Q: / A:」开头，不要附加解释。")
+        ed_prompt.setPlaceholderText(T("例如：请把下面的文本改写成 FAQs 问答对，每条以「Q: / A:」开头，不要附加解释。",
+                                        "e.g.: rewrite the text below into FAQ Q&A pairs, each starting with 'Q: / A:', no extra explanation."))
         v.addWidget(ed_prompt, 1)
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         bb.accepted.connect(dlg.accept)
@@ -1644,8 +1656,8 @@ class StyleManagerDialog(_ThemedDialog):
         title = QLabel(T("界面风格"))
         title.setObjectName("pageTitle")
         lay.addWidget(title)
-        hint = QLabel("「外观 → 界面风格」菜单列出设计稿定义的 6 套；这里显示全部已安装风格"
-                      "（含用户自建）。把风格 JSON 拖进风格文件夹后点「刷新」即可新增。")
+        hint = QLabel(T("「外观 → 界面风格」菜单列出设计稿定义的 6 套；这里显示全部已安装风格（含用户自建）。把风格 JSON 拖进风格文件夹后点「刷新」即可新增。",
+                         "The 'Appearance → UI Style' menu lists the 6 design-spec styles; here all installed styles are shown (including user-created). Drag a style JSON into the style folder and click 'Refresh' to add it."))
         hint.setObjectName("pageHint")
         hint.setWordWrap(True)
         lay.addWidget(hint)
@@ -1739,7 +1751,7 @@ class StyleManagerDialog(_ThemedDialog):
         try:
             subprocess.Popen(["explorer", d])
         except Exception:
-            self._win.show_status(f"风格目录：{d}")
+            self._win.show_status(T(f"风格目录：{d}", f"Style folder: {d}"))
 
     def _del(self):
         sid = self._cur_id()
@@ -1755,7 +1767,7 @@ class StyleManagerDialog(_ThemedDialog):
             return
         ok, msg = uistyles.remove_style(sid)
         if not ok:
-            QMessageBox.warning(self, "删除风格", msg)
+            QMessageBox.warning(self, T("删除风格", "Delete Style"), msg)
         elif sid == uistyles.active():
             self._win.set_uistyle(uistyles.DEFAULT_ID)
         self.reload()
@@ -1803,9 +1815,9 @@ class InsertImageDialog(_ThemedDialog):
         # 系统设置 = 相对路径存储 → 默认选中「相对路径存储」；= 内嵌存储 → 默认「内嵌式存储」。
         # 未保存文档选了相对路径时，插入会自动降级为内嵌并提示。
         srow = QHBoxLayout()
-        slbl = QLabel("存储方式", self)
-        self.rb_assets = QRadioButton("相对路径存储", self)
-        self.rb_embed = QRadioButton("内嵌式存储", self)
+        slbl = QLabel(T("存储方式", "Storage Method"), self)
+        self.rb_assets = QRadioButton(T("相对路径存储", "Relative Path Storage"), self)
+        self.rb_embed = QRadioButton(T("内嵌式存储", "Embedded Storage"), self)
         if str(getattr(win, "_image_mode", "embed")) == "assets":
             self.rb_assets.setChecked(True)
         else:
@@ -1818,7 +1830,7 @@ class InsertImageDialog(_ThemedDialog):
         srow.addStretch(1)
         lay.addLayout(srow)
 
-        hint = QLabel("存储名称在插入后单击图片指定（本地存储图 →「修改存储文件名」）", self)
+        hint = QLabel(T("存储名称在插入后单击图片指定（本地存储图 →「修改存储文件名」）", "Set the storage name by clicking the image after insertion (local image → 'Change Storage Filename')"), self)
         hint.setObjectName("pageHint")
         hint.setWordWrap(True)
         lay.addWidget(hint)
@@ -1884,13 +1896,13 @@ class InsertImageDialog(_ThemedDialog):
 
     def accept(self):
         if not self._src:
-            self.preview.setText("请先选择图片文件或粘贴图片地址（当前为空 / 路径不存在）")
+            self.preview.setText(T("请先选择图片文件或粘贴图片地址（当前为空 / 路径不存在）", "Please select an image file or paste an image URL first (empty / path does not exist)"))
             return
         super().accept()
 
     def _update_preview(self):
         if self.is_url():
-            self.preview.setText("网络图片将以 URL 形式直接插入文档（不做本地存储）")
+            self.preview.setText(T("网络图片将以 URL 形式直接插入文档（不做本地存储）", "Network images are inserted directly as URLs (no local storage)"))
         elif self._src:
             if self.rb_assets.isChecked():
                 self.preview.setText(
@@ -2011,7 +2023,7 @@ class CommandPaletteDialog(_ThemedDialog):
             self.listw.hide()
             # v3.44.29：空态提示只讲操作（↑↓/Enter/Esc），不再重复输入框占位文字，
             # 消除「输入命令…」与「输入以检索命令…」两行相似文案造成的重影。
-            self.hint.setText("⌨ ↑ ↓ 选择 · Enter 执行 · Esc 关闭")
+            self.hint.setText(T("⌨ ↑ ↓ 选择 · Enter 执行 · Esc 关闭", "⌨ ↑ ↓ Select · Enter Run · Esc Close"))
             return
         self.listw.show()
         if q:
@@ -2032,7 +2044,7 @@ class CommandPaletteDialog(_ThemedDialog):
                 it.setForeground(Qt.gray)
         if self.listw.count():
             self.listw.setCurrentRow(0)
-        self.hint.setText(f"共 {len(rows)} 条 · ↑ ↓ 选择 · Enter 执行 · Esc 关闭")
+        self.hint.setText(T(f"共 {len(rows)} 条 · ↑ ↓ 选择 · Enter 执行 · Esc 关闭", f"Total {len(rows)} items · ↑ ↓ Select · Enter Run · Esc Close"))
 
     def _run_current(self):
         it = self.listw.currentItem()
@@ -2245,7 +2257,7 @@ class DiffDialog(_ThemedDialog):
         self.lbl_l.setText(old_label)
         self.lbl_r.setText(new_label)
         if add == 0 and dele == 0:
-            self.stat_lbl.setText("两个版本内容一致。")
+            self.stat_lbl.setText(T("两个版本内容一致。", "The two versions are identical."))
             self.view.setPlainText("")
             self.view_l.setPlainText("")
             self.view_r.setPlainText("")
@@ -2335,7 +2347,7 @@ class DiffDialog(_ThemedDialog):
                 else:
                     parts.append(f'<div style="color:{c_ctx};">{self._esc(tl)}</div>')
             if len(rows) > self.MAX_ROWS:
-                parts.append(f'<div style="color:{c_ctx};">… 其余 {len(rows) - self.MAX_ROWS} 行省略</div>')
+                parts.append(f'<div style="color:{c_ctx};">{T(f"… 其余 {len(rows) - self.MAX_ROWS} 行省略", f"... and {len(rows) - self.MAX_ROWS} more lines omitted")}</div>')
             parts.append("</div>")
             self.view.setHtml("".join(parts))
 
@@ -2361,9 +2373,8 @@ class FmtLogDialog(_ThemedDialog):
         self._apply_theme_qss(getattr(win, "_theme", "light"))
 
         lay = QVBoxLayout(self)
-        hint = QLabel("每次行内格式操作（包裹 / 取消 / 清除 / 码壳 toggle / 单元格格式）的"
-                      "时间、动作与应用前后源码片段；按「对象 → 结果」序列可逐步复现问题。"
-                      "随测试报告一并发送本日志可大幅加快定位。")
+        hint = QLabel(T("每次行内格式操作（包裹 / 取消 / 清除 / 码壳 toggle / 单元格格式）的时间、动作与应用前后源码片段；按「对象 → 结果」序列可逐步复现问题。随测试报告一并发送本日志可大幅加快定位。",
+                         "For each inline format operation (wrap / unwrap / clear / code-shell toggle / cell format): the time, the action, and the source snippets before and after; replaying the 'Object → Result' sequence can reproduce the issue step by step. Sending this log with a test report greatly speeds up diagnosis."))
         hint.setObjectName("pageHint")
         hint.setWordWrap(True)
         lay.addWidget(hint)
@@ -2433,9 +2444,9 @@ class FmtLogDialog(_ThemedDialog):
                     head += f" 文档:{e['doc']}"
                 lines.append(head)
                 if e.get("obj"):
-                    lines.append(f"    对象: {e['obj']}")
+                    lines.append(T(f"    对象: {e['obj']}", f"    Object: {e['obj']}"))
                 if e.get("res"):
-                    lines.append(f"    结果: {e['res']}")
+                    lines.append(T(f"    结果: {e['res']}", f"    Result: {e['res']}"))
         self.text.setPlainText("\n".join(lines))
 
     def _plain_text(self):
@@ -2444,11 +2455,11 @@ class FmtLogDialog(_ThemedDialog):
     # ---- 动作 ----
     def _copy_all(self):
         QApplication.clipboard().setText(self._plain_text())
-        self._win.show_status("日志已复制到剪贴板")
+        self._win.show_status(T("日志已复制到剪贴板", "Log copied to clipboard"))
 
     def _export(self):
         if not self._plain_text():
-            self._win.show_status("日志为空，无可导出内容")
+            self._win.show_status(T("日志为空，无可导出内容", "Log is empty; nothing to export"))
             return
         default = os.path.join(os.path.expanduser("~"), "Desktop",
                                "mdeditor-fmtlog-" + datetime.now().strftime("%Y%m%d-%H%M%S") + ".txt")
@@ -2459,14 +2470,14 @@ class FmtLogDialog(_ThemedDialog):
         try:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(self._plain_text() + "\n")
-            self._win.show_status(f"日志已导出：{path}")
+            self._win.show_status(T(f"日志已导出：{path}", f"Log exported: {path}"))
         except OSError as e:
-            QMessageBox.warning(self, "导出失败", f"写入文件失败：{e}")
+            QMessageBox.warning(self, T("导出失败", "Export failed"), T(f"写入文件失败：{e}", f"Failed to write file: {e}"))
 
     def _clear_files(self):
         files = self._log_files()
         if not files:
-            self._win.show_status("暂无日志文件")
+            self._win.show_status(T("暂无日志文件", "No log files yet"))
             return
         btn = QMessageBox.question(
             self, "清空日志文件",
@@ -2482,7 +2493,7 @@ class FmtLogDialog(_ThemedDialog):
             except OSError:
                 continue
         self.load_log()
-        self._win.show_status(f"已删除 {n} 个日志文件")
+        self._win.show_status(T(f"已删除 {n} 个日志文件", f"Deleted {n} log files"))
 
 
 class HistoryDialog(_ThemedDialog):
@@ -2578,7 +2589,7 @@ class HistoryDialog(_ThemedDialog):
             hint = "（未保存文档没有版本历史，保存后可用）" if not path else \
                 "（本文档尚未产生快照 · 快照在保存 / 自动保存写盘时生成）"
             self.listw.addItem(QListWidgetItem(hint))
-            self.listw.addItem(QListWidgetItem("提示：文件菜单 / 命令面板可「立即留档」手动打点"))
+            self.listw.addItem(QListWidgetItem(T("提示：文件菜单 / 命令面板可「立即留档」手动打点", "Tip: use File menu / Command Palette to 'Snapshot Now' for a manual checkpoint")))
             self.b_restore.setEnabled(False)
             self.b_folder.setEnabled(False)
             self.b_diff_cur.setEnabled(False)
@@ -2869,9 +2880,9 @@ class MergeDialog(_ThemedDialog, TwoPaneMergeMixin):
         try:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(text if text.endswith("\n") else text + "\n")
-            self.stat_lbl.setText(f"已另存为：{os.path.basename(path)}")
+            self.stat_lbl.setText(T(f"已另存为：{os.path.basename(path)}", f"Saved as: {os.path.basename(path)}"))
         except OSError as e:
-            QMessageBox.critical(self, "保存失败", str(e))
+            QMessageBox.critical(self, T("保存失败", "Save failed"), str(e))
 
     def showEvent(self, ev):
         super().showEvent(ev)
@@ -2921,7 +2932,7 @@ class TemplatePage(QWidget):
         body.setSpacing(12)
 
         list_col = QVBoxLayout()
-        list_col.addWidget(QLabel("模板列表", self))
+        list_col.addWidget(QLabel(T("模板列表", "Template List"), self))
         self.list_w = QListWidget(self)
         self.list_w.setObjectName("themeList")
         self.list_w.currentRowChanged.connect(self._on_row_changed)
@@ -2942,12 +2953,12 @@ class TemplatePage(QWidget):
         body.addLayout(list_col, 1)
 
         edit_col = QVBoxLayout()
-        edit_col.addWidget(QLabel("模板名称", self))
+        edit_col.addWidget(QLabel(T("模板名称", "Template Name"), self))
         self.name_edit = QLineEdit(self)
         self.name_edit.setMaxLength(TPL_NAME_MAX)   # v3.35：与菜单显示上限同源，输入层硬限
-        self.name_edit.setPlaceholderText("（显示在菜单里的名字，必填，最多 %d 字）" % TPL_NAME_MAX)
+        self.name_edit.setPlaceholderText(T("（显示在菜单里的名字，必填，最多 %d 字）", "(Name shown in the menu, required, max %d chars)") % TPL_NAME_MAX)
         edit_col.addWidget(self.name_edit)
-        edit_col.addWidget(QLabel("模板内容（Markdown，空行 = 插入时的分块边界）", self))
+        edit_col.addWidget(QLabel(T("模板内容（Markdown，空行 = 插入时的分块边界）", "Template content (Markdown; blank line = chunk boundary on insert)"), self))
         self.content_edit = QPlainTextEdit(self)
         self.content_edit.setPlaceholderText(T("# 标题\n\n正文…"))
         edit_col.addWidget(self.content_edit, 1)
@@ -3070,7 +3081,7 @@ class TemplatePage(QWidget):
                 added += 1
         self._fill_list(0)
         self._save()
-        self._win.show_status("内置模板已恢复（%d 个%s）"
+        self._win.show_status(T("内置模板已恢复（%d 个%s）", "Built-in templates restored (%d%s)")
                               % (len(BUILTIN_TEMPLATES), "，新增 %d 个" % added if added else ""))
 
     def _save(self):

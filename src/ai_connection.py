@@ -44,12 +44,11 @@ class AIConnectionForm(QWidget):
         root.setSpacing(10)
 
         if not compact:
-            title = QLabel("AI 连接")
+            title = QLabel(T("AI 连接", "AI Connection"))
             title.setObjectName("pageTitle")
             root.addWidget(title)
-            hint = QLabel("配置一个 OpenAI 兼容的模型服务（云端或本地 Ollama 均可）。"
-                          "设置将作为默认连接参数保存；AI 主面板的「连接设置」按钮"
-                          "也会打开本面板执行连接。")
+            hint = QLabel(T("配置一个 OpenAI 兼容的模型服务（云端或本地 Ollama 均可）。设置将作为默认连接参数保存；AI 主面板的「连接设置」按钮也会打开本面板执行连接。",
+                             "Configure an OpenAI-compatible model service (cloud or local Ollama both work). Settings are saved as default connection parameters; the 'Connection Settings' button on the AI panel also opens this panel to connect."))
             hint.setObjectName("pageHint")
             hint.setWordWrap(True)
             root.addWidget(hint)
@@ -59,7 +58,7 @@ class AIConnectionForm(QWidget):
         self._dot = QLabel()
         self._dot.setFixedSize(12, 12)
         self._dot.setStyleSheet("border-radius:6px;background:%s" % _DOT["unconfigured"])
-        self._status_text = QLabel("未配置连接")
+        self._status_text = QLabel(T("未配置连接", "No connection configured"))
         self._status_text.setObjectName("aiStatusText")
         strow.addWidget(self._dot)
         strow.addWidget(self._status_text)
@@ -84,13 +83,13 @@ class AIConnectionForm(QWidget):
         form.addRow("Base URL", self._base)
 
         self._model = QLineEdit()
-        self._model.setPlaceholderText("可手填本地模型名（如 llama3.1）")
+        self._model.setPlaceholderText(T("可手填本地模型名（如 llama3.1）", "Optionally enter a local model name (e.g. llama3.1)"))
         self._model.editingFinished.connect(self._on_edit)
         form.addRow("模型", self._model)
 
         self._key = QLineEdit()
         self._key.setEchoMode(QLineEdit.Password)
-        self._key.setPlaceholderText("API Key（本地 / Ollama 可留空）")
+        self._key.setPlaceholderText(T("API Key（本地 / Ollama 可留空）", "API Key (leave blank for local / Ollama)"))
         self._key.editingFinished.connect(self._on_key_edit)
         form.addRow("API Key", self._key)
 
@@ -100,7 +99,7 @@ class AIConnectionForm(QWidget):
         # v3.47.3：默认本地 Ollama。若用户未安装 / 未配置，在此引导安装，
         # 并提供可点击直接跳转至 Ollama 安装地址的入口；同时可一键检测已安装模型，
         # 据「上次使用的模型 > 已安装模型」优先级自动回填。
-        self._ollama_box = QGroupBox("本地 Ollama")
+        self._ollama_box = QGroupBox(T("本地 Ollama", "Local Ollama"))
         self._ollama_box.setObjectName("aiOllamaBox")
         ob = QVBoxLayout(self._ollama_box)
         ob.setSpacing(8)
@@ -111,7 +110,7 @@ class AIConnectionForm(QWidget):
         self._ollama_info.setWordWrap(True)
         ob.addWidget(self._ollama_info)
         odrow = QHBoxLayout()
-        self._detect_btn = QPushButton("检测已安装模型")
+        self._detect_btn = QPushButton(T("检测已安装模型", "Detect Installed Models"))
         self._detect_btn.clicked.connect(self._on_detect_ollama)
         self._ollama_link = QLabel(
             '<a href="%s">下载并安装 Ollama ↗</a>' % OLLAMA_DOWNLOAD_URL)
@@ -124,7 +123,7 @@ class AIConnectionForm(QWidget):
         root.addWidget(self._ollama_box)
 
         # ---- v3.48.18（AI-CTX）文档上下文策略 ----
-        self._ctx_box = QGroupBox("文档上下文（省 token）")
+        self._ctx_box = QGroupBox(T("文档上下文（省 token）", "Document Context (save tokens)"))
         self._ctx_box.setObjectName("aiCtxBox")
         cv = QVBoxLayout(self._ctx_box)
         cv.setSpacing(8)
@@ -149,7 +148,7 @@ class AIConnectionForm(QWidget):
         self._ctx_neighbors = QSpinBox()
         self._ctx_neighbors.setRange(0, 5)
         self._ctx_neighbors.setSuffix(" 段")
-        self._ctx_neighbors.setToolTip("大纲模式下目标段落前后各带几段上下文")
+        self._ctx_neighbors.setToolTip(T("大纲模式下目标段落前后各带几段上下文", "In outline mode, how many context paragraphs before and after the target"))
         self._ctx_neighbors.valueChanged.connect(self._save_ctx)
         cf.addRow("前后邻段", self._ctx_neighbors)
         cv.addLayout(cf)
@@ -157,9 +156,9 @@ class AIConnectionForm(QWidget):
 
         # ---- 操作按钮 ----
         brow = QHBoxLayout()
-        self._test_btn = QPushButton("测试连接")
+        self._test_btn = QPushButton(T("测试连接", "Test Connection"))
         self._test_btn.clicked.connect(self._on_test)
-        self._log_btn = QPushButton("诊断日志")
+        self._log_btn = QPushButton(T("诊断日志", "Diagnostic Log"))
         self._log_btn.clicked.connect(self._on_show_log)
         brow.addWidget(self._test_btn)
         brow.addWidget(self._log_btn)
@@ -167,8 +166,8 @@ class AIConnectionForm(QWidget):
         root.addLayout(brow)
 
         if not compact:
-            note = QLabel("提示：本地 Ollama 需先运行服务（ollama serve 或桌面端），"
-                          "Base URL 填 http://localhost:11434/v1，模型填已 pull 的模型名。")
+            note = QLabel(T("提示：本地 Ollama 需先运行服务（ollama serve 或桌面端），Base URL 填 http://localhost:11434/v1，模型填已 pull 的模型名。",
+                             "Tip: local Ollama requires the service running first (ollama serve or desktop app), Base URL http://localhost:11434/v1, model name is the pulled model."))
             note.setObjectName("pageHint")
             note.setWordWrap(True)
             root.addWidget(note)
@@ -263,7 +262,7 @@ class AIConnectionForm(QWidget):
     def _on_detect_ollama(self):
         if self._detect_worker and self._detect_worker.isRunning():
             return
-        self._ollama_info.setText("正在检测本地 Ollama 模型…")
+        self._ollama_info.setText(T("正在检测本地 Ollama 模型…", "Detecting local Ollama models…"))
         self._detect_worker = OllamaDetectWorker()
         self._detect_worker.result.connect(self._on_ollama_detected)
         self._detect_worker.start()
@@ -301,10 +300,10 @@ class AIConnectionForm(QWidget):
         model = self._model.text().strip() or ai_core.DEFAULT_MODEL
         key = self._key.text()
         if not key and "openai.com" in base:
-            QMessageBox.warning(self, "缺少 API Key",
+            QMessageBox.warning(self, T("缺少 API Key", "Missing API Key"),
                 "OpenAI 官方接口需要 API Key；本地 / Ollama 服务可留空。")
             return
-        self._test_btn.setText("停止")
+        self._test_btn.setText(T("停止", "Stop"))
         self._render_status("testing", "测试中…")
         msgs = [{"role": "user", "content": "hi"}]
         self._worker = AIStreamWorker(base, key, model, msgs)
@@ -313,7 +312,7 @@ class AIConnectionForm(QWidget):
         self._worker.start()
 
     def _on_test_done(self, ok, text):
-        self._test_btn.setText("测试连接")
+        self._test_btn.setText(T("测试连接", "Test Connection"))
         if ok:
             self._settings.setValue(ai_core.SET_TEST_OK, True)
             self._settings.sync()
@@ -336,7 +335,7 @@ class AILogDialog(QDialog):
     """查看 / 复制 AI 诊断日志（排查「连接成功却无响应」类问题）。"""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("AI 诊断日志")
+        self.setWindowTitle(T("AI 诊断日志", "AI Diagnostic Log"))
         self.resize(560, 360)
         lay = QVBoxLayout(self)
         self._txt = QTextEdit()
@@ -345,9 +344,9 @@ class AILogDialog(QDialog):
         self._txt.setPlainText("\n".join(lines) if lines else "（暂无日志）")
         lay.addWidget(self._txt)
         brow = QHBoxLayout()
-        copy = QPushButton("复制全部")
+        copy = QPushButton(T("复制全部", "Copy All"))
         copy.clicked.connect(self._copy)
-        close = QPushButton("关闭")
+        close = QPushButton(T("关闭", "Close"))
         close.setDefault(True)
         close.clicked.connect(self.accept)
         brow.addStretch(1)
@@ -368,7 +367,7 @@ class AIConnectionDialog(QDialog):
     """
     def __init__(self, settings, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("AI 连接设置")
+        self.setWindowTitle(T("AI 连接设置", "AI Connection Settings"))
         self.resize(460, 320)
         self.setModal(False)
         lay = QVBoxLayout(self)
@@ -376,7 +375,7 @@ class AIConnectionDialog(QDialog):
         lay.addWidget(self.form, 1)
         brow = QHBoxLayout()
         brow.addStretch(1)
-        close = QPushButton("关闭")
+        close = QPushButton(T("关闭", "Close"))
         close.setDefault(True)
         close.clicked.connect(self.accept)
         brow.addWidget(close)
