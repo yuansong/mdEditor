@@ -38,7 +38,7 @@ jobs:
           sudo apt-get install -y python3-venv python3-pip build-essential \
             libgl1 libglib2.0-0 libxkbcommon0 libdbus-1-3 libfontconfig1 \
             libnss3 libxcomposite1 libxrandr2 libatk1.0-0 libatk-bridge2.0-0 \
-            libcups2 libxdamage1 libxshmfence1 fuse libfuse2
+            libcups2 libxdamage1 libxshmfence1 fuse libfuse2 patchelf
 
       - name: Build AppImage (+ .deb)
         env:

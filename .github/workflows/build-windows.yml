@@ -85,7 +85,11 @@ jobs:
         if: always()
         run: |
           echo "== dist =="
-          Get-ChildItem -Path "dist\mdEditor" -Recurse | Select-Object -First 60 | Format-Table Name, Length
+          if (Test-Path "dist\mdEditor") {
+            Get-ChildItem -Path "dist\mdEditor" -Recurse | Select-Object -First 60 | Format-Table Name, Length
+          } else {
+            echo "(dist\\mdEditor 不存在，构建可能已失败)"
+          }
 
       - name: Upload portable zip
         if: always()
