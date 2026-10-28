@@ -417,6 +417,7 @@ class ShortcutDialog(_ThemedDialog):
         self.setWindowTitle(T("快捷键设置"))
         self.setModal(False)
         self.resize(420, 520)
+        self.setMinimumSize(420, 520)
         self._apply_theme_qss(getattr(win, "_theme", "light"))
 
         self.tree = QTreeWidget(self)
@@ -554,6 +555,7 @@ class SettingsDialog(_ThemedDialog):
         self.setWindowTitle(T("系统设置"))
         self.setModal(False)
         self.resize(660, 460)
+        self.setMinimumSize(660, 460)
         self._apply_theme_qss(getattr(win, "_theme", "light"))
 
         # ---- 左侧导航 ----
@@ -1435,6 +1437,7 @@ class SettingsDialog(_ThemedDialog):
         dlg.setWindowTitle(title)
         dlg.setModal(True)
         dlg.resize(420, 300)
+        dlg.setMinimumSize(420, 300)
         v = QVBoxLayout(dlg)
         form = QHBoxLayout()
         form.addWidget(QLabel(T("菜单名称")))
@@ -1631,6 +1634,7 @@ class StyleManagerDialog(_ThemedDialog):
         self.setWindowTitle(T("界面风格管理"))
         self.setModal(False)
         self.resize(560, 380)
+        self.setMinimumSize(560, 380)
         self._apply_theme_qss(getattr(win, "_theme", "light"))
 
         lay = QVBoxLayout(self)
@@ -1776,6 +1780,7 @@ class InsertImageDialog(_ThemedDialog):
         self.setWindowTitle(T("插入图片"))
         self.setModal(True)
         self.resize(500, 170)
+        self.setMinimumSize(500, 170)
         self._apply_theme_qss(getattr(win, "_theme", "light"))
 
         lay = QVBoxLayout(self)
@@ -1916,6 +1921,7 @@ class CommandPaletteDialog(_ThemedDialog):
         self.setModal(True)
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         self.resize(580, 440)
+        self.setMinimumSize(580, 440)
         self._apply_theme_qss(getattr(win, "_theme", "light"))
 
         lay = QVBoxLayout(self)
@@ -2089,6 +2095,7 @@ class DiffDialog(_ThemedDialog):
         self.setWindowTitle(T("版本对比"))
         self.setModal(False)
         self.resize(860, 560)
+        self.setMinimumSize(860, 560)
         self._apply_theme_qss(getattr(win, "_theme", "light"))
         self._rows = None        # build_rows 产物（切布局不重算 diff）
         self._colors = None
@@ -2350,6 +2357,7 @@ class FmtLogDialog(_ThemedDialog):
         self.setWindowTitle(T("格式化操作日志"))
         self.setModal(False)
         self.resize(860, 560)
+        self.setMinimumSize(860, 560)
         self._apply_theme_qss(getattr(win, "_theme", "light"))
 
         lay = QVBoxLayout(self)
@@ -2487,6 +2495,7 @@ class HistoryDialog(_ThemedDialog):
         self.setWindowTitle(T("历史版本"))
         self.setModal(False)
         self.resize(780, 520)
+        self.setMinimumSize(780, 520)
         self._apply_theme_qss(getattr(win, "_theme", "light"))
         self._cur_file = None
         self._items = []      # [(path, mtime)]
@@ -2801,6 +2810,7 @@ class MergeDialog(_ThemedDialog, TwoPaneMergeMixin):
         self.setWindowTitle(T("合并版本"))
         self.setModal(False)
         self.resize(980, 680)
+        self.setMinimumSize(980, 680)
         self._apply_theme_qss(getattr(win, "_theme", "light"))
         self.title_lbl = QLabel("", self)
         self.title_lbl.setObjectName("pageTitle")
