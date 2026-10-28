@@ -1,11 +1,26 @@
 # mdEditor
 
 Typora 风格的**所见即所得**（块级 WYSIWYG）Markdown 编辑器，**开源、跨平台**的桌面应用（Windows / Linux / macOS）。
-Python + PySide6 (QtWebEngine) 外壳 + 单文件 JS 编辑内核 `src/editor.html`，全部能力离线可用（KaTeX / Mermaid 均内置）。
+Python + PySide6 (QtWebEngine) 外壳 + 单文件 JS 编辑内核 `src/editor.html`，全部能力离线可用（KaTeX / Mermaid 均内置）；并内建**端侧可控的 AI 写作能力**——15 家主流大模型 BYOK + 本地 Ollama 原生推理，智能生成 / 语义级改写 / 本地语义检索均可离线运行，密钥与文本始终由用户掌控。
 
-> 当前版本 **v3.48.30**（`src/config.py: APP_VERSION`）。
+> 当前版本 **v3.48.38**（`src/config.py: APP_VERSION`）。
 > 仓库：<https://github.com/yuansong/mdEditor> · 许可：**Apache-2.0**（见 [LICENSE](LICENSE)）。
 > 「现在能用什么」看本文；「每个版本动了什么」看 [`CHANGELOG.md`](CHANGELOG.md)；「模块级功能明细」看 [`docs/功能列表-v3.31.md`](docs/功能列表-v3.31.md)；「开发 / AI 协作规则」看 [`AGENTS.md`](AGENTS.md)。
+
+**mdEditor 的定位** —— 不只是 Typora 级的所见即所得，更是面向中文写作者与知识工作者的**本地优先、AI 原生** Markdown 工作台：以块级 WYSIWYG 写作手感为底座，叠加端侧可控的智能生成、语义理解与自动化处理能力，同时坚守「真 Markdown 文件、数据完全本地、零账号、离线可用」的隐私底线。
+
+**核心差异化优势**
+
+| 维度 | mdEditor 的差异化 |
+|---|---|
+| 中文写作全栈 | 全中文界面 + 中文输入法混输兼容 + CJK 排版与字数分计，竞品普遍未到位 |
+| 端侧 AI 原生 | 15 家主流大模型 BYOK + 本地 Ollama 原生推理（免 Key）；智能生成、语义级改写、本地语义检索均可离线运行 |
+| 表格护城河 | Office 级表格：合并 / 拆分 / 拖选 / 列宽行高写回，WYSIWYG 表格能力对标乃至超越 Typora |
+| 长文档工作流 | 书籍 / 大纲 / 章节树 + 整本书 PDF·EPUB·HTML 站点导出，面向技术文档与知识沉淀 |
+| 轻量离线 · 极速 | 绿色文件夹即拷即用、启动约 1.5s、完全离线（KaTeX / Mermaid / 语义检索零 CDN），无需账号 |
+| 开源 · 跨平台 | Apache-2.0 已开源，Windows 持续发布、macOS / Linux 构建就绪，可审计、可社区共建 |
+
+> 竞品各有取舍（Typora 闭源付费、Obsidian 偏知识库、VS Code 无就地渲染、SoloMD 表格弱），mdEditor 的差异化不在功能数量堆砌，而在**中文写作手感 + 端侧 AI + 轻量离线 + 表格 / 书籍护城河 + 现已开源跨平台**的深耦合。完整对标见 [`docs/competitive/COMPETITIVE.md`](docs/competitive/COMPETITIVE.md)。
 
 ---
 
@@ -84,7 +99,7 @@ KaTeX 行内 `$...$` 与块级（25 个模板，离线）· Mermaid 七类图表
 本地落盘 `<文档名>.assets/`（5 位编号命名）或 Base64 内嵌双模式 · 粘贴截图自动落盘 · 内嵌图片批量迁移为文件 · 右键图注 / 尺寸 / 对齐 / 复制 / 重命名 / 转内嵌 / 转相对路径 / 下载网络图。
 
 ### 查找 · 导航
-查找替换（正则 + 8 种预设 + 全部命中高亮，CSS Custom Highlight API）· 跨文件全局搜索（上限 1500 文件 / 单文件 1.5MB / 400 命中）· 大纲树（纯文本、级别过滤、拖拽调序、分节字数）· 转到行 `Ctrl+G`。
+查找替换（正则 + 8 种预设 + 全部命中高亮，CSS Custom Highlight API）· 跨文件全局搜索（上限 1500 文件 / 单文件 1.5MB / 400 命中）· **本地语义检索**（TF-IDF + 同义词，离线近义召回）· 大纲树（纯文本、级别过滤、拖拽调序、分节字数）· 转到行 `Ctrl+G`。
 
 ### 导出
 | 通道 | 说明 |
@@ -99,6 +114,18 @@ KaTeX 行内 `$...$` 与块级（25 个模板，离线）· Mermaid 七类图表
 
 ### 外观与设置
 六套主题（浅色 / 青空 / 护眼米黄 / 深色 / 墨夜 / 熊猫，窗口 + 编辑区 + 弹层同步换肤）· 缩放 80%~160% · 系统设置五页（**通用 / 编辑器 / 写作与输入 / 模板 / AI 连接**）· 快捷键自定义与冲突检测 · 8 个内置模板 + 自建模板统一管理（名称上限 10 字，可改名 / 改内容 / 排序 / 恢复内置，也可在侧栏文件右键「设为模板…」）。
+
+### AI 智能写作（端侧可控）
+
+mdEditor 将大模型能力内建为写作闭环，而非外挂插件；默认本地优先、按需上云，**密钥与文本始终由用户掌控**。
+
+- **多模型接入（BYOK）**：内置 15 家主流大模型服务（OpenAI / DeepSeek / 通义千问 / 智谱 GLM / Kimi / Gemini / Azure / OpenRouter / 硅基流动 / MiniMax / 百川 / Mistral / Together 等），含**本地 Ollama 原生推理（免 API Key、自动检测已装模型）**与「自定义 OpenAI 兼容端点」；默认连接本地 Ollama，云端服务按需填 Key，数据不出本机可控。
+- **右键一键优化（语义级改写）**：框选文字后正文右键、或选中整篇后文件 / 标签右键，调出「AI 优化」菜单——润色 / 精简 / 扩写 / 纠错 / 翻译 / 改语气 / 选中提问七类动作（文档级六类），每项独立预设提示词，且菜单项可在「AI 连接」设置中自定义。
+- **片段级可控采纳**：AI 改写结果以**片段 diff** 呈现，可逐处采纳或回退，全程 `Ctrl+Z` 可撤销，绝不无声覆盖原文。
+- **流式 AI 问答面板**：侧栏 AI 助手支持流式增量生成、生成中 `ESC` 中止、回答一键复制 / 插入；内置上下文约束（仅依据当前文档上下文作答与改写，抑制模型臆造）。
+- **本地语义检索**：`semsearch` 以 TF-IDF + 同义词实现**零依赖语义搜索**，与跨文件关键词检索互补，离线即可做近义召回，不牺牲体积与隐私。
+
+> 工程取舍：以「自带密钥 + 本地端侧」为前提规避订阅与遥测；语义改写与检索均可在纯离线环境运行，契合政企内网 / 无网写作场景。
 
 ---
 
@@ -136,6 +163,12 @@ mdEditor/
 │  ├─ exporters.py     Markdown 解析 + HTML / PDF / docx / EPUB / pandoc 通道
 │  ├─ styles.py        六套主题调色板与 QSS 模板
 │  ├─ config.py        版本号、常量、内置模板、图表主题、演示文档
+│  ├─ ai_core.py       大模型接入内核（15 家 BYOK + 本地 Ollama 流式）
+│  ├─ ai_connection.py AI 连接设置（BYOK / 本地 Ollama 引导）
+│  ├─ ai_pane.py       AI 问答面板（流式 / 上下文约束 / 复制插入）
+│  ├─ ai_context.py    AI 上下文约束提示词
+│  ├─ semsearch.py     本地语义检索（TF-IDF + 同义词，零依赖）
+│  ├─ diffmerge.py     片段级差异合并（AI 改写 diff / 版本历史三色 diff）
 │  ├─ icons.py         QPainter 矢量线性图标
 │  ├─ mdeditor.ico
 │  ├─ katex/           离线 KaTeX（随包分发）
