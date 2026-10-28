@@ -44,6 +44,17 @@ SEP = ";" if platform.system() == "Windows" else ":"
 # 运行时依赖中在函数体内懒加载、需显式声明的第三方库
 HIDDEN_IMPORTS = ["docx", "pypdf", "fpdf", "openutil", "secretstore", "trash", "mdrender", "diffmerge"]
 
+# v3.49（BUILD-FIX）：PySide6 6.12 将 QtWebEngine / WebChannel 拆为独立 wheel，
+# 显式声明 hidden import，确保 PyInstaller 静态分析阶段即收集对应子模块，
+# 避免「本地能跑、打包后运行报 ImportError」的偶发问题。
+QT_HIDDEN_IMPORTS = [
+    "PySide6.QtWebEngineWidgets",
+    "PySide6.QtWebEngineCore",
+    "PySide6.QtWebChannel",
+    "PySide6.QtNetwork",
+    "PySide6.QtPrintSupport",
+]
+
 
 def _pyside6_translations_dir():
     """动态定位 PySide6 翻译目录（三平台通用，不再硬编码 venv 路径）。"""
@@ -133,7 +144,7 @@ def build(pyinstaller, dry_run):
            "--distpath", dist, "--workpath", work, "--specpath", spec]
     cmd += _icon_arg()
     cmd += _add_data_list()
-    for mod in HIDDEN_IMPORTS:
+    for mod in HIDDEN_IMPORTS + QT_HIDDEN_IMPORTS:
         cmd += ["--hidden-import", mod]
     if platform.system() == "Darwin":
         cmd += ["--osx-bundle-identifier", "com.workbuddy.mdeditor"]

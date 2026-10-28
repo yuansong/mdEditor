@@ -234,6 +234,7 @@ import styles
 import uistyles
 import mactitlebar
 import ribbonchrome
+from i18n import T, get_lang, set_lang
 
 # v3.32（P0-5）：模块级日志器（main.setup_logging 已装配滚动文件输出）。
 _log = logging.getLogger("mdEditor.app")
@@ -944,7 +945,8 @@ class MainWindow(QMainWindow):
                 return super().pixelMetric(pm, option, widget)
 
         # ---- 左侧竖向工具栏：只保留文件级高频操作，统一线性图标 ----
-        tb = QToolBar("主工具栏", self)
+        tb = QToolBar(T("主工具栏"), self)
+        self._main_tb = tb
         tb.setObjectName("sideTB")
         tb.setStyle(_SideTBStyle(tb.style()))
         tb.setMovable(False)
@@ -984,7 +986,8 @@ class MainWindow(QMainWindow):
         def tb_act(icon, tooltip, slot):
             a = QAction(self)
             a.setIcon(icon)
-            a.setToolTip(tooltip)
+            a.setProperty("zh_tip", tooltip)
+            a.setToolTip(T(tooltip))
             a.triggered.connect(slot)
             tb.addAction(a)
             # v3.39.14（HEAD-2）：三列比例调优——按钮统一 36px，左列收窄到 ~42px
@@ -1000,7 +1003,7 @@ class MainWindow(QMainWindow):
         self._btn_side.setAutoRaise(True)
         self._btn_side.setIcon(icon_sidepanel(20))
         self._btn_side.setIconSize(QSize(20, 20))
-        self._btn_side.setToolTip("收起侧边栏 (Ctrl+Shift+L)")
+        self._btn_side.setToolTip(T("收起侧边栏 (Ctrl+Shift+L)"))
         self._btn_side.setCursor(Qt.PointingHandCursor)
         self._btn_side.setFixedSize(38, 34)  # v3.44.5（DESIGN01）：对齐设计稿 .vbtn 38x34
         self._btn_side.clicked.connect(self.toggle_sidebar)
@@ -1034,8 +1037,156 @@ class MainWindow(QMainWindow):
         self._shortcut_acts = {}   # 动作名 -> QAction（设置->快捷键设置 可配置）
         self._shortcut_defs = []   # [(分组, [(动作名, 默认快捷键), ...]), ...]
 
+        self._build_menubar()
+
+        # ---- v3.40（UI-R7⑩）：菜单栏右端「视图状态区」（R5 定稿）——
+        #      ◉ 专注 / ≡ 打字机 快捷开关 + 写作|源码|分屏 分段钮（单击直切）。
+        #      状态唯一源 = self._mode / _typewriter / _focus（性能红线：单向订阅，无双向广播）
+        corner = QWidget(self)
+        corner.setObjectName("vsz")
+        cl = QHBoxLayout(corner)
+        cl.setContentsMargins(0, 0, 6, 0)
+        cl.setSpacing(2)
+
+        def _qk(text, tip, slot):
+            b = QToolButton(corner)
+            b.setProperty("zh", text)
+            b.setText(T(text))
+            b.setObjectName("qk")
+            b.setProperty("zh_tip", tip)
+            b.setToolTip(T(tip))
+            b.setCursor(Qt.PointingHandCursor)
+            b.setCheckable(True)
+            b.setAutoRaise(True)
+            b.setFixedHeight(22)
+            b.clicked.connect(slot)
+            cl.addWidget(b)
+            return b
+
+        self._qk_focus = _qk("◉ 专注", "专注模式（隐藏侧栏 / 工具栏，居中书写）",
+                             self.toggle_focus)
+        self._qk_tw = _qk("≡ 打字机", "打字机模式（当前行恒居屏幕中部）",
+                          self.toggle_typewriter)
+        self._qk_sep = QLabel(corner)
+        self._qk_sep.setFixedSize(1, 14)
+        cl.addWidget(self._qk_sep)
+        # v3.44.6：模式分段钮（写作|源码|分屏）重构为「立体分段控件」——
+        # 外层圆角容器（浮雕渐变 + 描边）包裹三钮，钮间 1px 分隔线；选中段 accent 实心填充（凸起激活段）。
+        # 与左侧 专注/打字机 的「扁平」风格形成对比，整体仍属同一套现代经典语言。
+        self._seg_group = QButtonGroup(corner)
+        self._seg_group.setExclusive(True)
+        self._seg_btns = {}
+        seg_group = QWidget(corner)
+        seg_group.setObjectName("segGroup")
+        seg_group.setAttribute(Qt.WA_StyledBackground, True)  # 普通 QWidget 需此属性才会绘制 QSS 背景/边框（立体容器）
+        sgl = QHBoxLayout(seg_group)
+        sgl.setContentsMargins(1, 1, 1, 1)
+        sgl.setSpacing(0)
+        self._seg_divs = []
+        for i, (mid, label, tip) in enumerate((
+            ("edit", "写作", "写作模式（所见即所得）"),
+            ("src", "源码", "源码模式（直接编辑 Markdown 源码）"),
+            ("dual", "分屏", "分屏模式（左侧源码 · 右侧实时预览，Ctrl+Shift+D）"),
+        )):
+            if i > 0:
+                dv = QLabel(seg_group)
+                dv.setObjectName("segDiv")
+                dv.setFixedSize(1, 14)
+                sgl.addWidget(dv)
+                self._seg_divs.append(dv)
+            b = QToolButton(seg_group)
+            b.setObjectName("seg")
+            b.setProperty("zh", label)
+            b.setText(T(label))
+            b.setProperty("zh_tip", tip)
+            b.setToolTip(T(tip))
+            b.setCursor(Qt.PointingHandCursor)
+            b.setCheckable(True)
+            b.setFixedHeight(18)
+            b.clicked.connect(lambda _=False, m=mid: self._set_mode(m))
+            self._seg_group.addButton(b)
+            self._seg_btns[mid] = b
+            sgl.addWidget(b)
+        self._seg_group_widget = seg_group
+        seg_group.setFixedHeight(24)  # v3.44.28 RIBBON-14：容器仅略高于 18px 按钮
+        cl.addWidget(seg_group)
+
+        # v3.47.5（REQ3）：以线性图标按钮替代文字「AI 助手」，节省顶栏空间、
+        # 与左侧扁平图标风格一致；点击展开 / 收起 AI 助手面板（默认连接本地 Ollama）。
+        self._btn_ai = QToolButton(corner)
+        self._btn_ai.setObjectName("aiCornerBtn")
+        self._btn_ai.setIcon(icon_ai(18))
+        self._btn_ai.setIconSize(QSize(18, 18))
+        self._btn_ai.setToolTip(T("AI 助手（点击展开 / 收起，默认连接本地 Ollama）"))
+        self._btn_ai.setCursor(Qt.PointingHandCursor)
+        self._btn_ai.setAutoRaise(True)
+        self._btn_ai.setFixedSize(26, 24)
+        self._btn_ai.clicked.connect(self._toggle_ai_dock)
+        cl.addWidget(self._btn_ai)
+
+        self.menuBar().setCornerWidget(corner, Qt.TopRightCorner)
+        self._vsz_corner = corner
+        self._qk_focus.setChecked(self._focus)
+        self._qk_tw.setChecked(self._typewriter)
+        self._seg_btns[self._mode].setChecked(True)
+        self._apply_chrome_styles()
+
+        # v3.38（TB-1）：恢复上次的工具栏可见性（隐藏 → 同步显形边缘展开按钮）
+        self.set_toolbar_visible(
+            self._settings.value("ui/toolbarVisible", True, type=bool), toast=False)
+
+    # ---- v3.38（TB-1）：工具栏展开按钮的摆放与右键菜单 ----
+    def _place_tb_expand_btn(self):
+        """把边缘展开按钮摆到左侧工具栏原本的顶部位置（菜单栏下方）。"""
+        b = getattr(self, "_btn_tb_show", None)
+        if b is None:
+            return
+        top = self.menuBar().height() if self.menuBar() is not None else 0
+        b.move(2, top + 18)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._place_tb_expand_btn()
+        self._update_tb_more()   # v3.38（TAB-9）：窗口缩放重算标签溢出态
+
+    def createPopupMenu(self):
+        """工具栏 / 菜单栏右键菜单：只给「显示 / 隐藏工具栏」一项。
+
+        复用视图菜单同一个 QAction，避免出现两套互不同步的开关（默认实现只给
+        QToolBar 自带的 toggleViewAction，取消勾选后即无法找回）。
+        """
+        m = QMenu(self)
+        act = getattr(self, "_act_toolbar", None)
+        if act is not None:
+            m.addAction(act)
+        return m
+
+    def _set_mmd_theme(self, val):
+        """v3.30.19（MMD-7）/ v3.34（MMD-11）：全局图表主题切换。
+
+        持久化 QSettings.mmdTheme 并下发全部已加载视图；旧版原生主题值
+        （default/dark/forest/neutral）先归一化到新主题，保证升级无感。
+        设置面板下拉与图表块右键子菜单共用本方法，两处状态天然一致。"""
+        val = MMD_LEGACY.get(val, val) or ""
+        self._settings.setValue("mmdTheme", val)
+        self._js_all(f"window.setMmdTheme({js(val)})")
+        lbl = MMD_THEME_LABELS.get(val, "")
+        self.show_status(f"图表主题：{lbl or val}" if val else "图表主题已更新（跟随界面主题）")
+
+    def _js_all(self, code):
+        """对全部已加载的编辑器视图执行 JS。"""
+        for role, view in (("edit", self._view), ("src", getattr(self, "_view_src", None)),
+                           ("prev", getattr(self, "_view_prev", None))):
+            st = self._vstate.get(role)
+            if view is not None and st and st.get("loaded"):
+                self._js_view(view, code)
+
+    def _build_menubar(self):
+        """构建（或重建）菜单栏。语言切换时清空后重跑即可即时刷新。"""
+        self._shortcut_acts = {}
+        self._shortcut_defs = []
         # ---- 文件菜单 ----
-        m_file = self.menuBar().addMenu("文件(&F)")
+        m_file = self.menuBar().addMenu(T("文件") + "(&F)")
         self._reg_act("文件", "新建", "Ctrl+N", self.new_file, menu=m_file)
         # v3.44.36（BOOK-4）：新建书籍紧随「新建」之后（同类新建操作相邻）
         self._reg_act("文件", "新建书籍…", None, self.create_new_book, menu=m_file)
@@ -1045,7 +1196,7 @@ class MainWindow(QMainWindow):
         self._reg_act("文件", "打开书籍…", None, self.open_book, menu=m_file)
         # v3.46（SoloMD P2）：Excel/CSV 表格导入（对话框选文件 → 光标处插入 Markdown 表格）
         self._reg_act("文件", "导入表格…", None, self.import_table, menu=m_file)
-        m_recent = self._recent_menu = m_file.addMenu("最近文件")
+        m_recent = self._recent_menu = m_file.addMenu(T("最近文件"))
         m_recent.aboutToShow.connect(self._rebuild_recent_menu)
         m_file.addSeparator()
         self._reg_act("文件", "保存", "Ctrl+S", self.save_file, menu=m_file)
@@ -1063,30 +1214,30 @@ class MainWindow(QMainWindow):
         m_file.addSeparator()
         # v3.40（UI-R7⑥）：R6/3.2 定稿——导出 5 项收拢为「导出」子菜单（Word/WPS 惯例），
         # 文件菜单只留文档生命周期
-        m_export = m_file.addMenu("导出")
+        m_export = m_file.addMenu(T("导出"))
         self._reg_act("文件", "导出 HTML…", None, self.export_html, menu=m_export)
         self._reg_act("文件", "导出 PDF…（含书签）", None, self.export_pdf, menu=m_export)
         self._reg_act("文件", "导出 Word (docx)…", None, self.export_docx, menu=m_export)
         self._reg_act("文件", "导出 EPUB…", None, self.export_epub, menu=m_export)
         self._reg_act("文件", "导出图片 (PNG)…", None, self.export_png, menu=m_export)
         # v3.32（P1-2②）：「复制为 HTML」是中文用户最高频交付动作（随导出组收拢）
-        a = QAction("复制为 HTML（公众号 / Word 富文本）", self)
+        a = QAction(T("复制为 HTML（公众号 / Word 富文本）"), self)
         a.triggered.connect(self.copy_as_html)
         m_export.addAction(a)
         m_file.addSeparator()
         self._reg_act("文件", "退出", "Ctrl+Q", self.close, menu=m_file)
 
         # ---- 编辑菜单（剪贴板操作由 Web 内核原生处理，不注册全局快捷键）----
-        m_edit = self.menuBar().addMenu("编辑(&E)")
+        m_edit = self.menuBar().addMenu(T("编辑") + "(&E)")
         self._reg_act("编辑", "撤销", "Ctrl+Z", lambda: self._js_active('window.cmd("undo")'), menu=m_edit)
         self._reg_act("编辑", "重做", "Ctrl+Y", lambda: self._js_active('window.cmd("redo")'), menu=m_edit)
         m_edit.addSeparator()
         for label, act_name in (("剪切", QWebEnginePage.Cut), ("复制", QWebEnginePage.Copy),
                                 ("粘贴", QWebEnginePage.Paste)):
-            a = QAction(label, self)
+            a = QAction(T(label), self)
             a.triggered.connect(lambda _=False, x=act_name: self._page_action(x))
             m_edit.addAction(a)
-        a = QAction("全选", self)
+        a = QAction(T("全选"), self)
         a.triggered.connect(lambda: self._page_action(QWebEnginePage.SelectAll))
         m_edit.addAction(a)
         # v3.32（P1-2②）：「复制为 HTML」已提级到文件菜单（此处不再重复）
@@ -1121,7 +1272,7 @@ class MainWindow(QMainWindow):
             self._reg_act("格式", _name, _seq, lambda _=False, c=_cmd: self._fmt(c))
 
         # ---- 视图菜单 ----
-        m_view = self.menuBar().addMenu("视图(&V)")
+        m_view = self.menuBar().addMenu(T("视图") + "(&V)")
         # 三种模式：互斥单选（与左侧工具栏按钮联动）
         self._mode_group = QActionGroup(self)
         self._mode_group.setExclusive(True)
@@ -1205,22 +1356,22 @@ class MainWindow(QMainWindow):
         # ---- 外观（v3.43.0 LOOK-1）：原「系统设置 → 外观」页整体提升为一级菜单 ----
         #      位置：视图(V) 之后、工具(T) 之前（设计稿 01~06 顶栏同序）；
         #      四个子菜单均为 QActionGroup 互斥单选 + 当前项打勾，展开时同步选中态。
-        m_look = self.menuBar().addMenu("外观(&A)")
+        m_look = self.menuBar().addMenu(T("外观") + "(&A)")
         self._m_look = m_look
         m_look.aboutToShow.connect(self._sync_look_menu)
 
         # 1) 界面风格 —— 严格取自设计稿的 6 套，名称纯净（无编号 / 后缀）
-        self._sm_style = m_look.addMenu("界面风格")
+        self._sm_style = m_look.addMenu(T("界面风格"))
         self._style_group = QActionGroup(self)
         self._style_group.setExclusive(True)
         self._sm_style.aboutToShow.connect(self._rebuild_style_menu)
 
         # 2) 主题 —— 六套，色卡图标取 THEMES 的 swatch
-        self._sm_theme = m_look.addMenu("主题")
+        self._sm_theme = m_look.addMenu(T("主题"))
         self._theme_group = QActionGroup(self)
         self._theme_group.setExclusive(True)
         for t in styles.THEMES:
-            act = QAction(t["label"], self)
+            act = QAction(T(t["label"]), self)
             act.setCheckable(True)
             act.setIcon(self._chip_icon(t.get("swatch") or "#ffffff"))
             act.triggered.connect(lambda _=False, tid=t["id"]: self.apply_theme(tid))
@@ -1229,12 +1380,12 @@ class MainWindow(QMainWindow):
             self._theme_acts[t["id"]] = act
 
         # 3) 图表风格（mermaid）—— 与图表块右键子菜单共用 QSettings.mmdTheme
-        self._sm_mmd = m_look.addMenu("图表风格")
+        self._sm_mmd = m_look.addMenu(T("图表风格"))
         self._mmd_group = QActionGroup(self)
         self._mmd_group.setExclusive(True)
         self._mmd_acts = {}
         for _label, _val in MMD_THEMES:
-            act = QAction(_label, self)
+            act = QAction(T(_label), self)
             act.setCheckable(True)
             act.triggered.connect(lambda _=False, v=_val: self._set_mmd_theme(v))
             self._mmd_group.addAction(act)
@@ -1242,12 +1393,12 @@ class MainWindow(QMainWindow):
             self._mmd_acts[_val] = act
 
         # 4) 代码风格 —— 与代码块默认配置共用 config.CODE_STYLES
-        self._sm_code = m_look.addMenu("代码风格")
+        self._sm_code = m_look.addMenu(T("代码风格"))
         self._code_group = QActionGroup(self)
         self._code_group.setExclusive(True)
         self._code_acts = {}
         for _sid, _slabel in CODE_STYLES:
-            act = QAction(_slabel, self)
+            act = QAction(T(_slabel), self)
             act.setCheckable(True)
             act.triggered.connect(lambda _=False, s=_sid: self.set_code_prefs(style=s))
             self._code_group.addAction(act)
@@ -1261,7 +1412,7 @@ class MainWindow(QMainWindow):
 
         # ---- 工具（v3.40 UI-R7⑨：R6 定稿「工具(T)」——版本容灾 / 批量工具 / 设置并入；
         #      3.2 迁移清单：文件菜单的版本组与批量工具、「设置」菜单整体迁入）----
-        m_tool = self.menuBar().addMenu("工具(&T)")
+        m_tool = self.menuBar().addMenu(T("工具") + "(&T)")
         self._reg_act("工具", "历史版本…", "Ctrl+Shift+H", self.show_history, menu=m_tool)
         # v3.32（P0-3）：命令面板同款「立即留档」在工具菜单也可见，主动打点
         self._reg_act("工具", "立即留档（版本快照）", None, self.manual_snapshot, menu=m_tool)
@@ -1274,7 +1425,7 @@ class MainWindow(QMainWindow):
         self._reg_act("工具", "快捷键设置…", None, self.show_shortcut_settings, menu=m_tool)
 
         # ---- 帮助（始终放最后）----
-        m_help = self.menuBar().addMenu("帮助(&H)")
+        m_help = self.menuBar().addMenu(T("帮助") + "(&H)")
         # v3.38（HELP-1）：使用手册（只读渲染视图，滚动浏览全功能参考指南）
         self._reg_act("帮助", "使用手册", "F12", self._show_manual, menu=m_help)
         # v3.44.31（FIX ④）：移除「快捷键一览」F1 对话框，快捷键统一收录于《使用手册》第 10 章
@@ -1284,150 +1435,56 @@ class MainWindow(QMainWindow):
         self._reg_act("帮助", "复制诊断信息", None, self.copy_diagnostics, menu=m_help)
         self._reg_act("帮助", "关于", None, self._about, menu=m_help)
 
-        # ---- v3.40（UI-R7⑩）：菜单栏右端「视图状态区」（R5 定稿）——
-        #      ◉ 专注 / ≡ 打字机 快捷开关 + 写作|源码|分屏 分段钮（单击直切）。
-        #      状态唯一源 = self._mode / _typewriter / _focus（性能红线：单向订阅，无双向广播）
-        corner = QWidget(self)
-        corner.setObjectName("vsz")
-        cl = QHBoxLayout(corner)
-        cl.setContentsMargins(0, 0, 6, 0)
-        cl.setSpacing(2)
+    def _apply_language(self):
+        """界面语言变更后即时刷新：菜单栏 / 工具栏提示 / 顶栏分段 / 编辑器内核。"""
+        self.menuBar().clear()
+        self._build_menubar()
+        self._retranslate_chrome()
+        self._push_lang_to_js()
 
-        def _qk(text, tip, slot):
-            b = QToolButton(corner)
-            b.setText(text)
-            b.setObjectName("qk")
-            b.setToolTip(tip)
-            b.setCursor(Qt.PointingHandCursor)
-            b.setCheckable(True)
-            b.setAutoRaise(True)
-            b.setFixedHeight(22)
-            b.clicked.connect(slot)
-            cl.addWidget(b)
-            return b
+    def _retranslate_chrome(self):
+        """重翻工具栏与顶栏分段 / 快捷钮（这些控件不在菜单栏内，需单独处理）。"""
+        tb = getattr(self, "_main_tb", None)
+        if tb is not None:
+            for act in tb.actions():
+                zh = act.property("zh_tip")
+                if zh is not None:
+                    act.setToolTip(T(zh))
+        for mid in ("edit", "src", "dual"):
+            b = self._seg_btns.get(mid)
+            if b is not None:
+                if b.property("zh") is not None:
+                    b.setText(T(b.property("zh")))
+                if b.property("zh_tip") is not None:
+                    b.setToolTip(T(b.property("zh_tip")))
+        for b in (getattr(self, "_qk_focus", None), getattr(self, "_qk_tw", None),
+                  getattr(self, "_btn_ai", None)):
+            if b is not None:
+                if b.property("zh") is not None:
+                    b.setText(T(b.property("zh")))
+                if b.property("zh_tip") is not None:
+                    b.setToolTip(T(b.property("zh_tip")))
+        # 侧栏开关钮（动态 tooltip：展开 / 收起）随语言重翻
+        if getattr(self, "_btn_side", None) is not None:
+            self._update_side_btn()
 
-        self._qk_focus = _qk("◉ 专注", "专注模式（隐藏侧栏 / 工具栏，居中书写）",
-                             self.toggle_focus)
-        self._qk_tw = _qk("≡ 打字机", "打字机模式（当前行恒居屏幕中部）",
-                          self.toggle_typewriter)
-        self._qk_sep = QLabel(corner)
-        self._qk_sep.setFixedSize(1, 14)
-        cl.addWidget(self._qk_sep)
-        # v3.44.6：模式分段钮（写作|源码|分屏）重构为「立体分段控件」——
-        # 外层圆角容器（浮雕渐变 + 描边）包裹三钮，钮间 1px 分隔线；选中段 accent 实心填充（凸起激活段）。
-        # 与左侧 专注/打字机 的「扁平」风格形成对比，整体仍属同一套现代经典语言。
-        self._seg_group = QButtonGroup(corner)
-        self._seg_group.setExclusive(True)
-        self._seg_btns = {}
-        seg_group = QWidget(corner)
-        seg_group.setObjectName("segGroup")
-        seg_group.setAttribute(Qt.WA_StyledBackground, True)  # 普通 QWidget 需此属性才会绘制 QSS 背景/边框（立体容器）
-        sgl = QHBoxLayout(seg_group)
-        sgl.setContentsMargins(1, 1, 1, 1)
-        sgl.setSpacing(0)
-        self._seg_divs = []
-        for i, (mid, label, tip) in enumerate((
-            ("edit", "写作", "写作模式（所见即所得）"),
-            ("src", "源码", "源码模式（直接编辑 Markdown 源码）"),
-            ("dual", "分屏", "分屏模式（左侧源码 · 右侧实时预览，Ctrl+Shift+D）"),
-        )):
-            if i > 0:
-                dv = QLabel(seg_group)
-                dv.setObjectName("segDiv")
-                dv.setFixedSize(1, 14)
-                sgl.addWidget(dv)
-                self._seg_divs.append(dv)
-            b = QToolButton(seg_group)
-            b.setObjectName("seg")
-            b.setText(label)
-            b.setToolTip(tip)
-            b.setCursor(Qt.PointingHandCursor)
-            b.setCheckable(True)
-            b.setFixedHeight(18)
-            b.clicked.connect(lambda _=False, m=mid: self._set_mode(m))
-            self._seg_group.addButton(b)
-            self._seg_btns[mid] = b
-            sgl.addWidget(b)
-        self._seg_group_widget = seg_group
-        seg_group.setFixedHeight(24)  # v3.44.28 RIBBON-14：容器仅略高于 18px 按钮
-        cl.addWidget(seg_group)
-
-        # v3.47.5（REQ3）：以线性图标按钮替代文字「AI 助手」，节省顶栏空间、
-        # 与左侧扁平图标风格一致；点击展开 / 收起 AI 助手面板（默认连接本地 Ollama）。
-        self._btn_ai = QToolButton(corner)
-        self._btn_ai.setObjectName("aiCornerBtn")
-        self._btn_ai.setIcon(icon_ai(18))
-        self._btn_ai.setIconSize(QSize(18, 18))
-        self._btn_ai.setToolTip("AI 助手（点击展开 / 收起，默认连接本地 Ollama）")
-        self._btn_ai.setCursor(Qt.PointingHandCursor)
-        self._btn_ai.setAutoRaise(True)
-        self._btn_ai.setFixedSize(26, 24)
-        self._btn_ai.clicked.connect(self._toggle_ai_dock)
-        cl.addWidget(self._btn_ai)
-
-        self.menuBar().setCornerWidget(corner, Qt.TopRightCorner)
-        self._vsz_corner = corner
-        self._qk_focus.setChecked(self._focus)
-        self._qk_tw.setChecked(self._typewriter)
-        self._seg_btns[self._mode].setChecked(True)
-        self._apply_chrome_styles()
-
-        # v3.38（TB-1）：恢复上次的工具栏可见性（隐藏 → 同步显形边缘展开按钮）
-        self.set_toolbar_visible(
-            self._settings.value("ui/toolbarVisible", True, type=bool), toast=False)
-
-    # ---- v3.38（TB-1）：工具栏展开按钮的摆放与右键菜单 ----
-    def _place_tb_expand_btn(self):
-        """把边缘展开按钮摆到左侧工具栏原本的顶部位置（菜单栏下方）。"""
-        b = getattr(self, "_btn_tb_show", None)
-        if b is None:
-            return
-        top = self.menuBar().height() if self.menuBar() is not None else 0
-        b.move(2, top + 18)
-
-    def resizeEvent(self, e):
-        super().resizeEvent(e)
-        self._place_tb_expand_btn()
-        self._update_tb_more()   # v3.38（TAB-9）：窗口缩放重算标签溢出态
-
-    def createPopupMenu(self):
-        """工具栏 / 菜单栏右键菜单：只给「显示 / 隐藏工具栏」一项。
-
-        复用视图菜单同一个 QAction，避免出现两套互不同步的开关（默认实现只给
-        QToolBar 自带的 toggleViewAction，取消勾选后即无法找回）。
-        """
-        m = QMenu(self)
-        act = getattr(self, "_act_toolbar", None)
-        if act is not None:
-            m.addAction(act)
-        return m
-
-    def _set_mmd_theme(self, val):
-        """v3.30.19（MMD-7）/ v3.34（MMD-11）：全局图表主题切换。
-
-        持久化 QSettings.mmdTheme 并下发全部已加载视图；旧版原生主题值
-        （default/dark/forest/neutral）先归一化到新主题，保证升级无感。
-        设置面板下拉与图表块右键子菜单共用本方法，两处状态天然一致。"""
-        val = MMD_LEGACY.get(val, val) or ""
-        self._settings.setValue("mmdTheme", val)
-        self._js_all(f"window.setMmdTheme({js(val)})")
-        lbl = MMD_THEME_LABELS.get(val, "")
-        self.show_status(f"图表主题：{lbl or val}" if val else "图表主题已更新（跟随界面主题）")
-
-    def _js_all(self, code):
-        """对全部已加载的编辑器视图执行 JS。"""
-        for role, view in (("edit", self._view), ("src", getattr(self, "_view_src", None)),
-                           ("prev", getattr(self, "_view_prev", None))):
-            st = self._vstate.get(role)
-            if view is not None and st and st.get("loaded"):
-                self._js_view(view, code)
+    def _push_lang_to_js(self):
+        """把当前界面语言下发给 editor.html 内核（window.__setLang），覆盖三视图。"""
+        code = "window.__setLang && window.__setLang(%s)" % json.dumps(get_lang())
+        for role, view in (("edit", self._view), ("src", self._view_src), ("prev", self._view_prev)):
+            v = view
+            if v is not None and self._vstate.get(role, {}).get("loaded"):
+                try:
+                    self._js_view(v, code)
+                except Exception:
+                    pass
 
     def _reg_act(self, group, name, seq, slot, menu=None, checkable=False):
         """创建动作并纳入快捷键管理体系（设置 -> 快捷键设置 可查看 / 修改）。
 
         seq 为 None 表示无默认快捷键（动作仍登记在案）；已有用户自定义值时优先使用。
         """
-        act = QAction(name, self)
+        act = QAction(T(name), self)
         if checkable:
             act.setCheckable(True)
         act.triggered.connect(slot)
@@ -1815,6 +1872,9 @@ class MainWindow(QMainWindow):
         self._js_view(view, f"window.setSlashMenuConfig({js(json.dumps(self._slash_cfg()))})")
         # v3.32.2（TPL-C）：自定义模板随视图加载下发
         self._js_view(view, f"window.setCustomTemplates({self._custom_templates_js()})")
+        # v3.48.x（I18N）：界面语言随视图加载下发到内核（window.__setLang）；
+        # 覆盖 edit/src/prev 三视图，确保启动即生效，与语言选择器即时切换互补
+        self._js_view(view, f"window.__setLang && window.__setLang({js(get_lang())})")
         self._install_drop_filter()
 
     def _push_text(self, text):
@@ -6194,7 +6254,7 @@ class MainWindow(QMainWindow):
         vis = self._sidebar.isVisible()
         self._btn_side.setIcon(icon_sidepanel(20, collapsed=not vis))
         self._btn_side.setToolTip(
-            ("收起" if vis else "展开") + "侧边栏 (Ctrl+Shift+L)")
+            T(("收起" if vis else "展开") + "侧边栏 (Ctrl+Shift+L)"))
         if getattr(self, "_act_sidebar", None) is not None:
             self._act_sidebar.setChecked(vis)
         mtb = getattr(self, "_mac_title", None)   # v3.41.0：mac 统一工具栏同款钮同步

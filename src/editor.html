@@ -3014,7 +3014,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     btn.type = 'button';
     btn.className = 'lang-btn';
     btn.textContent = pre.getAttribute('data-lang') || '语言';
-    btn.title = '选择代码语言（可搜索、可自定义输入） · 右键语言栏 = 复制全部代码';
+    btn.title = T_js('选择代码语言（可搜索、可自定义输入） · 右键语言栏 = 复制全部代码', 'Choose code language (searchable, custom input) · right-click the language bar = copy all code');
     bar.appendChild(btn);
     /* v3.38（CODE-11）：长代码块（>20 行）折叠三角 + 折叠后的「N 行代码，点击展开」 */
     var codeLinesN = (pre.textContent || '').replace(/\n+$/, '').split('\n').length;
@@ -3024,7 +3024,8 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       var fbtn = document.createElement('button');
       fbtn.type = 'button';
       fbtn.className = 'fold-tri';
-      fbtn.title = '折叠 / 展开代码块';
+      fbtn.title = T_js('折叠 / 展开代码块', 'Collapse / Expand code block');
+      fbtn.setAttribute('data-zh-title', '折叠 / 展开代码块');
       if (CODE_FOLD[foldKey]) { wrap.classList.add('folded'); }
       fbtn.textContent = CODE_FOLD[foldKey] ? '▸' : '▾';
       fbtn.addEventListener('click', function (e) {
@@ -3036,15 +3037,17 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       bar.insertBefore(fbtn, btn);
       var fnote = document.createElement('div');
       fnote.className = 'fold-note';
-      fnote.textContent = codeLinesN + ' 行代码，点击展开';
+      fnote.textContent = codeLinesN + T_js(' 行代码，点击展开', ' lines of code, click to expand');
       fnote.addEventListener('click', function () { fbtn.click(); });
       wrap.appendChild(fnote);
     }
     var sbtn = document.createElement('button');
     sbtn.type = 'button';
     sbtn.className = 'lang-btn style-btn';
-    sbtn.textContent = '风格';
-    sbtn.title = '代码块显示设置：风格 / 行号（风格默认取系统设置）';
+    sbtn.textContent = T_js('风格', 'Style');
+    sbtn.setAttribute('data-zh', '风格');
+    sbtn.title = T_js('代码块显示设置：风格 / 行号（风格默认取系统设置）', 'Code block display: style / line numbers (style follows system settings by default)');
+    sbtn.setAttribute('data-zh-title', '代码块显示设置：风格 / 行号（风格默认取系统设置）');
     sbtn.addEventListener('click', function (e) {
       e.stopPropagation(); e.preventDefault();
       SP._anchor = sbtn;
@@ -3060,8 +3063,9 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     var lnbtn = document.createElement('button');
     lnbtn.type = 'button';
     lnbtn.className = 'lang-btn lnum-btn';
-    lnbtn.textContent = '行号';
-    lnbtn.title = lnOn0 ? '行数显示：开（点击关闭）' : '行数显示：关（点击开启）';
+    lnbtn.textContent = T_js('行号', 'Line No.');
+    lnbtn.setAttribute('data-zh', '行号');
+    lnbtn.title = T_js(lnOn0 ? '行数显示：开（点击关闭）' : '行数显示：关（点击开启）', lnOn0 ? 'Line numbers: on (click to turn off)' : 'Line numbers: off (click to turn on)');
     lnbtn.addEventListener('click', function (e) {
       e.stopPropagation(); e.preventDefault();
       var blkL = wrap.closest('.blk');
@@ -3069,15 +3073,16 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       var aL = idxL >= 0 ? parseFenceInfo(String(state.raw[idxL] || '').split('\n')[0]).attrs.lnum : null;
       var on = aL === '0' ? false : (aL === '1' ? true : CODE_PREFS.lnum);
       applyCodeLnum(wrap, on ? '0' : '1');
-      lnbtn.title = on ? '行数显示：关（点击开启）' : '行数显示：开（点击关闭）';
+      lnbtn.title = T_js(on ? '行数显示：关（点击开启）' : '行数显示：开（点击关闭）', on ? 'Line numbers: off (click to turn on)' : 'Line numbers: on (click to turn off)');
     });
     bar.appendChild(lnbtn);
     var wrAt0 = idxHint >= 0 ? parseFenceInfo(String(state.raw[idxHint] || '').split('\n')[0]).attrs.wrap : null;
     var wrbtn = document.createElement('button');
     wrbtn.type = 'button';
     wrbtn.className = 'lang-btn wrap-btn';
-    wrbtn.textContent = '换行';
-    wrbtn.title = wrAt0 === '1' ? '自动换行：开（点击关闭）' : '自动换行：关（点击开启）';
+    wrbtn.textContent = T_js('换行', 'Wrap');
+    wrbtn.setAttribute('data-zh', '换行');
+    wrbtn.title = T_js(wrAt0 === '1' ? '自动换行：开（点击关闭）' : '自动换行：关（点击开启）', wrAt0 === '1' ? 'Auto wrap: on (click to turn off)' : 'Auto wrap: off (click to turn on)');
     wrbtn.addEventListener('click', function (e) {
       e.stopPropagation(); e.preventDefault();
       var blkW = wrap.closest('.blk');
@@ -3085,7 +3090,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       var aW = idxW >= 0 ? parseFenceInfo(String(state.raw[idxW] || '').split('\n')[0]).attrs.wrap : null;
       var on = aW === '1';
       applyCodeWrap(wrap, on ? '0' : '1');
-      wrbtn.title = on ? '自动换行：关（点击开启）' : '自动换行：开（点击关闭）';
+      wrbtn.title = T_js(on ? '自动换行：关（点击开启）' : '自动换行：开（点击关闭）', on ? 'Auto wrap: off (click to turn on)' : 'Auto wrap: on (click to turn off)');
     });
     bar.appendChild(wrbtn);
     /* v3.38（CODE-10）：hover 显形的「复制」入口（hover 才出现，兼顾 CODE-7
@@ -3094,7 +3099,8 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     cpbtn.type = 'button';
     cpbtn.className = 'lang-btn copy-btn';
     cpbtn.textContent = '⧉';
-    cpbtn.title = '复制全部代码（也可右键语言栏）';
+    cpbtn.title = T_js('复制全部代码（也可右键语言栏）', 'Copy all code (or right-click the language bar)');
+    cpbtn.setAttribute('data-zh-title', '复制全部代码（也可右键语言栏）');
     cpbtn.addEventListener('click', function (e) {
       e.stopPropagation(); e.preventDefault();
       var c2 = wrap.querySelector('pre.fence code');
@@ -8691,10 +8697,10 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       hidePops();
       linkEditCtx = _lkCtx;
       BM._mx = e.clientX; BM._my = e.clientY;   /* 记录打开位置，供「编辑地址」弹层定位 */
-      BM.innerHTML = '<div class="cap">链接</div>' +
-        '<div class="mi" data-act="linkedit"><span style="width:18px;text-align:center">✎</span>编辑地址</div>' +
-        '<div class="mi" data-act="linkcopy"><span style="width:18px;text-align:center">⧉</span>复制地址</div>' +
-        '<div class="mi" data-act="linkopen"><span style="width:18px;text-align:center">↗</span>打开链接</div>';
+      BM.innerHTML = '<div class="cap">' + T_js('链接', 'Link') + '</div>' +
+        '<div class="mi" data-act="linkedit"><span style="width:18px;text-align:center">✎</span>' + T_js('编辑地址', 'Edit Address') + '</div>' +
+        '<div class="mi" data-act="linkcopy"><span style="width:18px;text-align:center">⧉</span>' + T_js('复制地址', 'Copy Address') + '</div>' +
+        '<div class="mi" data-act="linkopen"><span style="width:18px;text-align:center">↗</span>' + T_js('打开链接', 'Open Link') + '</div>';
       activePop = 'block';
       placePop(BM, e.clientX, e.clientY);
       return;
@@ -8732,9 +8738,9 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       if (fnIdx >= 0) {
         e.preventDefault(); e.stopPropagation();
         handleIdx = fnIdx;
-        BM.innerHTML = '<div class="cap">脚注</div>' +
-          '<div class="mi" data-act="fnrenum"><span style="width:18px;text-align:center">№</span>按出现顺序重排编号</div>' +
-          '<div class="mi" data-act="fnclean"><span style="width:18px;text-align:center">🧹</span>清理未引用的脚注定义</div>';
+        BM.innerHTML = '<div class="cap">' + T_js('脚注', 'Footnote') + '</div>' +
+          '<div class="mi" data-act="fnrenum"><span style="width:18px;text-align:center">№</span>' + T_js('按出现顺序重排编号', 'Renumber by order of appearance') + '</div>' +
+          '<div class="mi" data-act="fnclean"><span style="width:18px;text-align:center">🧹</span>' + T_js('清理未引用的脚注定义', 'Clean unreferenced footnote defs') + '</div>';
         activePop = 'block';
         placePop(BM, e.clientX, e.clientY);
         return;
@@ -8750,12 +8756,12 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         e.preventDefault(); e.stopPropagation();
         hidePops();
         handleIdx = cbIdx;
-        BM.innerHTML = '<div class="cap">代码块</div>' +
-          '<div class="mi" data-act="codecpl"><span style="width:18px;text-align:center">⧉</span>复制代码</div>' +
-          '<div class="mi" data-act="codecpsel"><span style="width:18px;text-align:center">📋</span>复制（选区）</div>' +
-          '<div class="mi" data-act="codepaste"><span style="width:18px;text-align:center">📌</span>粘贴</div>' +
+        BM.innerHTML = '<div class="cap">' + T_js('代码块', 'Code Block') + '</div>' +
+          '<div class="mi" data-act="codecpl"><span style="width:18px;text-align:center">⧉</span>' + T_js('复制代码', 'Copy Code') + '</div>' +
+          '<div class="mi" data-act="codecpsel"><span style="width:18px;text-align:center">📋</span>' + T_js('复制（选区）', 'Copy (Selection)') + '</div>' +
+          '<div class="mi" data-act="codepaste"><span style="width:18px;text-align:center">📌</span>' + T_js('粘贴', 'Paste') + '</div>' +
           '<div class="sep"></div>' +
-          '<div class="mi danger" data-act="del"><span style="width:18px;text-align:center">🗑</span>删除块</div>';
+          '<div class="mi danger" data-act="del"><span style="width:18px;text-align:center">🗑</span>' + T_js('删除块', 'Delete Block') + '</div>';
         activePop = 'block';
         placePop(BM, e.clientX, e.clientY);
         return;
@@ -13084,7 +13090,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         : esc((it.t || '').replace(/\n/g, ' ').slice(0, 12));
       return '<div class="si' + (k === slashState.act ? ' act' : '') +
         (it.children ? ' has-sub' : '') + '" data-k="' + k + '">' +
-        '<span class="ic">' + it.ic + '</span><span class="lb">' + it.lb + '</span>' +
+        '<span class="ic">' + it.ic + '</span><span class="lb">' + T_js(it.lb) + '</span>' +
         '<span class="ds">' + ds + '</span></div>';
     }).join('');
   }
@@ -13099,7 +13105,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     SUB.innerHTML = (title ? '<div class="cap">' + title + '</div>' : '') +
       items.map(function (it, k) {
         return '<div class="si' + (k === subCtx.act ? ' act' : '') + '" data-k="' + k + '">' +
-          '<span class="ic">' + it.ic + '</span><span class="lb">' + it.lb + '</span>' +
+          '<span class="ic">' + it.ic + '</span><span class="lb">' + T_js(it.lb) + '</span>' +
           (it.math ? '<span class="math-preview">' + esc(it.math.slice(0, 14)) + '</span>' : '') +
           '</div>';
       }).join('');
@@ -13534,7 +13540,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     hintState = { items: items, act: 0 };
     SM.innerHTML = items.map(function (it, k) {
       return '<div class="si' + (k === 0 ? ' act' : '') + '" data-k="' + k + '">' +
-        '<span class="ic">' + it.ic + '</span><span class="lb">' + esc(it.lb) + '</span>' +
+        '<span class="ic">' + it.ic + '</span><span class="lb">' + esc(T_js(it.lb)) + '</span>' +
         (it.ds ? '<span class="ds">' + esc(it.ds) + '</span>' : '') + '</div>';
     }).join('');
     activePop = 'hint';
@@ -16488,8 +16494,8 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       grps.push(function () {
         var el = document.createElement('button');
         el.className = 'tmi' + (en === false ? ' dis' : '');
-        el.title = label;
-        el.innerHTML = '<span class="tic">' + (icon || '') + '</span><span>' + label + '</span>';
+        el.title = T_js(label);
+        el.innerHTML = '<span class="tic">' + (icon || '') + '</span><span>' + T_js(label) + '</span>';
         el.addEventListener('mousedown', function (e) { e.preventDefault(); e.stopPropagation(); });
         el.addEventListener('click', function () {
           if (en === false) return;
@@ -16515,11 +16521,11 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         row.className = 'alrow';
         var lb = document.createElement('span');
         lb.className = 'allb';
-        lb.textContent = label;
+        lb.textContent = T_js(label);
         row.appendChild(lb);
         avail.forEach(function (d) {
           var el = document.createElement('button');
-          el.title = d.title;
+          el.title = T_js(d.title);
           el.innerHTML = svgIcon(d.icon);
           el.addEventListener('mousedown', function (e) { e.preventDefault(); e.stopPropagation(); });
           el.addEventListener('click', function () {
@@ -16567,11 +16573,12 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       alrow.className = 'alrow';
       var alb = document.createElement('span');
       alb.className = 'allb';
-      alb.textContent = '对齐';
+      alb.textContent = T_js('对齐', 'Align');
+      alb.setAttribute('data-zh', '对齐');
       alrow.appendChild(alb);
       [['al', 'left', '左对齐'], ['ac', 'center', '居中'], ['ar', 'right', '右对齐']].forEach(function (a) {
         var el = document.createElement('button');
-        el.title = a[2];
+        el.title = T_js(a[2]);
         el.innerHTML = svgIcon(a[0]);
         el.addEventListener('mousedown', function (e) { e.preventDefault(); e.stopPropagation(); });
         el.addEventListener('click', function () {
@@ -19053,6 +19060,53 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   rebuild();
   updateStats();
   rzWatchStart(ED);   /* [RZDBG] 表格 DOM 变异观察器 */
+  /* ============ i18n 引擎（界面中英双语；由 Python 端 window.__setLang 驱动） ============ */
+  var I18N_LANG = 'zh';
+  var I18N_EN = {
+    '标题':'Heading','标题 1':'Heading 1','标题 2':'Heading 2','标题 3':'Heading 3','标题 4':'Heading 4',
+    '标题 5':'Heading 5','标题 6':'Heading 6','列表':'List','无序列表':'Bulleted List','有序列表':'Numbered List',
+    '待办事项':'To-do','表格':'Table','代码块':'Code Block','分割线':'Divider','引用':'Quote','图片':'Image',
+    '流程图':'Flowchart','时序图':'Sequence Diagram','类图':'Class Diagram','状态图':'State Diagram',
+    'E-R 图':'ER Diagram','甘特图':'Gantt','饼图':'Pie','脚注与定义':'Footnotes & Definitions',
+    '脚注引用':'Footnote Ref','脚注定义':'Footnote Def','术语定义':'Glossary','模板':'Template','公式':'Math',
+    '选择代码语言（可搜索、可自定义输入） · 右键语言栏 = 复制全部代码':'Choose code language (searchable, custom input) · right-click the language bar = copy all code',
+    '折叠 / 展开代码块':'Collapse / Expand code block','风格':'Style',
+    '代码块显示设置：风格 / 行号（风格默认取系统设置）':'Code block display: style / line numbers (style follows system settings by default)',
+    '行号':'Line No.','行数显示：开（点击关闭）':'Line numbers: on (click to turn off)',
+    '行数显示：关（点击开启）':'Line numbers: off (click to turn on)','换行':'Wrap',
+    '自动换行：开（点击关闭）':'Auto wrap: on (click to turn off)','自动换行：关（点击开启）':'Auto wrap: off (click to turn on)',
+    '复制全部代码（也可右键语言栏）':'Copy all code (or right-click the language bar)',' 行代码，点击展开':' lines of code, click to expand',
+    '链接':'Link','编辑地址':'Edit Address','复制地址':'Copy Address','打开链接':'Open Link',
+    '脚注':'Footnote','按出现顺序重排编号':'Renumber by order of appearance','清理未引用的脚注定义':'Clean unreferenced footnote defs',
+    '复制代码':'Copy Code','复制（选区）':'Copy (Selection)','粘贴':'Paste','删除块':'Delete Block',
+    '行':'Row','列':'Column','移动':'Move','对齐':'Align','向上插入行':'Insert Row Above','向下插入行':'Insert Row Below',
+    '删除行':'Delete Row','向左插入列':'Insert Column Left','向右插入列':'Insert Column Right','删除列':'Delete Column',
+    '合并单元格':'Merge Cells','拆分单元格（选择行 × 列）':'Split Cells (select rows × cols)','还原单元格（拆回原格）':'Restore Cell (split back)',
+    '上移该行':'Move Row Up','下移该行':'Move Row Down','左移该列':'Move Column Left','右移该列':'Move Column Right',
+    '左对齐':'Align Left','居中':'Center','右对齐':'Align Right','清空内容':'Clear Content'
+  };
+  function T_js(zh, en) {
+    if (I18N_LANG === 'en') {
+      if (en != null) return en;
+      return (I18N_EN[zh] != null) ? I18N_EN[zh] : zh;
+    }
+    return zh;
+  }
+  window.T_js = T_js;
+  window.__setLang = function (lang) {
+    I18N_LANG = (lang === 'en') ? 'en' : 'zh';
+    try {
+      var els = document.querySelectorAll('[data-zh]');
+      for (var i = 0; i < els.length; i++) {
+        els[i].textContent = T_js(els[i].getAttribute('data-zh'));
+      }
+      var ts = document.querySelectorAll('[data-zh-title]');
+      for (var j = 0; j < ts.length; j++) {
+        ts[j].setAttribute('title', T_js(ts[j].getAttribute('data-zh-title')));
+      }
+    } catch (e) {}
+  };
+
 })();
 </script>
 </body>

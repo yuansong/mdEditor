@@ -30,7 +30,7 @@ import platform
 import sys
 import traceback
 
-from PySide6.QtCore import QLibraryInfo, QTranslator
+from PySide6.QtCore import QLibraryInfo, QTranslator, Qt
 from PySide6.QtGui import QFont, QIcon
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QMessageBox
@@ -170,6 +170,13 @@ def _default_app_font():
 
 def main():
     app = QApplication(sys.argv)
+    # v3.49（HI-DPI）：分数缩放（125%/150% 等）下采用 PassThrough 取整策略，
+    # 配合 Qt6 默认高分屏缩放，避免界面模糊，保证多分辨率 / 多缩放下均显示美观。
+    try:
+        QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
+            Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
+    except Exception:
+        pass
     app.setApplicationName(APP_NAME)
     app.setOrganizationName("WorkBuddy")
     icon_path = _app_icon_path()

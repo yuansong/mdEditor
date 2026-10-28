@@ -281,6 +281,48 @@ def _shade(paragraph, fill):
     pr.append(shd)
 
 
+# v3.49（EXPORT-DOCX）：表格美观化辅助 —— 单元格底色 / 边距 / 垂直居中 / 列宽
+def _set_cell_bg(cell, fill):
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    tcPr = cell._tc.get_or_add_tcPr()
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), fill)
+    tcPr.append(shd)
+
+
+def _set_cell_margins(cell, top=80, bottom=80, left=120, right=120):
+    """单元格内边距（dxa，1/20 磅）；start/end + left/right 同时给以兼容各阅读器。"""
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    tcPr = cell._tc.get_or_add_tcPr()
+    m = OxmlElement("w:tcMar")
+    for tag, val in (("top", top), ("bottom", bottom),
+                     ("start", left), ("end", right),
+                     ("left", left), ("right", right)):
+        e = OxmlElement("w:" + tag)
+        e.set(qn("w:w"), str(val))
+        e.set(qn("w:type"), "dxa")
+        m.append(e)
+    tcPr.append(m)
+
+
+def _set_cell_valign(cell, valign="center"):
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    tcPr = cell._tc.get_or_add_tcPr()
+    v = OxmlElement("w:vAlign")
+    v.set(qn("w:val"), valign)
+    tcPr.append(v)
+
+
+# 表格分隔单元格（:---: / :---- / ----: / -----）→ 对齐方式枚举值
+_TABLE_ALIGN = {0: None, 1: "center", 2: "right"}
+_HEAD_SIZES = {1: 18, 2: 15, 3: 13, 4: 12}
+
+
 def _add_runs(paragraph, text, base_dir, doc, allow_image=True, math_png=None):
     """把一行 Markdown 行内内容写进段落（图片单独成段）。
 
@@ -352,12 +394,26 @@ def write_docx(md, out_path, base_dir="", title=None, mmd_png=None, math_png=Non
     """
     try:
         import docx
-        from docx.shared import Inches, Pt, RGBColor
+        from docx.shared import Inches, Pt, RGBColor, Mm
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from docx.enum.table import WD_TABLE_ALIGNMENT
     except ImportError:
         return False, "缺少 python-docx，无法导出 Word（可安装 pandoc 或 pip install python-docx）"
 
     doc = docx.Document()
-    _set_style_font(doc.styles["Normal"], _CJK_FONT, 10.5)
+    # v3.49（EXPORT-DOCX）：A4 标准纸张 + 2.54cm 页边距（不再跟随系统默认 Letter）
+    _sec = doc.sections[0]
+    _sec.page_width = Mm(210)
+    _sec.page_height = Mm(297)
+    _sec.left_margin = Mm(25.4)
+    _sec.right_margin = Mm(25.4)
+    _sec.top_margin = Mm(25.4)
+    _sec.bottom_margin = Mm(25.4)
+    # 正文：微软雅黑 10.5pt、1.5 倍行距、段后 6pt，阅读更舒展
+    _n = doc.styles["Normal"]
+    _set_style_font(_n, _CJK_FONT, 10.5)
+    _n.paragraph_format.line_spacing = 1.5
+    _n.paragraph_format.space_after = Pt(6)
     for sname in ("List Bullet", "List Number", "Quote"):
         if sname in [s.name for s in doc.styles]:
             try:
@@ -375,6 +431,12 @@ def write_docx(md, out_path, base_dir="", title=None, mmd_png=None, math_png=Non
             except Exception as e:   # v3.29d（B9）：记录而非静默吞掉
                 _log.debug("docx 标题样式 Heading %s 字体设置失败: %s", lvl, e)
             _add_runs(h, blk["text"], base_dir, doc, allow_image=False, math_png=math_png)
+            for r in h.runs:
+                r.font.size = Pt(_HEAD_SIZES[lvl])
+                r.bold = True
+                r.font.color.rgb = RGBColor(0x1A, 0x1A, 0x1A)
+            h.paragraph_format.space_before = Pt(10)
+            h.paragraph_format.space_after = Pt(6)
         elif k == "para":
             p = doc.add_paragraph()
             _add_runs(p, blk["text"], base_dir, doc, math_png=math_png)
@@ -438,24 +500,53 @@ def write_docx(md, out_path, base_dir="", title=None, mmd_png=None, math_png=Non
                 r.font.size = Pt(9.5)
         elif k == "table":
             header = blk["header"] or [""]
+            aligns = blk.get("aligns") or []
             cols = len(header)
             table = doc.add_table(rows=1, cols=cols)
             try:
                 table.style = "Table Grid"
             except KeyError:
                 pass
+            table.alignment = WD_TABLE_ALIGNMENT.CENTER
+            # v3.49（EXPORT-DOCX）：A4 内容区约 6.2in，列宽均匀分配
+            from docx.shared import Inches as _Inches
+            col_w = max(0.6, 6.2 / cols)
+
+            def _align_for(idx):
+                s = (aligns[idx] if idx < len(aligns) else "").strip()
+                if s.startswith(":") and s.endswith(":"):
+                    return WD_ALIGN_PARAGRAPH.CENTER
+                if s.endswith(":"):
+                    return WD_ALIGN_PARAGRAPH.RIGHT
+                return WD_ALIGN_PARAGRAPH.LEFT
+
             for c, txt in enumerate(header):
                 cell = table.rows[0].cells[c]
                 cell.text = ""
-                _add_runs(cell.paragraphs[0], txt, base_dir, doc, allow_image=False, math_png=math_png)
-                for r in cell.paragraphs[0].runs:
+                _set_cell_bg(cell, "EAF1FB")
+                _set_cell_valign(cell, "center")
+                _set_cell_margins(cell)
+                p = cell.paragraphs[0]
+                p.alignment = _align_for(c)
+                _add_runs(p, txt, base_dir, doc, allow_image=False, math_png=math_png)
+                for r in p.runs:
                     r.bold = True
-            for row in blk["rows"]:
+                    r.font.color.rgb = RGBColor(0x1F, 0x3A, 0x5F)
+                cell.width = _Inches(col_w)
+            for ri, row in enumerate(blk["rows"]):
                 cells = table.add_row().cells
                 for c in range(cols):
-                    cells[c].text = ""
-                    _add_runs(cells[c].paragraphs[0],
-                              row[c] if c < len(row) else "", base_dir, doc, allow_image=False, math_png=math_png)
+                    cell = cells[c]
+                    cell.text = ""
+                    _set_cell_valign(cell, "center")
+                    _set_cell_margins(cell)
+                    if ri % 2 == 1:
+                        _set_cell_bg(cell, "F5F8FC")   # 斑马纹，提升可读性
+                    p = cell.paragraphs[0]
+                    p.alignment = _align_for(c)
+                    _add_runs(p, row[c] if c < len(row) else "",
+                              base_dir, doc, allow_image=False, math_png=math_png)
+                    cell.width = _Inches(col_w)
         elif k == "fndef":
             # v3.30.18（FN-2）：脚注定义 → 文末标签段
             p = doc.add_paragraph()
