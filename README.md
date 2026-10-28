@@ -1,5 +1,89 @@
 # mdEditor
 
+**English** · [简体中文](#简体中文)
+
+---
+
+## English
+
+> **mdEditor** is a Typora-style, block-level WYSIWYG Markdown editor — open source and cross-platform (Windows / Linux / macOS). It is built with Python + PySide6 (Qt WebEngine) plus a single-file JavaScript editing core (`src/editor.html`). Everything runs **offline** (KaTeX and Mermaid are bundled), and it ships with **on-device, user-controlled AI writing** — 15 mainstream model providers via bring-your-own-key (BYOK) plus native local Ollama inference. Smart generation, semantic-level rewriting, and local semantic search all work offline; your keys and text never leave your machine.
+
+**Current version:** v3.48.39 (`src/config.py: APP_VERSION`).
+**Repository:** <https://github.com/yuansong/mdEditor> · **License:** Apache-2.0 (see [LICENSE](LICENSE)).
+
+### What makes mdEditor different
+
+| Dimension | mdEditor's edge |
+|---|---|
+| Chinese-first writing | Full Chinese UI, IME-friendly mixed input, CJK typography & separate character counting — areas where most competitors fall short |
+| On-device AI native | 15 BYOK providers + native local Ollama (no key needed); smart generation, semantic rewriting, and local semantic search all run offline |
+| Tables as a moat | Office-grade tables: merge/split/drag-select, column-width & row-height written back to source — WYSIWYG tables rival or surpass Typora |
+| Long-document workflow | Book / outline / chapter tree + whole-book export to PDF·EPUB·HTML site, built for technical docs and knowledge bases |
+| Lightweight & offline | Portable folder, ~1.5s launch, fully offline (KaTeX / Mermaid / semantic search, zero CDN), no account required |
+| Open source & cross-platform | Apache-2.0, Windows releases ongoing, macOS / Linux builds ready, auditable and community-buildable |
+
+### Quick start
+
+**Option A — Run a prebuilt package (recommended, no environment setup)**
+
+Download the latest release from the [GitHub Releases](https://github.com/yuansong/mdEditor/releases) page, unzip, and run `mdEditor.exe` (Windows) / `mdEditor.app` (macOS) / the `mdEditor` binary (Linux). The whole `mdEditor` folder is required — do not move just the executable.
+
+**Option B — Run from source**
+
+```bash
+pip install -r requirements.txt
+python src/main.py                  # launch with a blank document
+python src/main.py path/to/note.md  # open a specific file
+```
+
+Requirements: Python 3.13.x, PySide6 (with `QtWebEngineWidgets`), `python-docx`, `pypdf`, `fpdf2`.
+
+### Highlights
+
+- **Block-level WYSIWYG** — storage is always plain Markdown; three modes (Write / Source / Split).
+- **Slash menu, block menu (`Ctrl+/`), and command palette (`Ctrl+Shift+P`)** with Chinese / pinyin / subsequence matching.
+- **Office-grade tables** — drag-rect selection, merge/split, alignment, column/row resize written back to source.
+- **Math & diagrams** — offline KaTeX (25 block templates) + Mermaid (7 diagram types).
+- **Books & outlines** — chapter tree, whole-book PDF / EPUB / HTML-site export.
+- **Local semantic search** — TF-IDF + synonyms, zero-dependency, offline near-synonym recall.
+- **AI writing, on your terms** — 15 BYOK providers + local Ollama; right-click "AI optimize" (polish / condense / expand / correct / translate / tone / ask), streamed Q&A panel, fragment-level diff adoption you can undo.
+
+> Screenshots and a demo GIF are on the way — see [`assets/screenshots/`](assets/screenshots/). Want to contribute one? Open a PR.
+
+See the [full feature list (Chinese)](docs/功能列表-v3.31.md) and [CHANGELOG](CHANGELOG.md) for details.
+
+### Build & test
+
+```bash
+# Windows
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File build_exe.ps1
+
+# macOS / Linux (produces .app/.dmg or AppImage/.deb)
+bash build_mac.sh
+bash build_linux.sh            # add --deb for a .deb package
+
+# Tests (three-stage)
+python tests/_syntax_check.py
+node tests/test_core.js
+python tests/_run_full.py
+```
+
+Cross-platform build CI runs automatically on GitHub Actions — see `.github/workflows/`.
+
+### Links
+
+- Documentation index: [`docs/`](docs/)
+- Development & AI collaboration rules: [`AGENTS.md`](AGENTS.md)
+- Sample book to try instantly: [`samples/demo-book/`](samples/demo-book/)
+
+### License
+
+Apache License 2.0 — free to use, modify, and redistribute, including commercially. See [LICENSE](LICENSE).
+
+---
+
+## 简体中文
+
 Typora 风格的**所见即所得**（块级 WYSIWYG）Markdown 编辑器，**开源、跨平台**的桌面应用（Windows / Linux / macOS）。
 Python + PySide6 (QtWebEngine) 外壳 + 单文件 JS 编辑内核 `src/editor.html`，全部能力离线可用（KaTeX / Mermaid 均内置）；并内建**端侧可控的 AI 写作能力**——15 家主流大模型 BYOK + 本地 Ollama 原生推理，智能生成 / 语义级改写 / 本地语义检索均可离线运行，密钥与文本始终由用户掌控。
 
@@ -61,6 +145,10 @@ python src/main.py path/to/note.md # 打开指定文件
 ```
 
 启动后：单实例互斥（二次启动会把文件参数转发给已运行实例）；命令行只取第一个存在的 `.md/.markdown/.mdown/.txt` 参数。
+
+> 📦 **一键体验示例书籍**：`samples/demo-book/` 是一个内置的「书籍模式」示例手册，在 mdEditor 中通过「文件 → 打开文件夹 / 书籍」载入 `samples/demo-book` 即可体验章节树、跨章跳转、整本导出等能力，无需自己建文档。
+>
+> 🖼️ **截图 / 演示 GIF** 待补充，欢迎贡献：将图片放进 `assets/screenshots/`，并在本文档相应位置引用（见英文段与下方「界面与调用方式」）。
 
 ---
 

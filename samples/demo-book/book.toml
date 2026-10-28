@@ -1,0 +1,9 @@
+[book]
+title = "mdEditor 书籍模式示例手册"
+authors = ["mdEditor Team"]
+language = "zh-CN"
+src = "src"
+
+[output.html]
+default-theme = "light"
+git-repository-url = "https://github.com/example/mdeditor"

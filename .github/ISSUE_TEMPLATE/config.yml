@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 使用疑问 / Questions
+    url: https://github.com/yuansong/mdEditor/discussions
+    about: 不确定是不是 bug？先在 Discussions 提问或搜索。
+  - name: 安全漏洞 / Security
+    url: https://github.com/yuansong/mdEditor/security/advisories/new
+    about: 请勿公开报告安全漏洞，请走私有安全通告。

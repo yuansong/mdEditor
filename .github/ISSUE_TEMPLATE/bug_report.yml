@@ -1,0 +1,59 @@
+name: 缺陷报告 / Bug Report
+description: 报告 mdEditor 的一个可复现缺陷
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！请尽量提供**可复现**的信息，维护者才能快速定位。
+        Thanks for the report! Please make it reproducible.
+  - type: dropdown
+    id: os
+    attributes:
+      label: 操作系统 / OS
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - 其他 / Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: mdEditor 版本 / Version
+      description: 菜单「帮助 → 关于」或启动日志中的版本号，如 v3.48.39
+      placeholder: v3.48.39
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤 / Steps to reproduce
+      description: 一步步描述如何触发（从打开什么文档开始）
+      placeholder: |
+        1. 打开 xxx.md
+        2. 选中 xxx
+        3. 点击 xxx
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果 / Expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果 / Actual
+      description: 实际发生了什么？是否有报错？（可粘贴「帮助 → 复制诊断信息」的内容）
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / 截图（可选）
+      description: 诊断日志（`%APPDATA%\mdEditor\logs\mdEditor.log`）、截图或录屏链接
+      render: shell
