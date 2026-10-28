@@ -2,6 +2,8 @@
 build*/
 spec*/
 dist*/
+# ---- CI 安装包暂存目录（便携 zip / setup.exe，由工作流产出，不入库）----
+installer/
 
 # ---- 版本发布包（各约 218MB，单独归档，不入库）----
 mdEditor-v*.zip

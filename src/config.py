@@ -79,7 +79,7 @@ APP_NAME = "mdEditor"
 # ③ 顶栏「AI 助手」文字按钮改为线性图标按钮（icons.icon_ai）以节省空间；AI 面板标题栏
 # 移除关闭/浮动按钮（setFeatures=DockWidgetMovable）；复制/插入改为输入区上方右对齐的
 # 「消息操作行」（有回复才显形），对齐 SoloMD。
-APP_VERSION = "3.48.39"   # v3.48.39（AI-MENU-BG）：设置「AI 菜单」页去掉 QScrollArea 自带的 viewport/页面底色（曾盖住组框浅灰卡面、裁掉圆角并多出横向滚动条），并为列表补 settingsDlg 级样式使深色主题下不再呈白底，观感与其余设置页统一。
+APP_VERSION = "3.49.0"   # v3.49.0（I18N+EXPORT+BUILD）：界面完整中英双语、Word/PDF 导出排版美化（A4/表格对齐/表头底色/斑马纹）、构建加固（PySide6 6.12 拆分 wheel 的 QtWebEngine hidden import）、高分屏 PassThrough 缩放。
                           # v3.48.38（BOOK-AUTO / PDF-DEF / FMT-LOG-DEF）：① 用户主动关闭书籍后清除「上次阅读书籍」记录，下次启动默认不再自动重新打开已关闭的书籍；② PDF 导出默认值重构为最佳中文阅读配置（A4 纵向 / 四边 20mm / 行高 1.6 / 微软雅黑系 / 11pt / 100% 缩放），新增「还原默认设置」按钮，且行高注入强制下限 1.0 防重叠；③ 书籍整本导出 PDF 同样弹出与单文件一致的设置对话框，默认效果保持一致；④ 设置中「格式化操作日志」默认改为不勾选。
                            # v3.48.34（PDF-LAYOUT）：PDF 导出新增五项设置 —— ① 纸张尺寸（A4/A3/A5/B4/B5/Letter/Legal）；② 方向（纵向/横向）；③ 四边独立边距（上/右/下/左，可勾选「四边一致」联动）；④ 缩放百分比（25~400%，打印期 body{zoom}，页边距不随缩放变化）；⑤ 行间距（0=跟随文档，0.05 步进，line-height）。纸张/方向/边距走 QPageLayout（显式 Millimeter——省略单位会被当成 point，20 只出 7.1mm），单文档与整本书两条导出链路共用 bookexport.pdf_opts。
                           # v3.48.31（EXPAND-DIFF/SENT-VIEW/EDGE-INS）：分层差异（句→子句→字符）+ 椒盐平滑（169/405 样本差异由 1 块变 17 处、左栏着色率 100%→30.2%）；句级视图默认关闭（对比框按原文行显示，不按句号人工折行）；选中源侧整行合并 = 整行替换（清理目标侧多余尾巴）。
