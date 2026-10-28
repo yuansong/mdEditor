@@ -1,0 +1,112 @@
+name: Build Windows (mdEditor)
+
+# 在 GitHub 托管的 Windows runner 上编译 mdEditor 的 Windows 版本：
+#   - onedir 绿色免安装版（zip，解压即运行）—— 对应「绿色免安装版 / 正式发布包」
+#   - Inno Setup 安装程序（setup.exe，可选；失败不影响 zip 产出）
+#
+# 触发：
+#   - 推送到 main 分支自动触发
+#   - 打 `v*` 标签（如 v3.48.39）时也会触发，便于发版
+#   - 也可在 Actions 页面手动「Run workflow」触发（workflow_dispatch）
+#
+# 产物（Artifacts，保留 7 天）：
+#   - mdEditor-Windows-portable : mdEditor-Windows-<version>.zip（绿色免安装版）
+#   - mdEditor-Windows-setup    : mdEditor-setup-<version>.exe（Inno Setup 安装程序，可选）
+#   - mdEditor-Windows-build-spec : PyInstaller 生成的 .spec（诊断用，体积小）
+#
+# 说明：
+#   - 与 macOS/Linux 一致，本工作流先用 PyInstaller 产出 onedir，再打包。
+#   - 安装包由仓库内的 mdEditor.iss（Inno Setup）生成；版本与源目录通过命令行
+#     /DMyAppVersion= /DMySrcDir= 覆盖，本地默认值见该脚本。
+#   - QtWebEngine 在 Windows 上由 PyInstaller 的 PySide6 hook 自动收集
+#     QtWebEngineProcess.exe 与运行库；构建机已含 MSVC 运行库，目标 Win10/11 可直接运行。
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ "v*" ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build onedir (PyInstaller)
+        run: python build.py
+
+      - name: Verify build output
+        run: |
+          if (!(Test-Path "dist\mdEditor\mdEditor.exe")) {
+            Write-Error "!! 未找到 dist\mdEditor\mdEditor.exe，构建可能失败，请查看上方日志"
+            exit 1
+          }
+
+      - name: Package portable zip (绿色免安装版)
+        run: |
+          $VERSION = (Select-String -Path "src\config.py" -Pattern 'APP_VERSION\s*=\s*"([^"]+)"').Matches.Groups[1].Value
+          if (-not $VERSION) { $VERSION = "0.0.0" }
+          New-Item -ItemType Directory -Force -Path "installer" | Out-Null
+          $ZIP = "installer\mdEditor-Windows-$VERSION.zip"
+          Compress-Archive -Path "dist\mdEditor\*" -DestinationPath $ZIP -Force
+          echo "==> 打包完成：$ZIP"
+          Get-ChildItem -Path "installer" | Format-Table Name, Length
+
+      - name: Build installer (Inno Setup, 可选)
+        # 容错：安装包构建失败（如 choco/ISCC 不可用）不影响绿色 zip 产出
+        continue-on-error: true
+        run: |
+          choco install innosetup -y
+          $ISCC = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $ISCC)) { $ISCC = "C:\Program Files\Inno Setup 6\ISCC.exe" }
+          if (-not (Test-Path $ISCC)) { Write-Warning "ISCC 未找到，跳过安装包构建"; exit 0 }
+          $VERSION = (Select-String -Path "src\config.py" -Pattern 'APP_VERSION\s*=\s*"([^"]+)"').Matches.Groups[1].Value
+          if (-not $VERSION) { $VERSION = "0.0.0" }
+          & "$ISCC" "mdEditor.iss" "/DMyAppVersion=$VERSION" "/DMySrcDir=dist\mdEditor"
+          echo "==> 安装包产物："
+          Get-ChildItem -Path "installer" -Filter "*.exe" | Format-Table Name, Length
+
+      - name: List dist (诊断)
+        if: always()
+        run: |
+          echo "== dist =="
+          Get-ChildItem -Path "dist\mdEditor" -Recurse | Select-Object -First 60 | Format-Table Name, Length
+
+      - name: Upload portable zip
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mdEditor-Windows-portable
+          path: installer/mdEditor-Windows-*.zip
+          if-no-files-found: warn
+
+      - name: Upload setup exe (installer)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mdEditor-Windows-setup
+          path: installer/mdEditor-setup-*.exe
+          if-no-files-found: warn
+
+      - name: Upload build spec (诊断)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mdEditor-Windows-build-spec
+          path: spec/
+          if-no-files-found: ignore
