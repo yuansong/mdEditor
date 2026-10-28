@@ -67,6 +67,21 @@ jobs:
           echo "==> 打包完成：$ZIP"
           Get-ChildItem -Path "installer" | Format-Table Name, Length
 
+      - name: Create GitHub Release（仅打 v* 标签时）
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION_FULL="${{ github.ref_name }}"
+          VERSION="${VERSION_FULL#v}"
+          gh release create "$VERSION_FULL" "installer/mdEditor-Windows-$VERSION.zip" \
+            --title "mdEditor $VERSION" \
+            --notes "自动构建发布的 Windows 绿色免安装版（mdEditor $VERSION）。"
+          if [ -f "installer/mdEditor-setup-$VERSION.exe" ]; then
+            gh release upload "$VERSION_FULL" "installer/mdEditor-setup-$VERSION.exe"
+          fi
+
       - name: Build installer (Inno Setup, 可选)
         # 容错：安装包构建失败（如 choco/ISCC 不可用）不影响绿色 zip 产出
         continue-on-error: true
