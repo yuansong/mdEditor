@@ -794,6 +794,12 @@ class MainWindow(QMainWindow):
         rl.addWidget(self._stack, 1)
 
         self._sidebar = Sidebar(self)
+        # v3.49.x（OUT-SYNC）：apply_theme 在 __init__ 早期（创建侧栏之前）已跑过一次，
+        # 彼时 self._sidebar 尚未存在 → set_outline_active_theme 被 hasattr 跳过，
+        # 导致启动后激活项背景始终回退系统 Highlight、且换肤前的强调浅底从未初始化。
+        # 故在侧栏创建后立即补一次，确保激活项高亮底色随主题正确初始化。
+        if hasattr(self._sidebar, "set_outline_active_theme"):
+            self._sidebar.set_outline_active_theme(self._theme)
         # 应用持久化的侧栏设置：大纲显示级别 / 分节字数开关 / 文件列表显示模式
         self._sidebar.set_outline_level(self._outline_level)
         self._sidebar.set_outline_words(self._outline_words)
@@ -6985,6 +6991,8 @@ class MainWindow(QMainWindow):
             self._sidebar.set_tree_arrows(name)   # v3.26：展开/收拢箭头随主题换色
         if hasattr(self._sidebar, "set_folder_theme"):
             self._sidebar.set_folder_theme(name)  # v3.44.2：文件夹图标随主题强调色
+        if hasattr(self._sidebar, "set_outline_active_theme"):
+            self._sidebar.set_outline_active_theme(name)  # v3.49.x（OUT-SYNC）：激活项背景随主题强调浅底动态更新
         # v3.38（TB-1）：左侧边缘「展开工具栏」按钮随主题换色（仅工具栏隐藏时可见）
         if getattr(self, "_btn_tb_show", None) is not None:
             p = uistyles.merge_palette(name)   # v3.39.15（UISTYLE-1）：随风格取色

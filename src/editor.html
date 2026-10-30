@@ -16597,6 +16597,10 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         TB.appendChild(row);
       });
     }
+    /* —— 拷贝内容 / 清空内容（v3.49.x：移至菜单最上方置顶，其余项顺序不变；
+           拷贝仅管道表格显示，清空恒显示，二者在顶部相邻）—— */
+    if (!isH) mi(svgIcon('copy'), '拷贝内容', 'copy');
+    mi(svgIcon('clr'), '清空内容', 'clear');
     /* —— 行（高频，横排） —— */
     iconRow('行', [
       { icon: 'rowUp', title: '向上插入行', op: 'rowUp' },
@@ -16649,11 +16653,6 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       });
       TB.appendChild(alrow);
     });
-    /* —— 拷贝内容（v3.49.1：选中单元格文本复制到剪贴板，置于「清空内容」之前；
-           HTML 合并表格走模型、暂不支持拷贝，故仅管道表格显示 —— ） */
-    if (!isH) mi(svgIcon('copy'), '拷贝内容', 'copy');
-    /* —— 清空（v3.30.17：「标注」入口迁至表格选中后的悬浮工具按钮 —— ） */
-    mi(svgIcon('clr'), '清空内容', 'clear');
     /* 渲染：组与组之间插分隔线（跳过被整组隐藏的组） */
     grps.forEach(function (fn, gi) {
       if (gi) hsep();

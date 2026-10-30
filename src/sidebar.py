@@ -2497,6 +2497,8 @@ class Sidebar(QWidget):
             cur_idx = cur.data(0, Qt.UserRole)
         self._outline_active_idx = -1      # v3.49.1（OUT-SYNC）：重建后清空「当前内容」高亮
         self._outline_active_item = None
+        # 注：_outline_active_bg（主题强调浅底）不在此重置 —— 其仅随主题变化，
+        # 与大纲内容无关；重建后保留该色可使高亮立即以正确底色重绘，无需等待换肤。
         self.outline.blockSignals(True)
         self.outline.clear()
         self._outline_items = {}   # v3.31（#8）：标题块序号 -> 树节点
@@ -2578,13 +2580,45 @@ class Sidebar(QWidget):
         if item is not None:
             pal = self.outline.palette()
             hl = pal.color(QPalette.Highlight)
-            bg = QColor(hl.red(), hl.green(), hl.blue(), 52)  # 半透明强调底
+            # v3.49.x（OUT-SYNC）：激活项背景 / 文字优先用「随主题强调色」动态色，
+            # 未初始化（理论上 apply_theme 已兜底）时回退到原半透明强调底 + 系统 Highlight
+            ab = getattr(self, "_outline_active_bg", None)
+            af = getattr(self, "_outline_active_fg", None)
+            bg = ab if ab is not None else QColor(hl.red(), hl.green(), hl.blue(), 52)
+            fg = af if af is not None else hl
             item.setBackground(0, QBrush(bg))
-            item.setForeground(0, QBrush(hl))
+            item.setForeground(0, QBrush(fg))
             vr = self.outline.visualItemRect(item)
             if vr.isEmpty() or not self.outline.viewport().rect().contains(vr):
                 self.outline.scrollToItem(item, QAbstractItemView.EnsureVisible)
             self._outline_active_item = item
+
+    # ================= v3.49.x（OUT-SYNC）：激活项背景随页面强调色动态更新 =================
+    def set_outline_active_theme(self, theme_id="light"):
+        """激活项背景 / 文字色绑定「主题强调浅底 accent_soft + 强调色 accent」
+        （styles 调色板），并在主题切换时重算 + 重绘当前激活项，实现
+        「随页面背景 / 主题实时联动更新」。
+
+        由 mainwindow.apply_theme 在每次换肤入口调用（与 set_tree_arrows /
+        set_folder_theme 同源）。accent_soft 六主题各异且与编辑页强调色同源：
+        - 浅色 #e3edfd / 青空 #ddeafc / 米黄 #f0e2c6 / 深色 #24334d /
+          墨夜 #1f3a33 / 熊猫 #1d3b36，均为清晰可见的浅底，不会再出现
+          「用滚动条手柄色 scroll（刻意低对比，几乎不可见）导致背景不联动」的观感。"""
+        from styles import palette
+        try:
+            pal = palette(theme_id)
+            bg = QColor(pal.get("accent_soft") or "#e3edfd")
+            fg = QColor(pal.get("accent") or "#0052d9")
+        except Exception:
+            bg = QColor("#e3edfd")
+            fg = QColor("#0052d9")
+        self._outline_active_bg = bg
+        self._outline_active_fg = fg
+        # 重绘当前激活项（若存在），保证换肤后高亮背景立刻联动
+        item = getattr(self, "_outline_active_item", None)
+        if item is not None:
+            item.setBackground(0, QBrush(self._outline_active_bg))
+            item.setForeground(0, QBrush(self._outline_active_fg))
 
     # ================= v3.43.0（OUT-LOOK）大纲过滤 / 工具钮 =================
     def set_outline_filter(self, level):
