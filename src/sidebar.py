@@ -9,7 +9,7 @@ import re
 import tempfile
 
 from PySide6.QtCore import QEvent, QPoint, QSize, QStandardPaths, Qt, QPointF, Signal
-from PySide6.QtGui import (QAction, QActionGroup, QBrush, QColor,
+from PySide6.QtGui import (QAction, QActionGroup, QBrush, QColor, QPalette,
                            QFontMetrics, QPainter, QPixmap, QPolygonF)
 from PySide6.QtWidgets import (
     QApplication, QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QHeaderView,
@@ -1893,6 +1893,29 @@ class Sidebar(QWidget):
             p = p.parent()
         self.book_tree.blockSignals(False)
 
+    def highlight_file(self, path):
+        """v3.49.1（FILE-HL）：在当前文件列表中高亮并居中显示已打开的文件
+        （按绝对路径匹配列表中的 file 项）；不在当前层则忽略。"""
+        if not path or self._file_mode == "blank":
+            return
+        try:
+            target = os.path.normcase(os.path.abspath(path))
+        except Exception:  # noqa: BLE001
+            return
+        for row in range(self.file_list.count()):
+            it = self.file_list.item(row)
+            d = it.data(Qt.UserRole) if it is not None else None
+            if not d or d[0] != "file":
+                continue
+            try:
+                cand = os.path.normcase(os.path.abspath(d[1]))
+            except Exception:  # noqa: BLE001
+                continue
+            if cand == target:
+                self.file_list.setCurrentRow(row)
+                self.file_list.scrollToItem(it, QAbstractItemView.PositionAtCenter)
+                return
+
     def _on_book_dropped(self):
         """拖拽重排落下后：从控件顺序重建 root 并通知主窗口写回 SUMMARY。"""
         if self._book_root is None:
@@ -2211,6 +2234,9 @@ class Sidebar(QWidget):
         self._reset_file_filter()
         self._refresh_files()
         self._update_file_header()
+        # v3.49.1（FILE-HL）：打开 / 切换文件后，在文件列表中高亮当前已打开的文件
+        if self._cur_file:
+            self.highlight_file(self._cur_file)
 
     def clear_current_file(self):
         """v3.38（OUT-3）：切到未命名文档时清除文件上下文 —— 保留浏览目录，
@@ -2468,6 +2494,8 @@ class Sidebar(QWidget):
         cur = self.outline.currentItem()
         if cur is not None:
             cur_idx = cur.data(0, Qt.UserRole)
+        self._outline_active_idx = -1      # v3.49.1（OUT-SYNC）：重建后清空「当前内容」高亮
+        self._outline_active_item = None
         self.outline.blockSignals(True)
         self.outline.clear()
         self._outline_items = {}   # v3.31（#8）：标题块序号 -> 树节点
@@ -2528,6 +2556,34 @@ class Sidebar(QWidget):
                 if hit is not None:
                     self.outline.setCurrentItem(hit)
                     break
+
+    # ================= v3.49.1（OUT-SYNC）大纲「当前内容」高亮 =================
+    def set_outline_active(self, idx):
+        """高亮大纲中「当前正在显示」的标题（随文档滚动同步）。
+
+        idx = 标题块序号；与点击选中（::selected）区分：本高亮用半透明强调底色 +
+        强调色文字，二者可共存（同一项既被点击又被读到时以本高亮优先显示）。"""
+        if idx is None or idx < 0:
+            idx = -1
+        if idx == getattr(self, "_outline_active_idx", -1):
+            return
+        prev = getattr(self, "_outline_active_item", None)
+        if prev is not None:
+            prev.setBackground(0, QBrush(Qt.transparent))
+            prev.setForeground(0, QBrush(self.outline.palette().color(QPalette.Text)))
+            self._outline_active_item = None
+        self._outline_active_idx = idx
+        item = self._outline_items.get(idx) if idx >= 0 else None
+        if item is not None:
+            pal = self.outline.palette()
+            hl = pal.color(QPalette.Highlight)
+            bg = QColor(hl.red(), hl.green(), hl.blue(), 52)  # 半透明强调底
+            item.setBackground(0, QBrush(bg))
+            item.setForeground(0, QBrush(hl))
+            vr = self.outline.visualItemRect(item)
+            if vr.isEmpty() or not self.outline.viewport().rect().contains(vr):
+                self.outline.scrollToItem(item, QAbstractItemView.EnsureVisible)
+            self._outline_active_item = item
 
     # ================= v3.43.0（OUT-LOOK）大纲过滤 / 工具钮 =================
     def set_outline_filter(self, level):

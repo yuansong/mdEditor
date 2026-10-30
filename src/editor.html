@@ -189,7 +189,14 @@ del { color: var(--text-2); }
 }
 .blk table {
   border-collapse: separate; border-spacing: 0; margin: 1em 0;
-  font-size: 0.95em; width: 100%; table-layout: fixed;
+  /* v3.49.1（TBL-WIDTH）：列宽改为内容自适应（auto）。
+     此前固定布局 table-layout:fixed 强制各列均分，长内容被迫大量换行、
+     行被撑高（视觉上像「行数变多」）。auto 布局下：内容都能放下时各列
+     接近均匀等宽（美观）；某列内容明显更长时该列自动加宽，减少强制换行。
+     PDF 导出内嵌同一份 app-style，故导出表格同步生效。
+     手动拖拽列宽（scaleTableCols）仍会临时置 fixed + 写 colgroup 像素宽，
+     不受此默认影响。 */
+  font-size: 0.95em; width: 100%; table-layout: auto;
   border: 1px solid var(--border);
   border-radius: 10px;
 }
@@ -9104,6 +9111,40 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       window.scrollTo(0, window.scrollY + rect.top - window.innerHeight / 2);
     }
   };
+  /* v3.49.1（OUT-SYNC）：返回视口顶部所在 / 刚刚越过的标题块序号
+     —— 大纲「当前正在显示的内容」高亮用。源码模式走 srcEl 文本探针，
+     渲染 / 预览模式走 ED 块顶探测；视口上方无标题时返回 -1。 */
+  window.getActiveHeading = function () {
+    var src = document.querySelector('#editor .t-src');
+    if (src) {                       // 源码模式：按文本偏移定位标题
+      var tn = src.firstChild;
+      if (!tn || tn.nodeType !== 3) return -1;
+      var sep = '\n\n', topY = window.scrollY || 0, best = -1;
+      for (var k = 0; k < state.raw.length; k++) {
+        var b = blockInfo(state.raw[k]);
+        if (!b || !/^h[1-6]$/.test(b.type)) continue;
+        var o = 0;
+        for (var j = 0; j < k; j++) o += state.raw[j].length + sep.length;
+        var r = document.createRange();
+        r.setStart(tn, Math.min(o, tn.length)); r.collapse(true);
+        var rect = r.getBoundingClientRect();
+        if (!rect) continue;
+        var docY = rect.top + (window.scrollY || 0);
+        if (docY <= topY + 4) best = k; else break;
+      }
+      return best;
+    }
+    if (!ED) return -1;               // 渲染 / 预览：按块顶定位标题
+    var edTop = ED.getBoundingClientRect().top, best2 = -1;
+    for (var c = 0; c < ED.children.length; c++) {
+      var ch = ED.children[c];
+      var hh = ch.querySelector ? ch.querySelector('h1,h2,h3,h4,h5,h6') : null;
+      if (!hh) continue;
+      var r2 = hh.getBoundingClientRect();
+      if (r2.top - edTop <= 4) best2 = c; else break;
+    }
+    return best2;
+  };
 
   /* ---------- v3.29 双栏同步滚动：源码视图 → 预览视图 ----------
      左右两侧用同一个 splitBlocks 块序号：源码视图算出「视口顶部落在第几个块、
@@ -16311,6 +16352,23 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       if (ncol - dcnt < 1) return false;       /* 至少保留 1 列 */
       rewriteEach(function (cells) { cells.splice(c0, dcnt); });
     }
+    /* v3.49.1（TBL-COPY）：拷贝选中单元格文本内容到剪贴板
+       （TAB 分列、换行分行，复用 copyTextToClipboard 的 file:// 可靠复制通道） */
+    if (op === 'copy') {
+      var _rows = [];
+      for (var rc2 = r0; rc2 <= r1; rc2++) {
+        var li2 = rc2 === 0 ? 0 : rc2 + 1;     // 表头=line0，数据行=line r+1
+        var cells2 = parseRowLine(lines[li2] || '');
+        var rowTxt = [];
+        for (var cc2 = c0; cc2 <= c1 && cc2 < cells2.length; cc2++) {
+          rowTxt.push((cells2[cc2] || '').trim());
+        }
+        _rows.push(rowTxt.join('\t'));
+      }
+      copyTextToClipboard(_rows.join('\n'));
+      hidePops();
+      return;
+    }
     if (op === 'clear') {
       for (var rc = r0; rc <= r1; rc++) {
         (function (r) {
@@ -16408,6 +16466,8 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     if (name === 'al') return '<svg ' + s + '><path d="M2.5 4h11"/><path d="M2.5 8h7"/><path d="M2.5 12h11"/></svg>';
     if (name === 'ac') return '<svg ' + s + '><path d="M2.5 4h11"/><path d="M4.5 8h7"/><path d="M2.5 12h11"/></svg>';
     if (name === 'ar') return '<svg ' + s + '><path d="M2.5 4h11"/><path d="M6.5 8h7"/><path d="M2.5 12h11"/></svg>';
+    /* v3.49.1（TBL-COPY）：拷贝内容 = 两矩形堆叠的复制图标 */
+    if (name === 'copy') return '<svg ' + s + '><rect x="2" y="2.5" width="9" height="9" rx="1.3"/><rect x="5" y="5.5" width="9" height="9" rx="1.3"/></svg>';
     if (name === 'clr') return '<svg ' + s + '><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M5 6.5h6"/><path d="M5 9.5h4"/></svg>';
     /* v3.29c：行 / 列整体移动（实心条 = 被移动的行 / 列，箭头 = 移动方向） */
     if (name === 'mvRowUp') return '<svg ' + s + '><rect x="2" y="9.5" width="12" height="4" rx="1.2"/><path d="M8 6.5V2.6"/><path d="M6.2 4.4L8 2.6l1.8 1.8"/></svg>';
@@ -16589,6 +16649,9 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       });
       TB.appendChild(alrow);
     });
+    /* —— 拷贝内容（v3.49.1：选中单元格文本复制到剪贴板，置于「清空内容」之前；
+           HTML 合并表格走模型、暂不支持拷贝，故仅管道表格显示 —— ） */
+    if (!isH) mi(svgIcon('copy'), '拷贝内容', 'copy');
     /* —— 清空（v3.30.17：「标注」入口迁至表格选中后的悬浮工具按钮 —— ） */
     mi(svgIcon('clr'), '清空内容', 'clear');
     /* 渲染：组与组之间插分隔线（跳过被整组隐藏的组） */

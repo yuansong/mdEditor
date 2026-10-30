@@ -715,6 +715,11 @@ class MainWindow(QMainWindow):
         self._sync_timer.timeout.connect(self._poll_sync_scroll)
         self._sync_timer.start(160)
 
+        # v3.49.1（OUT-SYNC）：大纲「当前内容」高亮随文档滚动同步（200ms 轻轮询）
+        self._outline_sync_timer = QTimer(self)
+        self._outline_sync_timer.timeout.connect(self._sync_outline_active)
+        self._outline_sync_timer.start(200)
+
         self._update_title()
 
     # ================= UI =================
@@ -931,6 +936,7 @@ class MainWindow(QMainWindow):
         # v3.38（SYN-3）：预览 → 源码反向同步的循环防护 / 变更检测状态
         self._sync_ts_src2prev = 0.0   # 最近一次程序性滚动预览（源码同步所致）的时刻
         self._sync_ts_prev2src = 0.0   # 最近一次用户滚动预览触发反向同步的时刻
+        self._sync_manual_ts = 0.0     # v3.49.1（OUT-SYNC）：手动跳转后抑制自动同步的时刻
         self._last_src_pair = None     # 上次发给预览的 (块号, frac)——无变化不重发
         self._last_prev_pair = None    # 上次从预览收到并转发的 (块号, frac)
 
@@ -2151,6 +2157,9 @@ class MainWindow(QMainWindow):
         v3.38（SYN-3）：同时轮询预览视图，用户滚动预览时反向带动源码。
         非双栏直接返回；两侧页面都加载完成后才发查询，避免 JS 未注入报错。"""
         if not self._dual or self._view_src is None or self._view_prev is None:
+            return
+        # v3.49.1（OUT-SYNC）：手动跳转后的短暂窗口内不自动回拉，保证跳转落点稳定
+        if time.monotonic() - self._sync_manual_ts < 0.7:
             return
         st = self._vstate.get("src", {})
         stp = self._vstate.get("prev", {})
@@ -7499,17 +7508,45 @@ class MainWindow(QMainWindow):
         self._find_dlg.raise_()
         self._find_dlg.focus_find()
 
+    # ================= v3.49.1（OUT-SYNC）大纲当前内容高亮 =================
+    def _active_reading_view(self):
+        """返回「正在被阅读」的视图：双栏取预览，单栏取主视图。"""
+        if self._dual and self._view_prev is not None:
+            return self._view_prev
+        return self._view
+
+    def _sync_outline_active(self):
+        """轮询当前阅读视图，取视口顶部的标题块序号，驱动大纲「当前内容」高亮。"""
+        view = self._active_reading_view()
+        if view is None:
+            return
+        self._js_view(view, "window.getActiveHeading()", self._on_active_heading)
+
+    def _on_active_heading(self, res):
+        try:
+            idx = int(res)
+        except (TypeError, ValueError):
+            return
+        if self._sidebar is not None:
+            self._sidebar.set_outline_active(idx)
+
     def jump_to_heading(self, index, text=None):
-        """v3.38（OUT-4）：text = 大纲缓存标题文本，JS 侧先校验再跳（过期自动重查）。"""
+        """v3.38（OUT-4）：text = 大纲缓存标题文本，JS 侧先校验再跳（过期自动重查）。
+        v3.49.1（OUT-SYNC）：按当前视图模式选择跳转函数 —— 源码态用 gotoHeadingSrc，
+        渲染 / 双栏预览态用 gotoHeading，修复「源码 / 双栏模式点击大纲不跳转」。"""
         # v3.45.8（REQ3#9）：页内锚点跳转记入跳转历史
         self._nav_ensure_seed()
         self._nav_arrive(self.file_path or "", delay=450)
         suffix = f", {js(text)}" if text else ""
-        if self._dual and self._view_src is not None:
+        if self._mode == "dual" and self._view_src is not None:
             self._js_view(self._view_src, f"window.gotoHeadingSrc({index}{suffix})")
             self._js_view(self._view_prev, f"window.gotoHeading({index}{suffix})")
+        elif self._mode == "src":
+            self._js_view(self._view, f"window.gotoHeadingSrc({index}{suffix})")
         else:
             self._js_view(self._view, f"window.gotoHeading({index}{suffix})")
+        # v3.49.1（OUT-SYNC）：手动跳转后短暂抑制双栏滚动同步，避免被程序性回拉覆盖
+        self._sync_manual_ts = time.monotonic()
 
     # ================= 拖拽 =================
     def dragEnterEvent(self, e):
