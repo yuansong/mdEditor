@@ -6,6 +6,7 @@ name: Build Windows (mdEditor)
 #
 # 触发：
 #   - 推送到 main 分支自动触发
+#   - 推送到 ui-optimize-5 分支自动触发（开发联调用）
 #   - 打 `v*` 标签（如 v3.48.39）时也会触发，便于发版
 #   - 也可在 Actions 页面手动「Run workflow」触发（workflow_dispatch）
 #
@@ -27,10 +28,12 @@ on:
     tags: [ "v*" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     runs-on: windows-latest
-    permissions:/n      contents: write   # 允许 GITHUB_TOKEN 创建 Release 并上传产物 / allow GITHUB_TOKEN to create releases and upload assets
 
     steps:
       - name: Checkout
