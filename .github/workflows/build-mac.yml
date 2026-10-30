@@ -14,7 +14,7 @@ name: Build macOS (mdEditor)
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, ui-optimize-5 ]
   workflow_dispatch:
 
 jobs:

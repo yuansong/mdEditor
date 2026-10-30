@@ -14,7 +14,7 @@ name: Build Linux (mdEditor)
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, ui-optimize-5 ]
     tags: [ "v*" ]
   workflow_dispatch:
 
