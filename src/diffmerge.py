@@ -62,6 +62,7 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QSplitter,
                                QTextBrowser, QTextEdit, QVBoxLayout)
 
 from mdrender import md_to_plain
+from i18n import T  # v3.49.1（FIX-T）：国际化取词 T() 此前缺失导入，导致打包运行 NameError
 
 WORD_MAX = 300          # 词级 diff 字符护栏：超长行退整行着色（沿用 DiffDialog 原值）
 MAP_DIFF_MAX = 2000     # 区间映射的精确 diff 上限（仅合并/联动低频路径用；渲染仍走 WORD_MAX）

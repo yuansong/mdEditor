@@ -11,6 +11,7 @@
 
 本模块只含 UI 与命中测试辅助；窗口形态开关由 mainwindow._apply_mac_chrome 驱动。
 """
+from i18n import T  # v3.49.1（FIX-T）：国际化取词 T() 此前缺失导入
 
 import ctypes
 import platform

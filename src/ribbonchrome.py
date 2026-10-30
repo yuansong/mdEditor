@@ -22,6 +22,7 @@ v3.44.27（RIBBON-13）：① 命令钮与功能区内容高度锁定 Fixed（mi
 切换钮（颜色 + 文案 + 提示明确反映状态）——固定=始终展开，收拢=仅留页签行、点页签临时
 展开、点文档自动收起（焦点离开功能区进入编辑区即自动收拢）。
 """
+from i18n import T  # v3.49.1（FIX-T）：国际化取词 T() 此前缺失导入
 
 from PySide6.QtCore import Qt, QSize, Signal
 from PySide6.QtGui import QKeySequence, QShortcut, QFont
@@ -31,7 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 # ---- 设计令牌（#t-light 基准；深色主题经 apply_palette 以 chrome_bar 等覆盖） ----
-T = dict(
+TC = dict(
     accent="#2b579a", accent2="#103f91", ribbon="#ffffff", ribbonbg="#eef0f3",
     line="#d9dce1", line2="#c9cdd4", tx="#1f2328", tx2="#5f6672", tx3="#8a919c",
     hlbg="#e8f0fe", win="#ffffff", closehover="#e81123", statussep="rgba(255,255,255,.25)",
@@ -276,7 +277,7 @@ class _VSep(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedWidth(1)
-        self.setStyleSheet("background:%s;" % T["line2"])
+        self.setStyleSheet("background:%s;" % TC["line2"])
 
 
 # ---------------------------------------------------------------- 标题栏
@@ -421,7 +422,7 @@ class RibbonTabsRow(QFrame):
                 "QToolButton#ribTab:hover{background:%s;}"
                 "QToolButton#ribTab:checked{background:%s;border-color:%s;"
                 "color:%s;font-weight:600;padding-bottom:8px;}"
-                % (T["tx"], T["hlbg"], T["ribbonbg"], T["line2"], T["accent"]))
+                % (TC["tx"], TC["hlbg"], TC["ribbonbg"], TC["line2"], TC["accent"]))
             h.addWidget(b)
             self.tabs[pid] = b
 
@@ -437,7 +438,7 @@ class RibbonTabsRow(QFrame):
         self.helpbtn.clicked.connect(self._pop_help_menu)
         rh.addWidget(self.helpbtn)
         # v3.44.27(REQ1)：图钉式「固定 / 收拢」双态切换钮（状态明确可感知）
-        self.pinbtn = _tbtn("固定", "功能区固定 / 收拢切换", 11, T["accent"], self)
+        self.pinbtn = _tbtn("固定", "功能区固定 / 收拢切换", 11, TC["accent"], self)
         self.pinbtn.setFixedSize(46, 26)
         # v3.44.31 FIX: do NOT connect here. pinbtn.clicked is connected once in
         # mainwindow.py at RibbonTabsRow instantiation; a 2nd connect double-fires
@@ -516,7 +517,7 @@ class RibbonTabsRow(QFrame):
         self.helpbtn.setStyleSheet(
             "QToolButton{background:transparent;border:none;border-radius:3px;"
             "padding:0;color:%s;}" % self._p["accent"])
-        # v3.44.30（THEME-SYNC）：文件蓝钮背景随主题 accent 重绘（此前写死 T["accent2"] 蓝，切主题不变）
+        # v3.44.30（THEME-SYNC）：文件蓝钮背景随主题 accent 重绘（此前写死 TC["accent2"] 蓝，切主题不变）
         self.filebtn.setStyleSheet(
             "QToolButton#ribFileBtn{background:%s;color:#fff;font-weight:600;"
             "border:none;border-radius:3px;padding:4px 16px 5px;margin-bottom:3px;}"

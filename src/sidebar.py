@@ -24,6 +24,7 @@ from styles import SIDEBAR_QSS
 from icons import icon_file, icon_folder, icon_filter, icon_up, book_state_icon, \
     BOOK_COLOR_OK, BOOK_COLOR_BAD, BOOK_COLOR_CAT
 import semsearch  # v3.48.12（SEM-3）：本地语义搜索（离线 TF-IDF + sqlite 倒排索引）
+from i18n import T  # v3.49.1（FIX-T）：侧栏大量国际化取词 T() 此前缺失导入，导致打包运行 NameError
 
 def _md_url_path(md):
     """v3.48.35（DROP-MD）：拖放载荷里的第一个本地 .md 路径（无则空串）。

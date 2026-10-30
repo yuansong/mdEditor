@@ -10,6 +10,7 @@ AIConnectionForm —— 连接配置表单（provider 下拉 / Base URL / 模型
 里执行的连接」始终是同一份数据。表单随改随存（编辑完成即落盘），并 emit
 connection_changed 通知主面板刷新状态条。
 """
+from i18n import T  # v3.49.1（FIX-T）：国际化取词 T() 此前缺失导入
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLineEdit, QPushButton, QLabel, QComboBox, QCompleter, QDialog, QTextEdit,

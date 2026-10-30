@@ -38,6 +38,7 @@ from ai_core import (AIStreamWorker, load_connection, read_api_key,
     resolve_ollama_model)
 from styles import palette
 from diffmerge import TwoPaneMergeMixin, line_key_md
+from i18n import T  # v3.49.1（FIX-T）：国际化取词 T() 此前缺失导入，导致打包运行 NameError
 
 # 状态点配色（与主面板一致）
 _DOT = {"connected": "#2ecc71", "configured": "#f1c40f",
