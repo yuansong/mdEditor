@@ -126,10 +126,12 @@ jobs:
           path: installer/mdEditor-setup-*.exe
           if-no-files-found: warn
 
-      - name: Upload build spec (诊断)
+      - name: Upload build spec + logs (诊断)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mdEditor-Windows-build-spec
-          path: spec/
+          path: |
+            spec/
+            build/
           if-no-files-found: ignore

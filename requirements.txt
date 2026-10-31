@@ -1,8 +1,11 @@
 # mdEditor 依赖清单（v3.47，P0 跨平台）
 # 运行时依赖（打包进 exe / .app / AppImage）：
-# 固定到本地已验证可成功构建的版本（PySide6 6.12.0 + Qt 6.12.0），避免
-# CI 拉取最新 PySide6/PyInstaller 导致打包行为漂移或构建失败。
-PySide6==6.12.0
+# 固定到本地已验证可成功构建的版本，避免 CI 拉取最新 PySide6/PyInstaller
+# 导致打包行为漂移或构建失败。
+# 选用 PySide6 6.11.2：QtWebEngine/WebChannel 仍内置于主 wheel（经典布局），
+# PyInstaller 收集最稳定；6.12 起 QtWebEngine 拆分为独立 wheel，易在 CI（尤其
+# Linux）的 PyInstaller 二进制收集阶段失败。PyInstaller 保持 6.22.3。
+PySide6==6.11.2
 pypdf>=4.0
 python-docx>=1.1
 fpdf2>=2.7
