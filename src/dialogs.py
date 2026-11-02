@@ -2624,7 +2624,7 @@ class HistoryDialog(_ThemedDialog):
             with open(fp, "r", encoding="utf-8", errors="replace") as f:
                 self.preview.setPlainText(f.read())
         except OSError as e:
-            self.preview.setPlainText(f"（读取失败：{e}）")
+            self.preview.setPlainText(T("（读取失败：", "Read failed: ") + str(e) + T("）", ")"))
 
     @staticmethod
     def _fmt_when(mtime):

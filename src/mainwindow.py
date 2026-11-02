@@ -3878,52 +3878,52 @@ class MainWindow(QMainWindow):
         m = QMenu(self)
         # v3.38（TAB-B）：多选生效 → 首位给「关闭选中标签页」+「取消多选」（N++ 对标）
         if multi:
-            a = m.addAction(f"关闭选中的 {len(multi)} 个标签页")
+            a = m.addAction(T(f"关闭选中的 {len(multi)} 个标签页", f"Close selected {len(multi)} tabs"))
             a.triggered.connect(lambda: self._when_idle(
                 lambda: self._batch_close(sorted(multi))))
-            a = m.addAction("取消多选")
+            a = m.addAction(T("取消多选", "Cancel Multi-Select"))
             a.triggered.connect(self._clear_tab_multi)
             m.addSeparator()
         # v3.38（TAB-7）：固定 / 取消固定（Notepad++ 对标第一项）
-        a = m.addAction("固定 / 取消固定标签")
+        a = m.addAction(T("固定 / 取消固定标签"))
         a.setCheckable(True)
         a.setChecked(pinned)
         a.triggered.connect(lambda: self._when_idle(lambda: self._toggle_pin(idx)))
-        a = m.addAction("关闭\tCtrl+W")
+        a = m.addAction(T("关闭", "Close") + "\tCtrl+W")
         a.setEnabled(not pinned)             # TAB-7：固定标签不可直接关闭
         a.triggered.connect(lambda: self._when_idle(lambda: self._close_tab(idx)))
-        a = m.addAction("关闭其它所有")
+        a = m.addAction(T("关闭其它所有"))
         a.triggered.connect(lambda: self._when_idle(lambda: self._batch_close(
             [i for i in range(len(self._docs)) if i != idx and not self._docs[i].get("pinned")])))
-        a = m.addAction("关闭左侧所有")
+        a = m.addAction(T("关闭左侧所有"))
         a.setEnabled(any(not self._docs[i].get("pinned") for i in range(idx)))
         a.triggered.connect(lambda: self._when_idle(lambda: self._batch_close(
             [i for i in range(idx) if not self._docs[i].get("pinned")])))
-        a = m.addAction("关闭右侧所有")
+        a = m.addAction(T("关闭右侧所有"))
         a.setEnabled(any(not self._docs[i].get("pinned") for i in range(idx + 1, len(self._docs))))
         a.triggered.connect(lambda: self._when_idle(
             lambda: self._batch_close(
                 [i for i in range(idx + 1, len(self._docs)) if not self._docs[i].get("pinned")])))
-        a = m.addAction("关闭所有未修改")
+        a = m.addAction(T("关闭所有未修改"))
         a.triggered.connect(lambda: self._when_idle(self._close_unmodified))
-        a = m.addAction("关闭所有标签页")
+        a = m.addAction(T("关闭所有标签页"))
         a.triggered.connect(lambda: self._when_idle(self._close_all_tabs))
         m.addSeparator()
-        a = m.addAction("在资源管理器中显示")
+        a = m.addAction(T("在资源管理器中显示"))
         a.setEnabled(has_path)
         a.triggered.connect(lambda: self.show_in_explorer(doc.get("path")))
         # v3.38（TAB-10）：在终端中打开（文件所在目录起 PowerShell）
-        a = m.addAction("在终端中打开")
+        a = m.addAction(T("在终端中打开"))
         a.setEnabled(has_path)
         a.triggered.connect(lambda: self._open_terminal(doc.get("path")))
         m.addSeparator()
-        a = m.addAction("复制文件名")
+        a = m.addAction(T("复制文件名"))
         a.setEnabled(has_path)
         a.triggered.connect(lambda: self._copy_to_clip(os.path.basename(doc.get("path") or ""), "文件名"))
-        a = m.addAction("复制文件路径")
+        a = m.addAction(T("复制文件路径"))
         a.setEnabled(has_path)
         a.triggered.connect(lambda: self._copy_to_clip(doc.get("path") or "", "文件路径"))
-        a = m.addAction("复制所在目录")
+        a = m.addAction(T("复制所在目录"))
         a.setEnabled(has_path)
         a.triggered.connect(lambda: self._copy_to_clip(os.path.dirname(doc.get("path") or ""), "所在目录"))
         # v3.48.24（AI-DOC）：标签右键「整篇 AI 优化」—— 先切到该标签再整篇优化
@@ -6248,13 +6248,13 @@ class MainWindow(QMainWindow):
         if isinstance(lst, str):
             lst = [lst]
         if not lst:
-            self._recent_menu.addAction("(空)").setEnabled(False)
+            self._recent_menu.addAction(T("(空)","(Empty)")).setEnabled(False)
             return
         for p in lst:
             act = self._recent_menu.addAction(p)
             act.triggered.connect(lambda _=False, f=p: self.open_file(f))
         self._recent_menu.addSeparator()
-        clr = self._recent_menu.addAction("清空最近文件")
+        clr = self._recent_menu.addAction(T("清空最近文件", "Clear Recent Files"))
         clr.triggered.connect(lambda: self._settings.setValue("recentFiles", []))
 
     # ---- 侧边栏 ----

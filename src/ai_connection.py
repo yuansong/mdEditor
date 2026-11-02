@@ -342,7 +342,7 @@ class AILogDialog(QDialog):
         self._txt = QTextEdit()
         self._txt.setReadOnly(True)
         lines = get_ai_log()
-        self._txt.setPlainText("\n".join(lines) if lines else "（暂无日志）")
+        self._txt.setPlainText("\n".join(lines) if lines else T("（暂无日志）", "(No logs yet)"))
         lay.addWidget(self._txt)
         brow = QHBoxLayout()
         copy = QPushButton(T("复制全部", "Copy All"))
