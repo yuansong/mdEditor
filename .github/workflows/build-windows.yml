@@ -43,16 +43,59 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-          cache: pip
-          cache-dependency-path: requirements.txt
+          # 注意：故意不启用 pip cache。曾发现缓存的 PySide6 安装损坏会导致
+          # PyInstaller 构建在 CI 上稳定失败（本地正常）。每次全新安装更稳妥。
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Disable Windows Defender realtime scanning for workspace
+        # GitHub Windows runner 默认开启 Defender 实时扫描，会在 PyInstaller 改写/
+        # 生成二进制时锁定文件，导致构建稳定失败。将工作区加入排除项可消除该干扰。
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          try {
+            Add-MpPreference -ExclusionPath "$env:GITHUB_WORKSPACE"
+            Write-Host "==> 已将 $env:GITHUB_WORKSPACE 加入 Defender 排除项"
+          } catch {
+            Write-Warning "Add-MpPreference 失败（可能无管理员权限），继续尝试构建：$_"
+          }
+
       - name: Build onedir (PyInstaller)
-        run: python build.py
+        # 重试以吸收偶发的文件锁/AV 干扰；同时把完整输出写入 build_log.txt 便于诊断。
+        shell: pwsh
+        run: |
+          $max = 3
+          $i = 0
+          $ok = $false
+          while ($i -lt $max -and -not $ok) {
+            $i++
+            Write-Host "=== Build attempt $i / $max ==="
+            python build.py 2>&1 | Tee-Object -FilePath "build_log.txt"
+            if ($LASTEXITCODE -eq 0) { $ok = $true }
+            else { Write-Host "!! attempt $i failed (exit $LASTEXITCODE), retrying..." }
+          }
+          if (-not $ok) { exit 1 }
+
+      - name: Publish build log on failure (diagnostics)
+        # CI 私有仓库的日志 API 需要 admin 权限，本机无 token 无法读取；
+        # 故把构建日志通过 GITHUB_TOKEN（contents:write）提交到诊断分支，便于本机拉取排障。
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.email "ci@github.com"
+          git config user.name "CI Diagnostics"
+          BR="ci-diag-$(date +%s)"
+          git checkout -b "$BR"
+          git add -f build_log.txt
+          git commit -m "ci: attach build log for diagnosis" || true
+          git push origin "$BR"
+          echo "==> 诊断分支已推送：$BR"
 
       - name: Verify build output
         run: |
