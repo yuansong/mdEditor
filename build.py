@@ -33,6 +33,17 @@ import shutil
 import subprocess
 import sys
 
+# 健壮性：若运行控制台不是 UTF-8（例如 Windows 默认 cp1252），
+# 本脚本含中文 print，直接输出会抛 UnicodeEncodeError。这里把 stdout/stderr
+# 重配置为 UTF-8，确保任意环境下都能正常打印中文状态信息。
+try:
+    if getattr(sys.stdout, "encoding", None):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if getattr(sys.stderr, "encoding", None):
+        sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 ROOT = os.path.dirname(os.path.abspath(__file__))   # 项目根（build.py 所在目录）
 SRC = os.path.join(ROOT, "src")
 APP_NAME = "mdEditor"

@@ -35,6 +35,12 @@ jobs:
   build-windows:
     runs-on: windows-latest
 
+    # GitHub Windows runner 默认控制台代码页为 cp1252，无法编码中文，
+    # 会导致 build.py 的中文 print 直接抛 UnicodeEncodeError（PyInstaller 根本没启动）。
+    # 强制 stdout/stderr 走 UTF-8。
+    env:
+      PYTHONIOENCODING: utf-8
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
