@@ -1983,7 +1983,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       case 'yaml':
         return '<pre class="yaml">' + esc(lines.join('\n')) + '</pre>';
       case 'toc': {
-        var toc = '<div class="toc"><div class="toc-title">目录</div><ol>';
+        var toc = '<div class="toc"><div class="toc-title">' + T_js('目录','Contents') + '</div><ol>';
         var lvl = 0;
         for (var t = 0; t < state.raw.length; t++) {
           var bi = blockInfo(state.raw[t]);
@@ -2061,13 +2061,13 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
                    齐全）；普通文本行维持旧行模型 */
                 if (/<img[\s>]/.test(bh)) {
                   chunks.push('<div class="qblk" contenteditable="false" data-raw="' + escAttr(sub[z]) +
-                    '" title="引用内的图片（可右键设置大小 / 对齐 / 存储）">' + bh + '</div>');
+                    '" title="' + T_js('引用内的图片（可右键设置大小 / 对齐 / 存储）','Right-click the image inside the quote to resize / align / store it') + '">' + bh + '</div>');
                 } else chunks.push(bh);
               }
               else {
                 /* v3.29d（B5）：内嵌富块带 hover 提示，点击有状态栏反馈、双击进源码态 */
                 chunks.push('<div class="qblk" contenteditable="false" data-raw="' + escAttr(sub[z]) +
-                  '" title="引用内的富内容块暂不支持直接编辑（双击转入源码态修改）">' + bh + '</div>');
+                  '" title="' + T_js('引用内的富内容块暂不支持直接编辑（双击转入源码态修改）','Rich content block inside a quote is not directly editable (double-click to edit in source)') + '">' + bh + '</div>');
               }
             }
             plain = [];
@@ -2108,7 +2108,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         var fbody = String(fdm[2] || '');
         return '<div class="fnbody"><div class="fnitem" id="fn-' + esc(fdm[1]) + '">' +
           '<span class="fnmark">[' + esc(fdm[1]) + ']</span>' +
-          '<span class="fnedit"' + (fbody.trim() ? '' : ' data-ph="脚注说明"') + '>' +
+          '<span class="fnedit"' + (fbody.trim() ? '' : ' data-ph="' + T_js('脚注说明','Footnote') + '"') + '>' +
           inlineHTML(fbody) + '</span></div></div>';
       }
       case 'deflist': {
@@ -2118,7 +2118,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
              （不再写「定义内容」占位文字；存储仍为 ": "） */
           if (/^\s*:\s/.test(lines[q])) {
             var ddH = inlineHTML(lines[q].replace(/^\s*:\s?/, ''));
-            dlh += ddH ? '<dd>' + ddH + '</dd>' : '<dd data-ph="定义内容"></dd>';
+            dlh += ddH ? '<dd>' + ddH + '</dd>' : '<dd data-ph="' + T_js('定义内容','Definition') + '"></dd>';
           }
           else if (lines[q].trim() !== '') dlh += '<dt>' + inlineHTML(lines[q]) + '</dt>';
         }
@@ -2782,7 +2782,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     var cb = btn.closest('.codeblock');
     if (!cb) return;
     /* v3.31.3（QUO-5）：引用内代码块暂不支持切换风格 */
-    if (btn.closest('.qblk')) { toastStatus('引用内代码块暂不支持该操作，可双击转源码修改'); return; }
+    if (btn.closest('.qblk')) { toastStatus(T_js('引用内代码块暂不支持该操作，可双击转源码修改','Code block inside a quote is not editable; double-click to edit in source')); return; }
     var blkB = cb.closest('.blk');
     var idxB = blkB ? blockIndexOf(blkB) : -1;
     var attrB = idxB >= 0 ? parseFenceInfo(String(state.raw[idxB] || '').split('\n')[0]).attrs.st : null;
@@ -2791,7 +2791,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
        wrap-btn），本弹层回归纯风格四项 */
     SP.innerHTML = CODE_STYLES.map(function (s) {
       return '<div class="si' + (s[0] === cur ? ' act' : '') + '" data-st="' + s[0] + '">' +
-        '<span class="ic">▛</span><span class="lb">' + esc(s[1]) + '</span></div>';
+        '<span class="ic">▛</span><span class="lb">' + esc(T_js(s[1])) + '</span></div>';
     }).join('');
     SP._anchor = btn;
     var r = btn.getBoundingClientRect();
@@ -2808,7 +2808,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   function applyCodeLnum(cb, val) {
     if (!cb) return;
     /* v3.31.3（QUO-5）：引用内代码块暂不支持行号开关（可双击转源码修改） */
-    if (cb.closest('.qblk')) { toastStatus('引用内代码块暂不支持该操作，可双击转源码修改'); return; }
+    if (cb.closest('.qblk')) { toastStatus(T_js('引用内代码块暂不支持该操作，可双击转源码修改','Code block inside a quote is not editable; double-click to edit in source')); return; }
     var pre = cb.querySelector('pre.fence');
     var blkL = cb.closest('.blk');
     var idxL = blkL ? blockIndexOf(blkL) : -1;
@@ -2821,13 +2821,13 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     state.raw[idxL] = linesL.join('\n');
     markDirty(); scheduleSnapshot();
     if (pre) applyCodeEnhance(pre, false);
-    toastStatus(val === '1' ? '已开启本块行数显示' : '已关闭本块行数显示');
+    toastStatus(val === '1' ? T_js('已开启本块行数显示','Line numbers shown') : T_js('已关闭本块行数显示','Line numbers hidden'));
   }
   /* v3.38（CODE-13）：单块自动换行开关 —— 写围栏 wrap=1/0（与 lnum 同款） */
   function applyCodeWrap(cb, val) {
     if (!cb) return;
     /* v3.31.3（QUO-5）：引用内代码块暂不支持（可双击转源码修改） */
-    if (cb.closest('.qblk')) { toastStatus('引用内代码块暂不支持该操作，可双击转源码修改'); return; }
+    if (cb.closest('.qblk')) { toastStatus(T_js('引用内代码块暂不支持该操作，可双击转源码修改','Code block inside a quote is not editable; double-click to edit in source')); return; }
     var pre = cb.querySelector('pre.fence');
     var blkW = cb.closest('.blk');
     var idxW = blkW ? blockIndexOf(blkW) : -1;
@@ -2840,7 +2840,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     state.raw[idxW] = linesW.join('\n');
     markDirty(); scheduleSnapshot();
     if (pre) applyCodeEnhance(pre, false);
-    toastStatus(val === '1' ? '已开启本块自动换行' : '已关闭本块自动换行（长行横向滚动）');
+    toastStatus(val === '1' ? T_js('已开启本块自动换行','Line wrap on') : T_js('已关闭本块自动换行（长行横向滚动）','Line wrap off (long lines scroll horizontally)'));
   }
   /* v3.38（CODE-12）：退出全屏编辑（Esc 优先于此，见代码区 keydown） */
   function codeFsExit(cb) {
@@ -2859,7 +2859,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       cb.classList.toggle('wrap-on',
         (String(state.raw[bi] || '').split('\n')[0] || '').indexOf('wrap=1') >= 0);
     }
-    toastStatus('已退出全屏编辑');
+    toastStatus(T_js('已退出全屏编辑','Exited fullscreen edit'));
   }
   /* =========================================================
    * v3.38：常见命令提示（按语言给出「安装依赖 / 构建 / 运行 / 测试 / 格式化」）
@@ -2944,7 +2944,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     if (!cmds.length) return;
     CP.innerHTML = cmds.map(function (c) {
       return '<div class="si" data-cmd="' + esc(c[1]) + '">' +
-        '<span class="ic">▸</span><span class="lb">' + esc(c[0]) + '</span></div>';
+        '<span class="ic">▸</span><span class="lb">' + esc(T_js(c[0])) + '</span></div>';
     }).join('');
     CP._anchor = btn;
     CP._cb = cb;
@@ -8546,9 +8546,43 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     if (!key) { e.stopImmediatePropagation(); e.preventDefault(); return; }
     e.preventDefault();
     e.stopImmediatePropagation();
-    if (e.altKey) { toggleFoldSameSiblings(bi); return; }
-    if (foldSet[key]) delete foldSet[key]; else foldSet[key] = 1;
-    applyFolds();
+    /* v3.49.2（FOLD-SCROLL）：展开 / 折叠会改变文档高度，若焦点 / 光标随之移动，
+       浏览器会把视口滚动到变化区域（有时直接跳到文末）。切换前后复原滚动位置，
+       确保展开后画面停留在原位置，消除「跳末尾」异常。 */
+    var _fst = ED.scrollTop, _fsy = window.scrollY;
+    if (e.altKey) { toggleFoldSameSiblings(bi); }
+    else { if (foldSet[key]) delete foldSet[key]; else foldSet[key] = 1; applyFolds(); }
+    ED.scrollTop = _fst;
+    if (window.scrollY !== _fsy) window.scrollTo(0, _fsy);
+  });
+
+  /* v3.49.2（FOLD-SCROLL）：原生 <details> / <summary>（题目 + 隐藏答案等折叠内容）
+     在 contenteditable 编辑视图下，点击 <summary> 展开时浏览器会把焦点 / 光标移入
+     并因高度剧变滚动视口（有时跳到文末）。这里接管 <summary> 点击：阻止原生
+     聚焦滚动、手动切换 open、并在布局变化后复原滚动位置。
+     预览 / 源码 / 锁定态不接管（保留原生行为）。 */
+  function _preserveScrollAround(fn) {
+    var st = ED.scrollTop, sy = window.scrollY;
+    fn();
+    ED.scrollTop = st;
+    if (window.scrollY !== sy) window.scrollTo(0, sy);
+  }
+  ED.addEventListener('mousedown', function (e) {
+    if (window.__previewLock || editorLocked() || srcEl || !ED.isContentEditable) return;
+    var sum = e.target.closest ? e.target.closest('summary') : null;
+    if (!sum) return;
+    var det = sum.parentElement;
+    if (!det || det.tagName !== 'DETAILS') return;
+    e.preventDefault();   /* 阻止焦点 / 光标移入（contenteditable 下的滚动元凶） */
+  });
+  ED.addEventListener('click', function (e) {
+    if (window.__previewLock || editorLocked() || srcEl || !ED.isContentEditable) return;
+    var sum = e.target.closest ? e.target.closest('summary') : null;
+    if (!sum) return;
+    var det = sum.parentElement;
+    if (!det || det.tagName !== 'DETAILS') return;
+    e.preventDefault();   /* 取消原生 toggle 默认动作，改由下方手动切换 */
+    _preserveScrollAround(function () { det.open = !det.open; });
   });
 
   /* v3.30.10（HR-4）：分割线选中态 —— 点击高亮，Delete/Backspace 删除，
@@ -17342,7 +17376,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   var langCtx = null;   // {idx, act, def}
   function openLangPop(btn, preselect) {
     /* v3.31.3（QUO-5）：引用内代码块暂不支持切换语言 */
-    if (btn.closest('.qblk')) { toastStatus('引用内代码块暂不支持该操作，可双击转源码修改'); return; }
+    if (btn.closest('.qblk')) { toastStatus(T_js('引用内代码块暂不支持该操作，可双击转源码修改','Code block inside a quote is not editable; double-click to edit in source')); return; }
     var blk = btn.closest('.blk');
     var idx = blockIndexOf(blk);
     if (idx < 0) return;
@@ -18145,7 +18179,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       pop = document.createElement('div');
       pop.id = 'imgsizepop';
       pop.className = 'pop';
-      pop.innerHTML = '<div class="cap">大小设置</div>' +
+      pop.innerHTML = '<div class="cap">' + T_js('大小设置') + '</div>' +
         '<div class="row"><input id="imgsize-w" type="text" placeholder="' + T_js('宽') + '">' +
         '<span style="align-self:center">×</span>' +
         '<input id="imgsize-h" type="text" placeholder="' + T_js('高') + '">' +
@@ -18714,7 +18748,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       pop = document.createElement('div');
       pop.id = 'mmdsizepop';
       pop.className = 'pop';
-      pop.innerHTML = '<div class="cap">大小设置</div>' +
+      pop.innerHTML = '<div class="cap">' + T_js('大小设置') + '</div>' +
         '<div class="row"><input id="mmdsize-w" type="text" placeholder="' + T_js('宽') + '">' +
         '<span style="align-self:center">×</span>' +
         '<input id="mmdsize-h" type="text" placeholder="' + T_js('高') + '">' +
@@ -19201,6 +19235,8 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     '还原尺寸':'Reset Size',
     '重置尺寸':'Reset Size',
     '大小设置':'Set Size',
+    '经典':'Classic',     '深色':'Dark',     '护眼':'Eye-care',     '极简':'Minimal',     '安装依赖':'Install Deps',     '运行':'Run',     '测试':'Test',     '格式化':'Format',     '查看目录':'List Directory',     '赋可执行权限':'Make Executable',     '运行脚本':'Run Script',     '后台运行并记日志':'Run in Background',     '构建':'Build',     '类型检查':'Type Check',     '清理':'Clean',     '安装':'Install',     '构建镜像':'Build Image',     '运行容器':'Run Container',     '编排启动':'Compose Up',     '查看日志':'View Logs',     '配置构建':'Configure Build',     '编译':'Compile',     '查看状态':'Status',     '暂存全部':'Stage All',     '提交':'Commit',     '推送':'Push',     '拉取':'Pull',
+
     '转本地存储':'Save Locally',
     '转化为内嵌式存储':'Convert to Embedded',
     '修改图片名称':'Rename Image',
@@ -19297,6 +19333,8 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     '已裁剪，原图文件保留 · Ctrl+Z 可撤销':'Cropped; original file kept · Ctrl+Z to undo',
     '已转换为分割线（hr）':'Converted to horizontal rule (hr)',
     '已退出全屏编辑':'Exited fullscreen editing',
+    '已退出代码块编辑（提示：Ctrl+Enter 也可跳出）':'Exited code block editing (hint: Ctrl+Enter also exits)',
+    '已退出代码块编辑（提示：Esc 也可跳出）':'Exited code block editing (hint: Esc also exits)',
     '已选中':'Selected',
     '已选第 ':'Selected ',
     ' 个相同词（Esc 退出）':' identical words (Esc to exit)',
