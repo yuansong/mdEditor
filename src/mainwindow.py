@@ -555,9 +555,9 @@ class MainWindow(QMainWindow):
         # P1-1 自动配对 / P1-8 Emoji 补全（默认开，系统设置→编辑器可关）
         self._auto_pair = self._settings.value("autoPair", True, type=bool)
         self._emoji = self._settings.value("emojiComplete", True, type=bool)
-        # P1-6 版本历史保留份数（v3.43.1：默认 20 → 5，上限 200 → 100）
+        # P1-6 版本历史保留份数（v3.43.1：默认 20 → 5，上限 200 → 100；v3.49.4：下限 1→0、上限 100→30）
         try:
-            self._history_keep = max(1, min(100, int(self._settings.value("historyKeep", 5))))
+            self._history_keep = max(0, min(30, int(self._settings.value("historyKeep", 5))))
         except (TypeError, ValueError):
             self._history_keep = 5
         # 斜杠（/）菜单配置（系统设置→编辑器 可改）
@@ -2370,6 +2370,9 @@ class MainWindow(QMainWindow):
         """保存前把上一版内容留档（内容与磁盘一致时跳过，避免无意义快照）。"""
         if not path or not os.path.exists(path):
             return None
+        # v3.49.4（HIST-0）：保留份数为 0 = 不保留历史版本，也不创建历史目录
+        if getattr(self, "_history_keep", 0) == 0:
+            return None
         try:
             with open(path, "r", encoding="utf-8", errors="replace") as f:
                 old = f.read()
@@ -2578,14 +2581,17 @@ class MainWindow(QMainWindow):
         self.show_status(T("Emoji 补全：开", "Emoji completion: On") if on else "Emoji 补全：关")
 
     def set_history_keep(self, n):
-        """历史版本保留份数（1~100，系统设置→通用；v3.43.1 上限 200 → 100）。"""
+        """历史版本保留份数（0~30，系统设置→通用；v3.43.1 上限 200 → 100；v3.49.4 下限 1→0、上限 100→30）。"""
         try:
-            n = max(1, min(100, int(n)))
+            n = max(0, min(30, int(n)))
         except (TypeError, ValueError):
             return
         self._history_keep = n
         self._settings.setValue("historyKeep", n)
-        self.show_status(T(f"历史版本保留 {n} 份", f"History versions kept: {n}"))
+        if n == 0:
+            self.show_status(T("历史版本：不保留", "History: disabled (0 kept)"))
+        else:
+            self.show_status(T(f"历史版本保留 {n} 份", f"History versions kept: {n}"))
 
     def set_external_editor(self, path):
         """外部编辑器可执行文件路径（留空 = 系统默认关联程序，系统设置→通用）。"""

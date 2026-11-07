@@ -7630,6 +7630,10 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         try { _aiSelRange = r.cloneRange(); } catch (_) {}
         _xselHasSel = true;
         _xselDraw();   /* 保留高亮作为选中反馈，直至下次 mousedown / 滚动 */
+        /* v3.49.4（MULTI-FMT-FIX）：跨块松手后主动刷新浮条 —— 原生选区在拖拽中
+           已被 _xsel 清空，currentSelectionInfo 经 activeRange() 回退到 _aiSelRange，
+           此处显式刷新使「多段格式化菜单」出现（否则仅高亮、无菜单）。 */
+        refreshFloatbar();
       }
       _xselActive = false;
     }
@@ -11252,10 +11256,19 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     }
     return -1;
   }
-  function currentSelectionInfo() {
+  /* v3.49.4（MULTI-FMT-FIX）：跨块选区叠加层（_xsel）拖拽中会清空原生选区，
+     致使浮条 / 多块格式化依赖的 getSelection() 失效。统一「有效选区」口径：
+     优先原生选区（单块 / 折叠光标），原生为空且存在跨块叠层时回退到 _aiSelRange
+     （_xsel 构造的跨块 Range），使二者都能取到真实选区。 */
+  function activeRange() {
     var sel = getSelection();
-    if (!sel.rangeCount || sel.isCollapsed) return null;
-    var r = sel.getRangeAt(0);
+    if (sel && sel.rangeCount && !sel.isCollapsed) return sel.getRangeAt(0);
+    if (_xselHasSel && _aiSelRange) return _aiSelRange;
+    return null;
+  }
+  function currentSelectionInfo() {
+    var r = activeRange();
+    if (!r) return null;
     var el = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
     el = el && el.closest ? el.closest('#editor .blk') : null;
     if (!el) return null;
@@ -11283,9 +11296,8 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
      跨块拖选时按「与选区真正相交的标题块」计数（仅首尾相接不算），
      文案已为跨块场景留好位置 */
   function selHeadingCount() {
-    var sel = getSelection();
-    if (!sel.rangeCount || sel.isCollapsed) return 0;
-    var r = sel.getRangeAt(0);
+    var r = activeRange();
+    if (!r) return 0;
     var hs = ED.querySelectorAll('h1,h2,h3,h4,h5,h6');
     var n = 0;
     for (var i = 0; i < hs.length; i++) {
@@ -11302,9 +11314,8 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
      起点块，浮条尾部若报「标题 2」会暗示作用于两个标题（误导），
      调用方据此把 headCnt 降为 0，只报「已选 N 字」 */
   function selCrossesBlocks() {
-    var sel = getSelection();
-    if (!sel.rangeCount || sel.isCollapsed) return false;
-    var r = sel.getRangeAt(0);
+    var r = activeRange();
+    if (!r) return false;
     function blkOf(n) {
       var el = n.nodeType === 1 ? n : n.parentElement;
       return el && el.closest ? el.closest('#editor .blk') : null;
@@ -11349,9 +11360,8 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   }
   /* v3.30.9：选区是否完整落在一个表格单元格内（单元格格式化入口） */
   function cellFormatCtx() {
-    var sel = getSelection();
-    if (!sel.rangeCount || sel.isCollapsed) return null;
-    var r = sel.getRangeAt(0);
+    var r = activeRange();
+    if (!r) return null;
     function cellOf(n) {
       var el = n.nodeType === 1 ? n : n.parentElement;
       return el && el.closest ? el.closest('#editor .b-table td, #editor .b-table th') : null;
@@ -11786,9 +11796,8 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
    * 故把选中区间按列表项内容切分，逐项包裹「内容」（不动 - / 1. / [ ] 等项前缀）。
    * ========================================================= */
   function _blocksInSelection() {
-    var sel = getSelection();
-    if (!sel.rangeCount || sel.isCollapsed) return null;
-    var r = sel.getRangeAt(0);
+    var r = activeRange();
+    if (!r) return null;
     var idxs = [];
     for (var k = 0; k < ED.children.length; k++) {
       var b = ED.children[k];
@@ -13097,26 +13106,30 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     insertTextAtCaret('[' + txt + '](' + url + ')');
     markDirty(); scheduleSnapshot();
   }
+  /* v3.49.4（MULTI-FMT-FIX）：抽出「显示浮条」为 refreshFloatbar()，供两路共用：
+     selectionchange（单块 / 折叠光标，原生选区）与跨块 mouseup（_aiSelRange 回退）。
+     跨段拖选后原生选区为空，须由 mouseup 主动刷新，否则浮条不出现。 */
+  function refreshFloatbar() {
+    if (editorLocked()) return;
+    var info = currentSelectionInfo();
+    if (!info) { FB.classList.remove('show'); return; }
+    /* v3.29d（B14/S8）：斜杠 / 块菜单打开期间若仍存在非空选区，格式栏保持
+       显示（菜单锚在块下方、格式栏锚在选区上方，互不遮挡）——
+       行内格式操作入口不再因菜单打开而整体中断 */
+    lastFB = info;  // 记录快照，供行菜单按钮点击兜底
+    /* v3.31.2（#4/#5b）：当前块为标题 1 时传状态（1=向左 / 2=居中） */
+    var _fbi = blockInfo(state.raw[info.idx] || '');
+    /* v3.38（ALIGN-1）：任意级别标题都给居中入口（与 C 处动作一致） */
+    var _h1s = /^h[1-6]$/.test(_fbi.type) ? ((_fbi.tagForm && _fbi.align === 'center') ? 2 : 1) : 0;
+    buildFloatbar(fbDelOnly(info), info.plainLen, !!cellFormatCtx(), _h1s,
+                  selCrossesBlocks() ? 0 : selHeadingCount());   // 代码/图表/公式上下文：仅保留删除按钮；跨块降级见 FMTB-4
+    FB.classList.add('show');
+    placePop(FB, info.rect.left, info.rect.top - 44);
+  }
   var selTimer = null;
   document.addEventListener('selectionchange', function () {
-    if (editorLocked()) return;
     clearTimeout(selTimer);
-    selTimer = setTimeout(function () {
-      var info = currentSelectionInfo();
-      if (!info) { FB.classList.remove('show'); return; }
-      /* v3.29d（B14/S8）：斜杠 / 块菜单打开期间若仍存在非空选区，格式栏保持
-         显示（菜单锚在块下方、格式栏锚在选区上方，互不遮挡）——
-         行内格式操作入口不再因菜单打开而整体中断 */
-      lastFB = info;  // 记录快照，供行菜单按钮点击兜底
-      /* v3.31.2（#4/#5b）：当前块为标题 1 时传状态（1=向左 / 2=居中） */
-      var _fbi = blockInfo(state.raw[info.idx] || '');
-      /* v3.38（ALIGN-1）：任意级别标题都给居中入口（与 C 处动作一致） */
-      var _h1s = /^h[1-6]$/.test(_fbi.type) ? ((_fbi.tagForm && _fbi.align === 'center') ? 2 : 1) : 0;
-      buildFloatbar(fbDelOnly(info), info.plainLen, !!cellFormatCtx(), _h1s,
-                    selCrossesBlocks() ? 0 : selHeadingCount());   // 代码/图表/公式上下文：仅保留删除按钮；跨块降级见 FMTB-4
-      FB.classList.add('show');
-      placePop(FB, info.rect.left, info.rect.top - 44);
-    }, 160);
+    selTimer = setTimeout(refreshFloatbar, 160);
   });
 
   /* v3.40（UI-R7）：光标移动 → 空段落占位刷新（180ms 防抖，O(1) 单块检查） */

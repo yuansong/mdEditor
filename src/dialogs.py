@@ -554,22 +554,22 @@ class SettingsDialog(_ThemedDialog):
         self.setObjectName("settingsDlg")
         self.setWindowTitle(T("系统设置"))
         self.setModal(False)
-        # v3.49.3（SET-UI）：加宽（660→800）并约束高度，避免低分辨率下底部
-        # 「关闭」按钮被挤出可视区。各页内容改用 QScrollArea 包裹，超高时页内
-        # 滚动，对话框整体不再随内容无限增高，全分辨率均可完整操作。
-        self.resize(800, 480)
-        self.setMinimumSize(680, 400)
+        # v3.49.4（SET-UI）：整体放大 1/5（800×480 → 960×576），内容更舒展；
+        # 最大高度仍随屏幕可用高约束（min(648, _avh-80)），低分辨率下底部按钮永不被挤出。
+        # 各页内容仍用 QScrollArea 包裹，超高时页内滚动，全分辨率均可完整操作。
+        self.resize(960, 576)
+        self.setMinimumSize(816, 480)
         _avh = QApplication.primaryScreen().availableGeometry().height() if QApplication.primaryScreen() else 0
         if _avh:
-            self.setMaximumHeight(min(540, _avh - 80))
+            self.setMaximumHeight(min(648, _avh - 80))
         self._apply_theme_qss(getattr(win, "_theme", "light"))
 
         # ---- 左侧导航 ----
         self.nav = QListWidget(self)
         self.nav.setObjectName("navList")
-        # v3.49.3（SET-UI）：加宽左侧导航（150→200），英文模式导航项（如
+        # v3.49.4（SET-UI）：随面板 ×1.2 加宽左侧导航（200→240），英文模式导航项（如
         # "Writing & Input" / "AI Connection"）较长，避免截断 / 溢出。
-        self.nav.setFixedWidth(200)
+        self.nav.setFixedWidth(240)
         # v3.49.3（SET-UI）：导航项改用 T(zh, en) 双语，跟随界面语言显示；
         # 同时把中文原名存入 UserRole，select_page 按原名定位（中英皆可用）。
         # v3.29：「写作与历史」已并入「通用」页；「编辑器」页含图片 / 代码块 / 斜杠菜单
@@ -890,7 +890,7 @@ class SettingsDialog(_ThemedDialog):
             self._win.set_emoji_complete(on)
 
     def _on_history_keep(self, n):
-        if int(getattr(self._win, "_history_keep", 5) or 5) != int(n):
+        if int(getattr(self._win, "_history_keep", 5) or 0) != int(n):
             self._win.set_history_keep(int(n))
 
     # ---- 通用页：侧栏显示设置 ----
@@ -1151,12 +1151,16 @@ class SettingsDialog(_ThemedDialog):
         histrow.addWidget(QLabel(T("历史版本保留份数")))
         self.history_keep_box = QSpinBox(page)
         # v3.43.1：默认 5 份、上限 100 份（原 20 / 200）
-        self.history_keep_box.setRange(1, 100)
+        self.history_keep_box.setRange(0, 30)  # v3.49.4（HIST-0）：下限 1→0、上限 100→30
         self.history_keep_box.setSuffix(" 份")
-        self.history_keep_box.setValue(int(getattr(self._win, "_history_keep", 5) or 5))
+        self.history_keep_box.setValue(int(getattr(self._win, "_history_keep", 5) or 0))
         self.history_keep_box.valueChanged.connect(self._on_history_keep)
         histrow.addWidget(self.history_keep_box, 1)
         ghist.addLayout(histrow)
+        hist_hint = QLabel(T("0 = 不保留历史版本，也不创建历史目录", "0 = keep no history; no history folder is created"))
+        hist_hint.setObjectName("pageHint")
+        hist_hint.setWordWrap(True)
+        ghist.addWidget(hist_hint)
         lay.addWidget(gb_hist)
 
         # ---- 界面语言（I18N）：切换即存盘，外壳菜单 / 工具栏 / 编辑器内核即时刷新 ----
@@ -1600,7 +1604,7 @@ class SettingsDialog(_ThemedDialog):
         self._sync_sem_info()
         # P1-6 / P1-7：历史保留份数、外部编辑器路径同步
         self.history_keep_box.blockSignals(True)
-        self.history_keep_box.setValue(int(getattr(self._win, "_history_keep", 5) or 5))
+        self.history_keep_box.setValue(int(getattr(self._win, "_history_keep", 5) or 0))
         self.history_keep_box.blockSignals(False)
         self.extedit_edit.blockSignals(True)
         self.extedit_edit.setText(str(getattr(self._win, "_external_editor", "") or ""))

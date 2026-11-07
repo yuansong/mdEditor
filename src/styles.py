@@ -317,10 +317,9 @@ SIDEBAR_QSS_TPL = """
 }}
 #tabcap QToolButton {{
   border: none; background: transparent; color: {text_muted};
-  /* v3.48.30（TAB-FIX）：水平内边距 16→8 —— 三个页签（文件/书籍/大纲）
-     在 224px 侧栏内完整显示，此前 16px 时每钮需 59px、三钮 177px 超出
-     152px 可用宽，文字全部被省略成「…」 */
-  padding: 8px 8px; border-radius: 0; font-size: 12px;
+  /* v3.49.4（TAB-FIX-2）：水平内边距 8→6，并为页签按钮设 ElideNone（sidebar.py）
+     + ToolButtonTextOnly，确保英文 Book / Outline 在 224px 侧栏内完整显示、不再省略为「…」 */
+  padding: 6px 6px; border-radius: 0; font-size: 12px;
   border-bottom: 2px solid transparent;
 }}
 #tabcap QToolButton:hover {{ background: {hover_bg}; color: {text}; }}

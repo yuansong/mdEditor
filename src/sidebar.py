@@ -618,6 +618,8 @@ class Sidebar(QWidget):
         for b in (self.btn_files, self.btn_book, self.btn_outline):
             b.setCheckable(True)
             b.setCursor(Qt.PointingHandCursor)
+            b.setToolButtonStyle(Qt.ToolButtonTextOnly)   # v3.49.4（TAB-FIX-2）：显式文本按钮，避免图标态吞掉文字
+            b.setElideMode(Qt.ElideNone)                 # v3.49.4（TAB-FIX-2）：英文 Book/Outline 不再被省略为「…」
             b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             tab_row.addWidget(b, 1)
         self._tabs = QButtonGroup(self)
