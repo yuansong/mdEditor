@@ -834,6 +834,7 @@ class MainWindow(QMainWindow):
         split.setStretchFactor(1, 1)
         split.setHandleWidth(1)
         self.setCentralWidget(split)
+        self._main_split = split   # v3.49.11（FS-3WAY）：持有主分栏引用，全屏下按比例重分配侧栏/编辑区宽度
         self.setAcceptDrops(True)
         # v3.48.35（DROP-MD）：应用级 .md 拖放（子控件吞不掉，见方法注释）
         self._install_app_drop_filter()
@@ -847,8 +848,9 @@ class MainWindow(QMainWindow):
         # v3.48.37（AI-UI-2）：再缩 1/6（345 → 288）—— 345 在 1080p 下与正文
         # 抢宽度明显，288 仍能放下一行按钮 + 消息气泡。
         # v3.49.10（AI-WIDE）：在 288 基础上扩大 1/5（+20% → 346），拓宽对话区。
+        # v3.49.11（AI-WIDE-2）：默认宽度再调整为 400px（用户在 346 基础上要求加宽）。
         # 首次展开时按新宽度定型（见 _show_ai_dock），避免沿用旧残留宽度。
-        self._ai_dock.setMinimumWidth(346)
+        self._ai_dock.setMinimumWidth(400)
         self._ai_dock_width_sized = False
         self._ai_pane = ai_pane.AIPane(self._ai_bridge)
         self._ai_dock.setWidget(self._ai_pane)
@@ -1164,6 +1166,9 @@ class MainWindow(QMainWindow):
         super().resizeEvent(e)
         self._place_tb_expand_btn()
         self._update_tb_more()   # v3.38（TAB-9）：窗口缩放重算标签溢出态
+        # v3.49.11（FS-3WAY）：全屏下随视口尺寸按固定比例重分配三栏宽度
+        if self.isFullScreen() and not getattr(self, "_fs_layout_applying", False):
+            self._apply_fullscreen_layout()
 
     def createPopupMenu(self):
         """工具栏 / 菜单栏右键菜单：只给「显示 / 隐藏工具栏」一项。
@@ -1668,13 +1673,14 @@ class MainWindow(QMainWindow):
         # v3.48.23（AI-UI）：首次展开按定型宽度（宽度已缩减 1/4）；
         # v3.48.37（AI-UI-2）：定型宽度 345 → 288（再缩 1/6）。
         # v3.49.10（AI-WIDE）：定型宽度 288 → 346（扩大 1/5）。
+        # v3.49.11（AI-WIDE-2）：默认定型宽度 346 → 400（用户要求加宽）。
         # 之后尊重用户手动拖拽的宽度，不再强行重置。
         if not getattr(self, "_ai_dock_width_sized", False):
             # show() 后停靠布局会把 dock 的最小宽度抬回「内容最小宽度」，
-            # 此处重新压回 346 再定型，否则 resizeDocks 会被 356/460 这类
+            # 此处重新压回 400 定型，否则 resizeDocks 会被 356/460 这类
             # 旧内容宽度卡住（v3.48.37 AI-UI-2 实测）。
-            self._ai_dock.setMinimumWidth(346)
-            self.resizeDocks([self._ai_dock], [346], Qt.Horizontal)
+            self._ai_dock.setMinimumWidth(400)
+            self.resizeDocks([self._ai_dock], [400], Qt.Horizontal)
             self._ai_dock_width_sized = True
         self._ai_dock.raise_()
 
@@ -1685,6 +1691,7 @@ class MainWindow(QMainWindow):
     # 仅当侧栏当前可见且非专注模式时才自动收起，避免与专注模式抢管侧栏。
     # v3.47.6（REQ1）：改为「AI 助手 与 侧边栏 互斥」—— 显示 AI 时收起侧栏，
     # 隐藏 AI 时恢复侧栏；**取消**原先与状态栏的互斥（状态栏由用户独立控制）。
+    # v3.49.11（FS-3WAY）：全屏模式下取消该互斥（两者可同时显示），仅默认模式收起侧栏。
     def _on_ai_dock_visibility(self, visible):
         # 同步菜单勾选态（菜单 / 顶栏按钮 / 关闭钮任一途径开关都更新）
         act_ai = getattr(self, "_act_ai", None)
@@ -1693,21 +1700,25 @@ class MainWindow(QMainWindow):
         if getattr(self, "_focus", False):
             return
         if visible:
-            # 需求1：AI 与侧边栏互斥 —— 显示 AI 时收起侧栏（不再触碰状态栏）
-            if self._sidebar.isVisible() and not self._ai_collapsed_sidebar:
+            # 默认模式：AI 与侧栏互斥 —— 显示 AI 时收起侧栏（不再触碰状态栏）。
+            # 全屏模式：不收起（FS-3WAY，两者可同时显示）。
+            if not self.isFullScreen() and self._sidebar.isVisible() and not self._ai_collapsed_sidebar:
                 self._ai_collapsed_sidebar = True
                 self._sidebar.setVisible(False)
                 act = getattr(self, "_act_sidebar", None)
                 if act is not None:
                     act.setChecked(False)
         else:
-            # 隐藏 AI 时恢复此前被收起的侧栏
+            # 隐藏 AI 时恢复此前被收起的侧栏（仅默认模式曾收起的情形）
             if self._ai_collapsed_sidebar:
                 self._ai_collapsed_sidebar = False
                 self._sidebar.setVisible(True)
                 act = getattr(self, "_act_sidebar", None)
                 if act is not None:
                     act.setChecked(True)
+        # 全屏下三栏按视口比例重新分配（AI 显隐改变占用宽度）
+        if self.isFullScreen():
+            self._apply_fullscreen_layout()
 
     # v3.47.2（SoloMD 对标）：打开独立 AI 连接面板（从主面板「连接设置」按钮 / 视图菜单跳转）
     def open_ai_connection(self):
@@ -6275,9 +6286,9 @@ class MainWindow(QMainWindow):
 
     # ---- 侧边栏 ----
     def toggle_sidebar(self):
-        # v3.47.6（REQ1）：AI 助手 与 侧边栏 互斥。若 AI 面板当前可见，则强制
-        # 隐藏 AI（并显示侧栏），实现「显示其一即隐藏另一」；否则正常切换侧栏。
-        if self._ai_dock.isVisible():
+        # v3.47.6（REQ1）：默认模式 AI 与侧栏互斥 —— 若 AI 可见则收起 AI、显示侧栏。
+        # v3.49.11（FS-3WAY）：全屏模式取消该互斥，单独切换侧栏（不再连带收起 AI）。
+        if self._ai_dock.isVisible() and not self.isFullScreen():
             self._hide_ai_dock()
             act_ai = getattr(self, "_act_ai", None)
             if act_ai is not None:
@@ -6287,6 +6298,8 @@ class MainWindow(QMainWindow):
             return
         self._sidebar.setVisible(not self._sidebar.isVisible())
         self._update_side_btn()
+        if self.isFullScreen():
+            self._apply_fullscreen_layout()
 
     def _update_side_btn(self):
         """左侧工具栏顶部开关（v3.40 UI-R7③：线性侧栏面板图标，展开/收起双态）。"""
@@ -6487,8 +6500,76 @@ class MainWindow(QMainWindow):
     def toggle_fullscreen(self):
         if self.isFullScreen():
             self.showNormal()
+            # v3.49.11（FS-3WAY）：退出全屏 → 还原默认布局（AI 400 / 侧栏 269，
+            # 并恢复「AI 与侧栏互斥」的默认行为）
+            self._restore_default_layout()
         else:
             self.showFullScreen()
+            # v3.49.11（FS-3WAY）：进入全屏 → 解除「AI 助手 ↔ 侧栏」互斥（二者可同时显示），
+            # 并按固定比例分配三栏宽度（见 _apply_fullscreen_layout）。若进入全屏前因互斥被收起
+            # 的侧栏，此处恢复显示，使三栏同显、充分利用全屏空间。
+            if self._ai_dock.isVisible() and not self._sidebar.isVisible():
+                self._sidebar.setVisible(True)
+                act = getattr(self, "_act_sidebar", None)
+                if act is not None:
+                    act.setChecked(True)
+                self._ai_collapsed_sidebar = False
+            # showFullScreen 的几何更新异步完成，延后一帧再按新视口比例布局
+            QTimer.singleShot(0, self._apply_fullscreen_layout)
+
+    # v3.49.11（FS-3WAY）：全屏三栏等比例自适应。
+    # 固定比例：侧栏 18% / AI 面板 22% / 编辑区 60%（AI 与侧栏各自有最小宽约束，
+    # 小屏下按比例计算值低于最小宽时由 Qt 钳制，编辑区取剩余空间）。
+    _FS_SIDEBAR_FRAC = 0.18
+    _FS_AI_FRAC = 0.22
+    _FS_SIDEBAR_MIN = 220
+    _FS_AI_MIN = 400
+    _FS_DEFAULT_AI_W = 400
+    _FS_DEFAULT_SIDEBAR_W = 269
+
+    def _apply_fullscreen_layout(self):
+        """全屏模式下，按固定比例把侧栏 / AI 面板 / 编辑区宽度分配到当前视口。
+
+        侧栏（splitter 子控件，默认 setFixedWidth(269)）临时改写为比例宽；
+        AI 面板用 resizeDocks 定宽；编辑区作为中央剩余自动填满。仅在全屏生效。"""
+        if not self.isFullScreen():
+            return
+        if getattr(self, "_fs_layout_applying", False):
+            return
+        self._fs_layout_applying = True
+        try:
+            W = self.width()
+            ai_w = 0
+            if self._ai_dock.isVisible():
+                ai_w = max(self._FS_AI_MIN, int(round(W * self._FS_AI_FRAC)))
+                self._ai_dock.setMinimumWidth(ai_w)
+                self.resizeDocks([self._ai_dock], [ai_w], Qt.Horizontal)
+            if self._sidebar.isVisible():
+                sb_w = max(self._FS_SIDEBAR_MIN, int(round(W * self._FS_SIDEBAR_FRAC)))
+                self._sidebar.setFixedWidth(sb_w)
+                self._main_split.setSizes([sb_w, (W - ai_w) - sb_w])
+        finally:
+            self._fs_layout_applying = False
+
+    def _restore_default_layout(self):
+        """退出全屏：把 AI 面板与侧栏还原为默认宽度，并恢复「AI 与侧栏互斥」默认行为。"""
+        # AI 面板恢复默认宽 400
+        self._ai_dock.setMinimumWidth(self._FS_DEFAULT_AI_W)
+        if self._ai_dock.isVisible():
+            self.resizeDocks([self._ai_dock], [self._FS_DEFAULT_AI_W], Qt.Horizontal)
+        # 侧栏恢复默认固定宽 269
+        if self._sidebar.isVisible():
+            self._sidebar.setFixedWidth(self._FS_DEFAULT_SIDEBAR_W)
+            ai_w = self._FS_DEFAULT_AI_W if self._ai_dock.isVisible() else 0
+            self._main_split.setSizes(
+                [self._FS_DEFAULT_SIDEBAR_W, max(200, (self.width() - ai_w) - self._FS_DEFAULT_SIDEBAR_W)])
+        # 恢复默认模式互斥：若 AI 可见则收起侧栏（默认布局）
+        if self._ai_dock.isVisible() and self._sidebar.isVisible():
+            self._sidebar.setVisible(False)
+            act = getattr(self, "_act_sidebar", None)
+            if act is not None:
+                act.setChecked(False)
+            self._ai_collapsed_sidebar = True
 
     # ---- v3.40（UI-R7）：状态栏 / 视图状态区辅助 ----
     def toggle_statusbar(self, checked=True):
