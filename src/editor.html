@@ -78,6 +78,20 @@ body.dual #editor {
   border-left: none; border-right: none; border-radius: 0;
   box-shadow: none;
 }
+/* v3.49.9（FULLSCREEN-EDIT）：默认满屏无留白；纸张模式(单栏)回落 A4 纸面。
+   高特异性规则（body:not(.paper-mode):not(.dual) #editor）反压主题 editor_css
+   的 #editor（794px 居中），实现默认满屏；body.paper-mode 时本规则不命中，
+   回落主题原 A4 纸面外观（需打印/预览时勾选「视图→纸张模式」）。 */
+body:not(.paper-mode):not(.dual) #editor {
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 8px 24px;
+  min-height: 100vh;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
 body.dual .src-gutter { padding-left: 2px; padding-right: 8px; }
 /* G1:typewriter mode adds 40vh top/bottom padding so the first/last block can center */
 #editor.typing { padding-top: 40vh; padding-bottom: 45vh; }

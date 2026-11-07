@@ -552,6 +552,8 @@ class MainWindow(QMainWindow):
         # 打字机 / 专注模式（视图菜单或系统设置开关，持久化，重启保持）
         self._typewriter = self._settings.value("typewriter", False, type=bool)
         self._focus = self._settings.value("focus", False, type=bool)
+        # v3.49.9（FULLSCREEN-EDIT）：纸张模式（单栏回落 A4 纸面；默认 False → 满屏）
+        self._paper = self._settings.value("paperMode", False, type=bool)
         # P1-1 自动配对 / P1-8 Emoji 补全（默认开，系统设置→编辑器可关）
         self._auto_pair = self._settings.value("autoPair", True, type=bool)
         self._emoji = self._settings.value("emojiComplete", True, type=bool)
@@ -1355,11 +1357,15 @@ class MainWindow(QMainWindow):
                                              self.toggle_typewriter, menu=m_view, checkable=True)
         self._act_focus = self._reg_act("视图", "专注模式", None,
                                         self.toggle_focus, menu=m_view, checkable=True)
+        # v3.49.9（FULLSCREEN-EDIT）：纸张模式（可勾选，持久化；默认满屏无留白）
+        self._act_paper = self._reg_act("视图", "纸张模式", None,
+                                        self.toggle_paper_mode, menu=m_view, checkable=True)
         # v3.47.5（REQ1）：「显示 / 隐藏 AI 助手」已上移与状态栏平级（见上方视图菜单），
         # 此处不再重复注册。
         # 启动时恢复上次持久化的模式勾选状态（模式本身随页面加载 setMode 下发）
         self._act_typewriter.setChecked(self._typewriter)
         self._act_focus.setChecked(self._focus)
+        self._act_paper.setChecked(self._paper)
         m_view.addSeparator()
         self._reg_act("视图", "全屏", "F11", self.toggle_fullscreen, menu=m_view)
         # v3.34（MMD-11）：图表主题入口从视图菜单移到「设置 → 系统设置 → 外观」，
@@ -1865,6 +1871,8 @@ class MainWindow(QMainWindow):
         self._js_view(view, f"window.setTheme({js(self._theme)})")
         # v3.42.0：界面风格内容级 CSS 随视图加载注入
         self._js_view(view, self._style_patch_js())
+        # v3.49.9（FULLSCREEN-EDIT）：纸张模式 class 随视图加载恢复（默认满屏）
+        self._js_view(view, f"document.body.classList.toggle('paper-mode', {str(self._paper).lower()})")
         view.setZoomFactor(self._zoom)
         self._js_view(view,
                       f"window.setMode({{typewriter: {str(bool(getattr(self, '_typewriter', False))).lower()}, "
@@ -6461,6 +6469,18 @@ class MainWindow(QMainWindow):
             qk.blockSignals(False)
         self._js_active(f"window.setMode({{focus: {str(self._focus).lower()}}})")
         self.show_status(T("专注模式：开", "Focus mode: On") if self._focus else "专注模式：关")
+
+    def toggle_paper_mode(self):
+        # v3.49.9（FULLSCREEN-EDIT）：纸张模式开关（单栏回落 A4 纸面；默认满屏）。
+        # 广播到全部已加载视图（edit/src/prev）的 body class，切换视图保持一致。
+        self._paper = not getattr(self, "_paper", False)
+        self._settings.setValue("paperMode", bool(self._paper))
+        self._act_paper.setChecked(self._paper)
+        cls = "true" if self._paper else "false"
+        for v in (self._view, self._view_src, self._view_prev):
+            if v is not None:
+                self._js_view(v, f"document.body.classList.toggle('paper-mode', {cls})")
+        self.show_status(T("纸张模式：开", "Paper mode: On") if self._paper else T("纸张模式：关", "Paper mode: Off"))
 
     def toggle_fullscreen(self):
         if self.isFullScreen():
