@@ -619,7 +619,10 @@ class Sidebar(QWidget):
             b.setCheckable(True)
             b.setCursor(Qt.PointingHandCursor)
             b.setToolButtonStyle(Qt.ToolButtonTextOnly)   # v3.49.4（TAB-FIX-2）：显式文本按钮，避免图标态吞掉文字
-            b.setElideMode(Qt.ElideNone)                 # v3.49.4（TAB-FIX-2）：英文 Book/Outline 不再被省略为「…」
+            # v3.49.4→3.49.5（TAB-FIX-2 修复）：PySide6 6.11.2 的 QToolButton 未暴露
+            # setElideMode/elideMode，直接调用会抛 AttributeError 致启动崩溃；改用 Qt 属性系统
+            # 关闭文本省略，英文 Book/Outline 不再被截断为「…」。
+            b.setProperty("elideMode", Qt.ElideNone)
             b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             tab_row.addWidget(b, 1)
         self._tabs = QButtonGroup(self)
