@@ -583,10 +583,10 @@ class Sidebar(QWidget):
         super().__init__(win)
         self._win = win
         self.setObjectName("sidebar")
-        self.setFixedWidth(224)
-        # v3.39.14（UIUX-2）：sizePolicy=Fixed —— 配合 sizeHint 覆写，
+        self.setFixedWidth(269)
+        # v3.49.7（SIDEBAR-1.2）：sizePolicy=Fixed —— 配合 sizeHint 覆写，
         # 修复 splitter 初始按布局树 sizeHint（约 370px）分配槽位、
-        # 而控件实际只画 224px 导致的右侧死白区
+        # 而控件实际只画 269px（原 224 ×1.2）导致的右侧死白区
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         self.setStyleSheet(SIDEBAR_QSS)
         self._outline_sig = None
@@ -613,7 +613,7 @@ class Sidebar(QWidget):
         self.btn_book = QToolButton(tabcap, text=T("书籍", "Book"))     # v3.44.34（BOOK-1）+ 书籍目录页签
         self.btn_outline = QToolButton(tabcap, text=T("大纲", "Outline"))      # v3.43.0
         # v3.48.30（TAB-FIX）：顶部导航固定三项（文件/书籍/大纲）——
-        # 反链页签按钮移除（224px 侧栏挤不下四个页签，实测全部被省略成「…」）；
+        # 反链页签按钮移除（269px 侧栏仍挤不下四个页签，实测全部被省略成「…」）；
         # 反链面板与数据层保留（select_tab(TAB_BACKLINKS) 仍可用，暂无入口）
         for b in (self.btn_files, self.btn_book, self.btn_outline):
             b.setCheckable(True)

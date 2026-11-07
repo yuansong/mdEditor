@@ -71,6 +71,6 @@
     "status_fg": "#ffffff"
   },
   "qss": "\n/* ===== PS01-CODE 结构观感（v3.42.0，随深浅主题 token 化）===== */\n/* 活动栏：左竖工具栏染 panel 色、方形、选中/hover 中性灰 */\nQToolBar#sideTB {\n  background: {bg_soft};\n  border-right: 1px solid {tab_border};\n}\nQToolBar#sideTB QToolButton {\n  border-radius: 3px;\n}\n/* 菜单：左内缩勾选位 + 方角 + 窄行距 */\nQMenu {\n  border-radius: 3px;\n  padding: 3px;\n}\nQMenu::item {\n  padding: 4px 24px 4px 22px;\n  border-radius: 3px;\n}\nQMenu::separator { margin: 3px 6px; }\n/* 页签：方角 + 面包屑感 */\nQMainWindow #tabstrip QTabBar::tab:!selected {\n  border-radius: 3px 3px 0 0;\n}\n/* 状态栏：VS Code 蓝底白字 */\nQStatusBar {\n  background: {accent};\n  border-top: none;\n  min-height: 24px;\n}\nQStatusBar QLabel {\n  color: {status_fg};\n  border-right: 1px solid {status_sep};\n}\nQStatusBar QToolButton {\n  color: {status_fg};\n}\nQStatusBar QToolButton:hover {\n  background: rgba(255,255,255,.12);\n}\n",
-  "editor_css": "#editor { max-width: 1040px; margin: 0 auto; padding: 20px 130px 45vh 90px; }",
+  "editor_css": "#editor { max-width: 794px; margin: 0 auto; padding: 20px 64px 45vh 64px; }",
   "editor_css_dark": ""
 }

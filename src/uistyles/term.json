@@ -78,6 +78,6 @@
     "menu_sel_bg": "#5af78e"
   },
   "qss": "\n/* ===== PS01-TERM 结构观感（v3.42.0，随深浅主题）===== */\n/* 全局等宽字体（tmux 手感）*/\nQMenuBar, QMenu, QStatusBar, QToolBar, QToolBar QToolButton,\nQMainWindow #tabstrip QTabBar, QLineEdit, QComboBox {\n  font-family: \"Consolas\", \"Cascadia Mono\", \"Microsoft YaHei Mono\", monospace;\n}\n/* 全直角 */\nQToolButton, QMenu, QTabBar::tab, QLineEdit, QComboBox, QPushButton {\n  border-radius: 0;\n}\n/* 菜单：tmux 式实心强调高亮（浅=绿底白字 / 深=绿底黑字）*/\nQMenu {\n  border-radius: 0;\n  padding: 3px;\n}\nQMenu::item {\n  border-radius: 0;\n}\nQMenu::item:selected {\n  background: {menu_sel_bg};\n  color: {menu_sel_text};\n}\n/* 页签：方格式分隔 + 当前项强调色 */\nQMainWindow #tabstrip QTabBar::tab:!selected {\n  border-radius: 0;\n  border-right: 1px solid {border};\n}\nQMainWindow #tabstrip QTabBar::tab:selected {\n  color: {tab_sel_text};\n  border-top: 2px solid {accent};\n}\nQMenuBar::item {\n  border-radius: 0;\n  font-weight: 600;\n}\nQMenuBar::item:selected {\n  background: {hover_bg};\n  color: {hover_text};\n}\n",
-  "editor_css": "#editor { max-width: 1000px; margin: 0 auto; padding: 22px 100px 45vh 100px; }",
+  "editor_css": "#editor { max-width: 794px; margin: 0 auto; padding: 22px 64px 45vh 64px; }",
   "editor_css_dark": ""
 }

@@ -50,22 +50,24 @@ html, body {
   transition: background 0.25s ease, color 0.25s ease;
 }
 #editor {
-  max-width: 980px;
+  max-width: 794px;          /* A4 @ 96dpi ≈ 794px 白纸 */
   width: 100%;
+  box-sizing: border-box;
   margin: 6px auto 0 auto;
-  /* v3.44.9（EDGE-PAD）：压缩上下内边距——首行贴近上边框、底部消除多余空白；
-     min-height 撑满视口，白纸底边紧贴状态栏上方；左右 110px 书页边距与
-     打字机模式的大留白（G1）均保留 */
-  padding: 10px 110px;
+  /* v3.49.7（A4-PAGE）：编辑区白纸采用 A4 版式 —— 794px 纸宽 + 书页边距，
+     投影模拟纸张悬浮于画布之上；min-height 撑满视口，白纸底边紧贴状态栏上方 */
+  padding: 48px 64px;
   min-height: calc(100vh - 6px);
   background: var(--card, #ffffff);
-  border-radius: 8px 8px 0 0;
+  border-radius: 2px;
   border: 1px solid var(--border);
-  box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+  box-shadow: 0 2px 18px rgba(0,0,0,0.12);
   outline: none;
   caret-color: var(--accent);
 }
-#editor ::selection { background: rgba(0, 82, 217, 0.16); }
+#editor ::selection {
+  background: rgba(0, 82, 217, 0.16);
+}
 /* v3.44.9（SPLIT-EDGE）：分屏双栏视图（editor.html?dual 加载）——去掉编辑 /
    预览区的左右大留白与白纸边框、投影，内容（含源码行号列）紧贴 webview
    左右边框，腾出横向空间；左栏源码行号、右栏预览均贴各自边框，布局一致 */
@@ -7813,7 +7815,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       try { ED.replaceChild(nu, old); } catch (eR) {}
     }
   }
-  /* 把 Range 内容替换为 text（跨块倒序编辑，失败按快照回滚）。
+    /* 把 Range 内容替换为 text（DOM Range 直写，失败按快照回滚）。
      how 仅用于回传命中方式：cached / reloc / anchor / block-fix / src。 */
   function _replaceRangeWithText(r, text, how) {
     var all = document.querySelectorAll('#editor .blk');
@@ -7832,59 +7834,60 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     if (i2 < i1) {
       return JSON.stringify({ ok: false, err: 'bad-order', code: 'bad-order' });
     }
-    var hosts = [];
-    for (var q = i1; q <= i2; q++) hosts.push(all[q]);
-    if (!hosts.length) hosts = [b1];
 
-    var snap = [], okAll = true, why = '';
-    for (var i = hosts.length - 1; i >= 0; i--) {
-      var h = hosts[i];
-      snap.push([h, h.innerHTML]);
-      var sub = _mkHostRange(h, r.startContainer, r.startOffset,
-                             r.endContainer, r.endOffset);
-      if (!sub) { okAll = false; why = 'no-range'; break; }
-      var hostEl = _xselEditableHost(sub.startContainer) || h;
+    /* 快照：写回前记录宿主 innerHTML，失败整体回滚 */
+    var snap = [];
+    for (var q = i1; q <= i2; q++) snap.push([all[q], all[q].innerHTML]);
+
+    try {
+      /* v3.49.7（AI-REPLACE-FIX）：改用 Range API 直写，不再依赖
+         document.execCommand('insertText') —— 后者在 AI 片段替换模态框关闭后、
+         webview 未获焦时极易静默失败（返回 true 却未写入），表现为
+         「替换后无变化」。deleteContents + insertNode 不依赖焦点，
+         配合 commitEditSilent 回写 state.raw 与 _rerenderBlocksFromRaw 重建样式。 */
+      var hostEl = _xselEditableHost(r.startContainer) || b1;
       if (!hostEl || !hostEl.isContentEditable) {
-        okAll = false; why = 'no-host'; break;
+        return JSON.stringify({ ok: false, err: 'no-host', code: 'no-host' });
       }
-      try { hostEl.focus(); } catch (e2) {}
-      var sel = window.getSelection();
-      try { sel.removeAllRanges(); sel.addRange(sub); }
-      catch (e3) { okAll = false; why = 'no-range'; break; }
-      var ok = true;
-      if (i === 0) {
-        try { ok = document.execCommand('insertText', false, text); }
-        catch (e4) { ok = false; }
-      } else if (!sub.collapsed) {
-        try { ok = document.execCommand('delete'); }
-        catch (e5) { ok = false; }
-      }
-      if (!ok) { okAll = false; why = 'insert-failed'; break; }
-    }
-
-    var recovered = false;
-    if (!okAll) {
+      r.deleteContents();
+      var tn = document.createTextNode(text);
+      _insertNodeAtRangeStart(r, tn);
+      try { if (tn.parentNode) tn.parentNode.normalize(); } catch (eN) {}
+      try { if (typeof commitEditSilent === 'function') commitEditSilent(); } catch (eC) {}
+      /* v3.48.37（FRAG-RENDER）：把刚写入的 Markdown 重新渲染成样式 */
+      try { _rerenderBlocksFromRaw(i1, i2); } catch (eR) {}
+      markDirty(); scheduleSnapshot();
+      _xselHasSel = false; _xselClearOverlay();
+      return JSON.stringify({ ok: true, err: '', code: '', hosts: (i2 - i1 + 1),
+                              recovered: false, mode: how || 'cached' });
+    } catch (e) {
       for (var z = 0; z < snap.length; z++) {
         try {
-          if (snap[z][0].innerHTML !== snap[z][1]) {
-            snap[z][0].innerHTML = snap[z][1];
-            recovered = true;
-          }
+          if (snap[z][0].innerHTML !== snap[z][1]) snap[z][0].innerHTML = snap[z][1];
         } catch (e6) {}
       }
       try { if (typeof commitEditSilent === 'function') commitEditSilent(); } catch (e7) {}
-      return JSON.stringify({ ok: false, err: why || 'insert-failed',
-                              code: why || 'insert-failed',
-                              hosts: hosts.length, recovered: recovered });
+      return JSON.stringify({ ok: false, err: 'insert-failed', code: 'insert-failed',
+                              hosts: snap.length, recovered: true });
     }
+  }
 
-    try { if (typeof commitEditSilent === 'function') commitEditSilent(); } catch (e8) {}
-    /* v3.48.37（FRAG-RENDER）：把刚写入的 Markdown 重新渲染成样式 */
-    try { _rerenderBlocksFromRaw(i1, i2); } catch (e9) {}
-    markDirty(); scheduleSnapshot();
-    _xselHasSel = false; _xselClearOverlay();
-    return JSON.stringify({ ok: true, err: '', code: '', hosts: hosts.length,
-                            recovered: false, mode: how || 'cached' });
+  /* v3.49.7：把节点插入 Range 当前折叠位置起点（跨文本 / 元素节点通用）。
+     调用前 r 应已 deleteContents() 并折叠到删除点。 */
+  function _insertNodeAtRangeStart(r, node) {
+    var c = r.startContainer, o = r.startOffset;
+    if (c.nodeType === 3) {
+      if (o <= 0) {
+        c.parentNode.insertBefore(node, c);
+      } else if (o >= c.length) {
+        c.parentNode.insertBefore(node, c.nextSibling);
+      } else {
+        var after = c.splitText(o);
+        c.parentNode.insertBefore(node, after);
+      }
+    } else {
+      c.insertBefore(node, c.childNodes[o] || null);
+    }
   }
 
   window.aiReplaceSel = function (text, origText) {

@@ -104,6 +104,6 @@
     "sel_hover_bg": "#33405a"
   },
   "qss": "\n/* ===== PS01-RIBBON 结构观感（v3.42.0）===== */\n/* 菜单行 = 蓝底白字功能区页签行；文件蓝钮语义由首菜单承担 */\nQMenuBar {\n  background: {chrome_bar};\n  border-bottom: 1px solid {border};\n  padding: 2px 8px 0;\n}\nQMenuBar::item {\n  color: {chrome_bar_text};\n  border-radius: 3px;\n  padding: 5px 13px;\n}\nQMenuBar::item:selected {\n  background: rgba(255,255,255,.16);\n  color: {chrome_bar_text};\n}\nQMenuBar::item:pressed {\n  background: {bg_soft};\n  color: {accent};\n}\n/* 状态栏 = 蓝底白字 */\nQStatusBar {\n  background: {chrome_bar};\n  border-top: none;\n}\nQStatusBar QLabel {\n  color: {chrome_bar_text};\n  border-right: 1px solid {status_sep};\n}\nQStatusBar QToolButton {\n  color: {chrome_bar_text};\n}\nQStatusBar QToolButton:hover {\n  background: rgba(255,255,255,.14);\n}\n/* 页签：方角 + 选中功能区底色 */\nQMainWindow #tabstrip QTabBar::tab:!selected {\n  border-radius: 3px 3px 0 0;\n}\nQMainWindow #tabstrip QTabBar::tab:selected {\n  background: {tab_sel_bg};\n  color: {tab_sel_text};\n  border-top: 2px solid {accent};\n}\nQMenu::item:selected {\n  background: {menu_hover_bg};\n  color: {accent};\n}\n\n/* RIBBON-1（v3.44.12）：结构化功能区配套——页签行随主题（bg_soft） + 活动页签连编辑区 */\nQMainWindow #tabstrip { background: {bg_soft}; }\n",
-  "editor_css": "#editor { max-width: 1000px; margin: 0 auto; padding: 28px 100px 45vh 100px; }",
+  "editor_css": "#editor { max-width: 794px; margin: 0 auto; padding: 28px 64px 45vh 64px; }",
   "editor_css_dark": ""
 }

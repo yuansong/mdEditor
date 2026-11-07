@@ -70,6 +70,6 @@
     "tab_sel_text": "#ededed"
   },
   "qss": "\n/* ===== PS01-NOTION 结构观感（v3.42.0）===== */\n/* 页签 chip 化：全胶囊 + 1px 描边 + 浅底，激活 = 深墨底白字 */\nQMainWindow #tabstrip QTabBar::tab:!selected {\n  background: {bg_soft};\n  color: {tab_text};\n  border: 1px solid {border};\n  border-radius: 15px;\n  padding: 4px 14px;\n  margin: 2px 4px 3px 0;\n}\nQMainWindow #tabstrip QTabBar::tab:hover:!selected {\n  background: {hover_bg};\n  color: {hover_text};\n  border-color: {input_border};\n}\nQMainWindow #tabstrip QTabBar::tab:selected {\n  background: {tab_sel_bg};\n  color: {tab_sel_text};\n  border-color: {input_border};\n  border-top: 1px solid {input_border};\n  font-weight: 500;\n}\n/* 菜单：弱化文字 + hover 暖灰；高亮项用反色保证可读 */\nQMenu {\n  border-radius: 6px;\n}\nQMenu::item:selected {\n  background: {menu_hover_bg};\n  color: {menu_sel_text};\n}\nQMenuBar::item {\n  border-radius: 5px;\n}\n/* 激活态统一深墨底白字（#vsz = 右端视图状态区）*/\n#vsz QToolButton:checked {\n  background: {accent};\n  color: {menu_sel_text};\n}\n/* 状态栏：无底色 + 细顶线 */\nQStatusBar {\n  background: {bg};\n  min-height: 28px;\n}\n",
-  "editor_css": "#editor { max-width: 960px; margin: 0 auto; padding: 34px 120px 45vh 120px; }",
+  "editor_css": "#editor { max-width: 794px; margin: 0 auto; padding: 34px 64px 45vh 64px; }",
   "editor_css_dark": ""
 }

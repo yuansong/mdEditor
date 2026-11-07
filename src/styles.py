@@ -318,7 +318,7 @@ SIDEBAR_QSS_TPL = """
 #tabcap QToolButton {{
   border: none; background: transparent; color: {text_muted};
   /* v3.49.4（TAB-FIX-2）：水平内边距 8→6，并为页签按钮设 ElideNone（sidebar.py）
-     + ToolButtonTextOnly，确保英文 Book / Outline 在 224px 侧栏内完整显示、不再省略为「…」 */
+     + ToolButtonTextOnly，确保英文 Book / Outline 在 269px（原 224 ×1.2）侧栏内完整显示、不再省略为「…」 */
   padding: 6px 6px; border-radius: 0; font-size: 12px;
   border-bottom: 2px solid transparent;
 }}
@@ -328,7 +328,7 @@ SIDEBAR_QSS_TPL = """
   border-bottom: 2px solid {accent};
 }}
 /* v3.48.35（CRUMB-TAIL）：路径段按钮 / 「…」折叠按钮的内边距 —— 用双 ID 选择器
-   压过上面 #sidebar QToolButton 的 5px 12px（否则每段空耗 24px，224px 侧栏放不下三层） */
+   压过上面 #sidebar QToolButton 的 5px 12px（否则每段空耗 24px，269px 侧栏放不下三层） */
 #sidebar QToolButton#crumbSeg {{ border:none; background:transparent;
   padding:4px 6px; border-radius:5px; }}
 #sidebar QToolButton#crumbDots {{ border:none; background:transparent;

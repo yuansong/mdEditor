@@ -6,6 +6,6 @@
   "suggest_theme": "light",
   "palette": {},
   "qss": "",
-  "editor_css": "#editor { max-width: 960px; margin: 0 auto; padding: 34px 120px 45vh 120px; }",
+  "editor_css": "#editor { max-width: 794px; margin: 0 auto; padding: 34px 64px 45vh 64px; }",
   "editor_css_dark": ""
 }
