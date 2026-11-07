@@ -889,7 +889,7 @@ class MainWindow(QMainWindow):
         self._pos.setToolTip(T("光标所在行 / 列（Ctrl+G 可跳转到指定行）", "Cursor line / column (Ctrl+G to jump to a line)"))
         self.statusBar().addPermanentWidget(self._pos)
         self._cell_zoom = QLabel("100%")
-        self._cell_zoom.setToolTip(T("编辑区缩放 · 点击重置 100%（Ctrl+= 放大 / Ctrl+- 缩小）", "Editor zoom · click to reset 100% (Ctrl+= zoom in / Ctrl+- zoom out)"))
+        self._cell_zoom.setToolTip(T("编辑区整页缩放 · 点击重置 100%（Ctrl+= 放大 / Ctrl+- 缩小 / Ctrl+0 重置，范围 50%~300%）", "Editor zoom · click to reset 100% (Ctrl+= zoom in / Ctrl+- zoom out / Ctrl+0 reset, range 50%~300%)"))
         self._cell_zoom.setCursor(Qt.PointingHandCursor)
         self._cell_zoom.mousePressEvent = lambda _e: self.set_zoom(1.0)
         self.statusBar().addPermanentWidget(self._cell_zoom)
@@ -1343,7 +1343,7 @@ class MainWindow(QMainWindow):
         # v3.40（UI-R7⑧）：缩放组（参照图未含此组，v3.40 起保留；Ctrl+0 已属「正文」格式命令不能抢）
         self._reg_act("视图", "放大", "Ctrl+=", lambda: self.set_zoom(self._zoom + 0.1), menu=m_view)
         self._reg_act("视图", "缩小", "Ctrl+-", lambda: self.set_zoom(self._zoom - 0.1), menu=m_view)
-        self._reg_act("视图", "重置缩放", None, lambda: self.set_zoom(1.0), menu=m_view)
+        self._reg_act("视图", "重置缩放", "Ctrl+0", lambda: self.set_zoom(1.0), menu=m_view)
         m_view.addSeparator()
         # P1-2 标题折叠（参照图：折叠组在打字机 / 专注之前）
         self._reg_act("视图", "折叠全部标题", "Ctrl+Shift+[",
@@ -7053,8 +7053,14 @@ class MainWindow(QMainWindow):
         self.show_status(T(f"界面风格：{uistyles.menu_style_label(sid)}", f"UI style: {uistyles.menu_style_label(sid)}"))
 
     def set_zoom(self, factor):
-        """编辑区字号缩放（对所有视图生效并持久化）。"""
-        self._zoom = max(0.8, min(1.6, float(factor)))
+        """编辑区整页缩放（对所有视图生效并持久化）。
+
+        v3.49.8（ZOOM-RANGE）：缩放范围由 [0.8, 1.6] 放宽到 [0.5, 3.0]——
+        上限提到 3.0 后 794px（A4 纸宽）可被放大到约 2382px，足以在常见
+        1080p/1440p 屏幕上铺满编辑区；下限 0.5 便于小屏更聚焦。
+        整页缩放走 QWebEngineView.setZoomFactor（浏览器原生缩放），
+        不破坏 contenteditable 的光标 / 选区。"""
+        self._zoom = max(0.5, min(3.0, float(factor)))
         views = (self._view, self._view_src, self._view_prev)
         for v in views:
             if v is not None:
