@@ -291,11 +291,14 @@ class AIPane(QWidget):
             "显示思考过程：开启后实时显示 reasoning。\n"
             "关闭（默认）：请求本地模型时直接跳过思考，更快拿到最终回答。")
         self._think_btn.toggled.connect(self._on_think_toggled)
+        # v3.49.6（AI-UI-3）：把「思考」按钮移到右侧按钮簇（清空 / 连接 之间），
+        # 与左侧状态文本之间用 stretch 隔开 —— 避免长状态文本（如「已连接（Ollama · …）」）
+        # 与「思考」在窄面板下重叠；同时贴近「清空 / 连接」更符合直觉。
         strow.addWidget(self._dot)
         strow.addWidget(self._status_text)
-        strow.addWidget(self._think_btn)
         strow.addStretch(1)
         strow.addWidget(self._clear_btn)
+        strow.addWidget(self._think_btn)
         strow.addWidget(self._conn_btn)
         bl.addLayout(strow)
 
@@ -358,12 +361,16 @@ class AIPane(QWidget):
         self._apply_status_text()
 
     def _apply_status_text(self):
-        """v3.48.37（AI-UI-2）：按当前可用宽度省略状态文本（完整内容在 tooltip）。"""
+        """v3.49.6（AI-UI-3）：按面板实际宽度预算省略号，预留右侧按钮簇空间
+        （状态点 + 思考 + 清空 + 连接 + 间距 + stretch），杜绝长状态文本与按钮重叠 / 顶出；
+        完整内容仍在 tooltip。"""
         full = getattr(self, "_status_full", "") or ""
-        fm = self._status_text.fontMetrics()
-        avail = max(40, self._status_text.width() - 2)
-        self._status_text.setText(fm.elidedText(full, Qt.ElideRight, avail))
         self._status_text.setToolTip(full)
+        fm = self._status_text.fontMetrics()
+        # 预留右侧按钮簇固定空间（约 210px），状态文本只占用剩余宽度，
+        # 长文本（如「已连接（Ollama · qwen2.5:14b）」）被省略而非挤压按钮。
+        avail = max(60, self.width() - 210)
+        self._status_text.setText(fm.elidedText(full, Qt.ElideRight, avail))
 
     def resizeEvent(self, ev):
         super().resizeEvent(ev)
