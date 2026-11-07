@@ -554,32 +554,49 @@ class SettingsDialog(_ThemedDialog):
         self.setObjectName("settingsDlg")
         self.setWindowTitle(T("系统设置"))
         self.setModal(False)
-        self.resize(660, 460)
-        self.setMinimumSize(660, 460)
+        # v3.49.3（SET-UI）：加宽（660→800）并约束高度，避免低分辨率下底部
+        # 「关闭」按钮被挤出可视区。各页内容改用 QScrollArea 包裹，超高时页内
+        # 滚动，对话框整体不再随内容无限增高，全分辨率均可完整操作。
+        self.resize(800, 480)
+        self.setMinimumSize(680, 400)
+        _avh = QApplication.primaryScreen().availableGeometry().height() if QApplication.primaryScreen() else 0
+        if _avh:
+            self.setMaximumHeight(min(540, _avh - 80))
         self._apply_theme_qss(getattr(win, "_theme", "light"))
 
         # ---- 左侧导航 ----
         self.nav = QListWidget(self)
         self.nav.setObjectName("navList")
-        self.nav.setFixedWidth(150)
+        # v3.49.3（SET-UI）：加宽左侧导航（150→200），英文模式导航项（如
+        # "Writing & Input" / "AI Connection"）较长，避免截断 / 溢出。
+        self.nav.setFixedWidth(200)
+        # v3.49.3（SET-UI）：导航项改用 T(zh, en) 双语，跟随界面语言显示；
+        # 同时把中文原名存入 UserRole，select_page 按原名定位（中英皆可用）。
         # v3.29：「写作与历史」已并入「通用」页；「编辑器」页含图片 / 代码块 / 斜杠菜单
         # v3.36（TPL-E）：模板管理提升为一级页「模板」
         # v3.43.0（LOOK-1）：「外观」页迁出至顶栏「外观(&A)」菜单，此处不再保留
         # v3.43.1（SET-3P）：导航顺序 = 通用 / 编辑器 / 写作与输入 / 模板
         # v3.47.2（SoloMD 对标）：新增「AI 连接」页（默认连接参数配置入口）
         # v3.48.36（AI-MENUS）：新增「AI 菜单」页（两处「AI优化」菜单自定义）
-        for name in ("通用", "编辑器", "写作与输入", "模板", "AI 菜单", "AI 连接"):
-            QListWidgetItem(name, self.nav)
+        _NAV_ITEMS = (("通用", "General"), ("编辑器", "Editor"),
+                      ("写作与输入", "Writing & Input"), ("模板", "Templates"),
+                      ("AI 菜单", "AI Menus"), ("AI 连接", "AI Connection"))
+        for _zh, _en in _NAV_ITEMS:
+            _it = QListWidgetItem(T(_zh, _en), self.nav)
+            _it.setData(Qt.UserRole, _zh)
+            self.nav.addItem(_it)
         self.nav.setCurrentRow(0)
 
         # ---- 右侧页面 ----
         self.pages = QStackedWidget(self)
-        self.pages.addWidget(self._page_general())
-        self.pages.addWidget(self._page_editor_fmt())
-        self.pages.addWidget(self._page_writing())
-        self.pages.addWidget(TemplatePage(win, self))
+        # v3.49.3（SET-UI）：除「AI 菜单」页（自身已含 QScrollArea）外，其余页
+        # 均用 _wrap_scroll 包裹，使超高内容在对话框内滚动而非撑大对话框。
+        self.pages.addWidget(self._wrap_scroll(self._page_general()))
+        self.pages.addWidget(self._wrap_scroll(self._page_editor_fmt()))
+        self.pages.addWidget(self._wrap_scroll(self._page_writing()))
+        self.pages.addWidget(self._wrap_scroll(TemplatePage(win, self)))
         self.pages.addWidget(self._page_ai_menus())
-        self.pages.addWidget(self._page_ai_connection())
+        self.pages.addWidget(self._wrap_scroll(self._page_ai_connection()))
         self.nav.currentRowChanged.connect(self.pages.setCurrentIndex)
 
         b_close = QPushButton(T("关闭"))
@@ -603,12 +620,29 @@ class SettingsDialog(_ThemedDialog):
         b_close.clicked.connect(self.accept)
 
     def select_page(self, name):
-        """按页名定位左侧导航（v3.36：供「设置 → 模板」直达入口使用）。"""
+        """按页名定位左侧导航（v3.36：供「设置 → 模板」直达入口使用）。
+        v3.49.3（SET-UI）：优先按 UserRole 存储的中文原名匹配（中英界面通用），
+        回退按显示文本匹配。"""
         for i in range(self.nav.count()):
-            if self.nav.item(i).text() == name:
+            _it = self.nav.item(i)
+            if _it.data(Qt.UserRole) == name or _it.text() == name:
                 self.nav.setCurrentRow(i)
                 return True
         return False
+
+    def _wrap_scroll(self, page):
+        """v3.49.3（SET-UI）：把设置页内容包进透明 QScrollArea，超高时页内滚动。
+        沿用 _page_ai_menus 的透明样式，避免盖住组框浅灰卡面 / 圆角。"""
+        scr = QScrollArea(self)
+        scr.setWidget(page)
+        scr.setWidgetResizable(True)
+        scr.setFrameShape(QFrame.NoFrame)
+        scr.viewport().setAutoFillBackground(False)
+        page.setAutoFillBackground(False)
+        scr.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scr.setStyleSheet("QScrollArea{background:transparent;border:none;}"
+                          "QScrollArea>QWidget>QWidget{background:transparent;}")
+        return scr
 
     # ================= 外观 =================
     # v3.43.0（LOOK-1）：原「外观」页已整体迁出到顶栏「外观(&A)」一级菜单

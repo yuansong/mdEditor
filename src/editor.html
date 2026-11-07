@@ -4536,6 +4536,23 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     }
     goToBlock(li, 'end');
   }
+  /* v3.49.3（CLICK-END）：点击编辑区空白（非块区域）时，按点击 Y 就近取块，
+     光标落到「所点击行」的行末，而不是跳到文章末尾。仅在点击落在最后一个块
+     之下（编辑器底部留白）时，才沿用 goToEditableEnd（代码块 / 图片 / 分割线
+     末尾需追加空段进入）。 */
+  function blockIndexNearY(y) {
+    var best = -1, bestDist = Infinity;
+    for (var k = 0; k < ED.children.length; k++) {
+      var b = ED.children[k];
+      if (!b.classList || !b.classList.contains('blk')) continue;
+      var r = b.getBoundingClientRect();
+      if (r.height <= 0) continue;
+      var cy = (r.top + r.bottom) / 2;
+      var d = Math.abs(cy - y);
+      if (d < bestDist) { bestDist = d; best = k; }
+    }
+    return best;
+  }
   function insertTextAtCaret(text) {
     document.execCommand('insertText', false, text);
   }
@@ -8669,9 +8686,25 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     var interactive = e.target.closest ? e.target.closest(
       '#editor .codebar, #editor .codeblock, #editor .mmd-src, #editor .blk table, #editor .mathblock') : null;
     if (interactive && !interactive.closest('.raw-edit')) return;
-    /* 点击编辑区空白（非块区域）：光标进入最后可编辑位置 */
+    /* 点击编辑区空白（非块区域）：光标进入「所点击行」行末，而非文章末尾 */
     if (!e.target.closest('.blk')) {
       e.preventDefault();
+      var _bi = blockIndexNearY(e.clientY);
+      if (_bi >= 0) {
+        var _lbRect = ED.children[_bi].getBoundingClientRect();
+        /* 点击落在最后一个块之下（底部留白）：沿用末尾追加逻辑 */
+        if (_bi === ED.children.length - 1 && e.clientY > _lbRect.bottom) {
+          goToEditableEnd(); return;
+        }
+        var _inf = blockInfo(state.raw[_bi]);
+        if (/^h[1-6]$/.test(_inf.type) || _inf.type === 'list' || _inf.type === 'quote'
+            || _inf.type === 'deflist' || _inf.type === 'fndef'
+            || (_inf.type === 'p' && !isImageBlockRaw(state.raw[_bi]))) {
+          if (focusWysiwyg(_bi, true)) return;
+        }
+        enterEdit(_bi, 1e9);
+        return;
+      }
       goToEditableEnd();
       return;
     }
@@ -11742,6 +11775,130 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     return true;
   }
 
+  /* =========================================================
+   * v3.49.3（MULTI-FMT）：跨块选区格式化。
+   * 框选多行 / 多列表项 / 正文+列表混合选区时，把行内格式（粗体 / 斜体 /
+   * 删除线 / 行内码 / 高亮 / 下划线 / 清除格式）分别套用到每个相交块
+   * （及列表的每一项）。复用 enterEditRaw + wrapSelection /
+   * wrapSelectionTag / clearSelectionFormat 既有管线：最坏情况某块被其内部
+   * _hasLiteralMarkers / _adjFix 守卫拒绝（弹提示）而非写脏 raw，绝不损坏文档。
+   * 列表按「项」为单位包裹 —— 跨项换行是 Markdown 块边界，强调不可跨越，
+   * 故把选中区间按列表项内容切分，逐项包裹「内容」（不动 - / 1. / [ ] 等项前缀）。
+   * ========================================================= */
+  function _blocksInSelection() {
+    var sel = getSelection();
+    if (!sel.rangeCount || sel.isCollapsed) return null;
+    var r = sel.getRangeAt(0);
+    var idxs = [];
+    for (var k = 0; k < ED.children.length; k++) {
+      var b = ED.children[k];
+      if (!b.classList || !b.classList.contains('blk')) continue;
+      var hit = false;
+      try { hit = r.intersectsNode(b); } catch (e) {}
+      if (hit) idxs.push(k);
+    }
+    if (idxs.length < 2) return null;
+    return { range: r, idxs: idxs };
+  }
+  /* 计算块 idx 在跨块选区内的 raw 偏移区间 [a, b)：
+     isStart=选区起点落在本块（区间从起点延伸到块尾）；
+     isEnd  =选区终点落在本块（区间从块首延伸到终点）；其余（中间块）=整块入选。 */
+  function _rawRangeForBlock(idx, r, isStart, isEnd) {
+    var raw = state.raw[idx];
+    if (!raw) return null;
+    var blk = ED.children[idx];
+    if (!blk) return null;
+    var ctx = lineAwarePlain(blk);
+    var plainLen = ctx.text.length;
+    var pStart, pEnd;
+    if (isStart) { pStart = lineAwarePoint(ctx, r.startContainer, r.startOffset); pEnd = plainLen; }
+    else if (isEnd) { pStart = 0; pEnd = lineAwarePoint(ctx, r.endContainer, r.endOffset); }
+    else { pStart = 0; pEnd = plainLen; }
+    if (pStart < 0) pStart = 0;
+    if (pEnd < 0) pEnd = plainLen;
+    if (pEnd <= pStart) return null;
+    var a = mapPlainToRaw(raw, pStart);
+    var b = mapPlainToRaw(raw, pEnd);
+    if (b <= a) return null;
+    return [a, b];
+  }
+  /* 把列表块内的选中区间 [a,b) 按「列表项内容」切成若干段：
+     每段不含跨项换行、且排除 - / 1. / [ ] 等项前缀，确保包裹的是「内容」而非
+     「- 内容」。 */
+  function _listItemContentRanges(raw, a, b) {
+    var items = [];
+    var re = /(^|\n)(\s*)([-*+]|\d+[.)])(\s+)(\[[ xX]\])?/g, m;
+    while ((m = re.exec(raw)) !== null) items.push({ mpos: m.index, cs: m.index + m[0].length });
+    if (!items.length) { if (b > a) return [[a, b]]; return []; }
+    var ranges = [];
+    for (var k = 0; k < items.length; k++) {
+      var cs = items[k].cs;
+      /* 跳过项前缀 / 复选框之后可能残留的分隔空格（如 "- [ ] a" 的 ] 后空格），
+         让包裹区间从内容首字符开始，避免把空格包进 ** 内 */
+      while (cs < raw.length && (raw.charAt(cs) === ' ' || raw.charAt(cs) === '\t')) cs++;
+      var itemEnd = (k + 1 < items.length) ? items[k + 1].mpos : raw.length;
+      var s = Math.max(cs, a), e = Math.min(itemEnd, b);
+      if (e > s) ranges.push([s, e]);
+    }
+    return ranges;
+  }
+  var _MB_FMT_TYPES = ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'quote', 'list', 'deflist', 'fndef'];
+  function _applyMultiBlockFormat(action, marker, isTag) {
+    var bs = _blocksInSelection();
+    if (!bs) return false;
+    var r = bs.range, idxs = bs.idxs;
+    var fmtIdxs = [];
+    for (var q = 0; q < idxs.length; q++) {
+      if (_MB_FMT_TYPES.indexOf(blockInfo(state.raw[idxs[q]]).type) >= 0) fmtIdxs.push(idxs[q]);
+    }
+    if (fmtIdxs.length < 2) return false;   /* 不足两个可格式化块 → 退回单块路径 */
+    var i0 = fmtIdxs[0], i1 = fmtIdxs[fmtIdxs.length - 1];
+    /* 先预算所有块的待套区间，任何计算异常都不动文档 */
+    var plan = [];
+    for (var q2 = 0; q2 < fmtIdxs.length; q2++) {
+      var idx = fmtIdxs[q2];
+      var rr = _rawRangeForBlock(idx, r, idx === i0, idx === i1);
+      if (!rr) continue;
+      var a = rr[0], b = rr[1];
+      var segs = (blockInfo(state.raw[idx]).type === 'list')
+        ? _listItemContentRanges(state.raw[idx], a, b) : [[a, b]];
+      /* v3.49.3（MULTI-FMT）：列表多项需自右向左套用 —— 先包右侧项，左侧项的
+         原始偏移才不会被右侧插入的 ** 推偏（同块 raw 内偏移自左向右累积）。 */
+      if (blockInfo(state.raw[idx]).type === 'list') segs.reverse();
+      for (var sgi = 0; sgi < segs.length; sgi++) {
+        var sa = segs[sgi][0], sb = segs[sgi][1];
+        if (sb <= sa) continue;
+        plan.push([idx, sa, sb]);
+      }
+    }
+    if (!plan.length) return false;
+    try {
+      for (var pi = 0; pi < plan.length; pi++) {
+        enterEditRaw(plan[pi][0], plan[pi][1], plan[pi][2] - plan[pi][1]);
+        if (action === 'clearfmt') clearSelectionFormat();
+        else if (isTag) wrapSelectionTag('<u>', '</u>');
+        else wrapSelection(marker);
+      }
+      commitEditSilent();
+      rebuild();
+      /* 还原跨块选区（覆盖 [i0, i1]），保持所见即所得，便于连续多次格式化 */
+      var sr = ED.children[i0], er = ED.children[i1];
+      if (sr && er) {
+        try {
+          var rg = document.createRange();
+          rg.setStart(sr, 0);
+          rg.setEnd(er, er.childNodes.length);
+          var ss = getSelection(); ss.removeAllRanges(); ss.addRange(rg);
+        } catch (e2) {}
+      }
+      return true;
+    } catch (e) {
+      /* 应用阶段异常：尽量回滚到干净渲染态，避免半成品 raw 残留 */
+      try { commitEditSilent(); rebuild(); } catch (e3) {}
+      return false;
+    }
+  }
+
   function applyFloatAction(action) {
     scheduleSnapshot(true);   /* v3.48.21（IMPERCEPT-L3）：浮动 / 链接格式是语义边界 */
     /* v3.48.15（MC-2）：多光标激活 —— 标记类格式作用于全部选区；
@@ -11876,6 +12033,15 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
        映射——表格纯文本拼接无分隔符，块级映射会写错位置（污染分隔行等） */
     var cf = cellFormatCtx();
     if (cf) { applyCellFloat(cf, action); return; }
+    /* v3.49.3（MULTI-FMT）：跨块 / 跨列表项 / 正文+列表混合选区 → 多块格式化。
+       仅当选区跨越多个块、且动作是行内格式类时触发；不足两个可格式化块则
+       退回下方单块路径（单块行为零改动）。 */
+    if (selCrossesBlocks()) {
+      var _mbMk = { bold: '**', italic: '*', strike: '~~', code: '`', mark: '==' }[action];
+      if (_mbMk || action === 'underline' || action === 'clearfmt') {
+        if (_applyMultiBlockFormat(action, _mbMk, action === 'underline')) return;
+      }
+    }
     /* 优先使用当前实时选区；若点击过程中选区被浏览器塌陷，则回退到最近一次快照 */
     var info = currentSelectionInfo() || lastFB;
     if (!info) { hidePops(); return; }
