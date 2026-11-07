@@ -81,12 +81,15 @@ body.dual #editor {
 /* v3.49.9（FULLSCREEN-EDIT）：默认满屏无留白；纸张模式(单栏)回落 A4 纸面。
    高特异性规则（body:not(.paper-mode):not(.dual) #editor）反压主题 editor_css
    的 #editor（794px 居中），实现默认满屏；body.paper-mode 时本规则不命中，
-   回落主题原 A4 纸面外观（需打印/预览时勾选「视图→纸张模式」）。 */
+   回落主题原 A4 纸面外观（需打印/预览时勾选「视图→纸张模式」）。
+   v3.49.10（READ-MARGIN）：左右内边距改用响应式 clamp——窄屏最小 32px、
+   随视口放大至 6vw、宽屏封顶 120px，在「满屏」与「长行可读性」间取得平衡，
+   不同屏幕尺寸均自适应；其余盒模型/边框/阴影规则保持 v3.49.9 不变。 */
 body:not(.paper-mode):not(.dual) #editor {
   max-width: none;
   width: 100%;
   margin: 0;
-  padding: 8px 24px;
+  padding: 8px clamp(32px, 6vw, 120px);
   min-height: 100vh;
   border: none;
   border-radius: 0;

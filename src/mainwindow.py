@@ -846,8 +846,9 @@ class MainWindow(QMainWindow):
         # v3.48.23（AI-UI）：面板宽度缩减 1/4（460 → 345），更紧凑；
         # v3.48.37（AI-UI-2）：再缩 1/6（345 → 288）—— 345 在 1080p 下与正文
         # 抢宽度明显，288 仍能放下一行按钮 + 消息气泡。
+        # v3.49.10（AI-WIDE）：在 288 基础上扩大 1/5（+20% → 346），拓宽对话区。
         # 首次展开时按新宽度定型（见 _show_ai_dock），避免沿用旧残留宽度。
-        self._ai_dock.setMinimumWidth(288)
+        self._ai_dock.setMinimumWidth(346)
         self._ai_dock_width_sized = False
         self._ai_pane = ai_pane.AIPane(self._ai_bridge)
         self._ai_dock.setWidget(self._ai_pane)
@@ -1666,13 +1667,14 @@ class MainWindow(QMainWindow):
             self._ai_dock.show()
         # v3.48.23（AI-UI）：首次展开按定型宽度（宽度已缩减 1/4）；
         # v3.48.37（AI-UI-2）：定型宽度 345 → 288（再缩 1/6）。
+        # v3.49.10（AI-WIDE）：定型宽度 288 → 346（扩大 1/5）。
         # 之后尊重用户手动拖拽的宽度，不再强行重置。
         if not getattr(self, "_ai_dock_width_sized", False):
             # show() 后停靠布局会把 dock 的最小宽度抬回「内容最小宽度」，
-            # 此处重新压回 288 再定型，否则 resizeDocks 会被 356/460 这类
+            # 此处重新压回 346 再定型，否则 resizeDocks 会被 356/460 这类
             # 旧内容宽度卡住（v3.48.37 AI-UI-2 实测）。
-            self._ai_dock.setMinimumWidth(288)
-            self.resizeDocks([self._ai_dock], [288], Qt.Horizontal)
+            self._ai_dock.setMinimumWidth(346)
+            self.resizeDocks([self._ai_dock], [346], Qt.Horizontal)
             self._ai_dock_width_sized = True
         self._ai_dock.raise_()
 
