@@ -1407,9 +1407,20 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       if (s[j + 1] !== '(') return null;
       var k = s.indexOf(')', j + 2);
       if (k === -1 || k > to) return null;
-      var url = s.slice(j + 2, k);
-      if (/\s/.test(url)) return null;
-      return { bracket: j, end: k + 1, url: url };
+      /* v3.49.12（LINK-COMMENT）：支持链接地址后附加双/单引号包裹的注释，
+         形如 [text](url#anchor "注释")。标准 markdown 链接标题语法：
+         先剥离尾部可选的 "注释" / '注释'，保留干净的 url（含 #锚点）用于跳转，
+         注释单独存入返回结构；剩余 url 若仍含空白则视为非法链接丢弃（保留原行为）。 */
+      var raw = s.slice(j + 2, k);
+      var comment = '';
+      var _cm = raw.match(/\s+"([^"]*)"\s*$/);
+      if (!_cm) _cm = raw.match(/\s+'([^']*)'\s*$/);
+      if (_cm) {
+        comment = _cm[1];
+        raw = raw.slice(0, _cm.index).replace(/\s+$/, '');
+      }
+      if (!raw || /\s/.test(raw)) return null;
+      return { bracket: j, end: k + 1, url: raw, comment: comment };
     }
     return null;
   }
@@ -1635,7 +1646,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         var ml = matchLink(s, i, to);
         if (ml) {
           flush(i);
-          nodes.push({ type: 'link', s: s, rs: i, re: ml.end, url: ml.url, cs: i + 1, ce: ml.bracket, ch: parseInline(s, i + 1, ml.bracket) });
+          nodes.push({ type: 'link', s: s, rs: i, re: ml.end, url: ml.url, comment: ml.comment || '', cs: i + 1, ce: ml.bracket, ch: parseInline(s, i + 1, ml.bracket) });
           i = ml.end; textStart = i; continue;
         }
       }
@@ -1698,7 +1709,17 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
           var _wlAddr = n.target + (n.anchor ? ('#' + n.anchor) : '');
           out += '<a class="wikilink" title="' + esc(_wlAddr) + '" data-target="' + esc(n.target) + '"' + (n.anchor ? ' data-anchor="' + esc(n.anchor) + '"' : '') + '>' + renderNodes(n.ch) + '</a>'; break;
         }
-        case 'link': out += '<a href="' + esc(n.url) + '" title="' + esc(n.url) + '" target="_blank" rel="noopener">' + renderNodes(n.ch) + '</a>'; break;
+        case 'link': {
+          /* v3.49.12（LINK-COMMENT）：href 用干净 url（含 #锚点）保证正常跳转；
+             注释写入 title（悬停提示）与 data-comment（供序列化回写源码，避免与 url 混淆）。
+             无注释时沿用旧行为 title=url。 */
+          var _cm = n.comment || '';
+          out += '<a href="' + esc(n.url) + '"' +
+                 (_cm ? (' title="' + esc(_cm) + '" data-comment="' + esc(_cm) + '"')
+                      : (' title="' + esc(n.url) + '"')) +
+                 ' target="_blank" rel="noopener">' + renderNodes(n.ch) + '</a>';
+          break;
+        }
         case 'image': {
           /* v3.36：渲染时 src 会被解析成绝对 file URL（resolveImgSrc），行内格式
              回写需要原始相对路径 → 地址被改写时补记 data-md（导出前统一摘除） */
@@ -5607,7 +5628,12 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       case 'CODE': return ['`', '`'];
       case 'SUP': return ['^', '^'];
       case 'SUB': return ['~', '~'];
-      case 'A': return ['[', '](' + (n.getAttribute('href') || '') + ')'];
+      case 'A': {
+        /* v3.49.12（LINK-COMMENT）：若链接带 data-comment 注释，回写为 (url "comment") */
+        var _href = n.getAttribute('href') || '';
+        var _cm = n.getAttribute('data-comment') || '';
+        return ['[', '](' + _href + (_cm ? (' "' + _cm + '"') : '') + ')'];
+      }
       default: return null;
     }
   }
@@ -7015,8 +7041,11 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         else if (tg === 'CODE') acc += '`' + collapse(n.textContent).trim() + '`';
         else if (tg === 'A') {
           var href = n.getAttribute('href') || '';
-          if (href && !/^javascript:/i.test(href)) acc += '[' + inner.trim() + '](' + href + ')';
-          else acc += inner;
+          if (href && !/^javascript:/i.test(href)) {
+            /* v3.49.12（LINK-COMMENT）：回写注释 */
+            var _cm = n.getAttribute('data-comment') || '';
+            acc += '[' + inner.trim() + '](' + href + (_cm ? (' "' + _cm + '"') : '') + ')';
+          } else acc += inner;
         } else if (tg === 'IMG') {
           var src = n.getAttribute('src') || '';
           if (src) acc += '![' + (n.getAttribute('alt') || '') + '](' + src + ')';
@@ -12784,6 +12813,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       } else {
         ctx.kind = (nd.cs === nd.rs && nd.ce === nd.re) ? 'auto' : 'plain';
         ctx.addr = nd.url;
+        ctx.comment = nd.comment || '';
         ctx.text = raw.slice(nd.cs, nd.ce);
       }
       return ctx;
@@ -12825,6 +12855,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       } else {
         ctx.kind = (nd.cs === nd.rs && nd.ce === nd.re) ? 'auto' : 'plain';
         ctx.addr = nd.url;
+        ctx.comment = nd.comment || '';
         ctx.text = srcText.slice(nd.cs, nd.ce);
       }
       return ctx;
@@ -12880,7 +12911,8 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       if (!alias && ctx.text && ctx.text !== head) alias = ctx.text;
       out = '[[' + head + (alias ? ('|' + alias) : '') + ']]';
     } else {
-      out = '[' + (ctx.text || '') + '](' + addr + ')';
+      /* v3.49.12（LINK-COMMENT）：编辑链接时若原链接带注释，回写时补回 "comment" */
+      out = '[' + (ctx.text || '') + '](' + addr + (ctx.comment ? (' "' + ctx.comment + '"') : '') + ')';
     }
     if (ctx.src) {
       srcText = srcText.slice(0, ctx.rs) + out + srcText.slice(ctx.re);

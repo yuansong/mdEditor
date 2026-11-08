@@ -499,6 +499,7 @@ setMarkdown 时清空 lastFB，一行修复。
 | OUT-4 | 大纲点击跳转用 1s 前缓存 index，内容刚变化滚错块 | P3 | ✅ v3.38：gotoHeading/gotoHeadingSrc 增可选 txt 参数——校验目标块仍为标题且文本一致，不符（含 index 越界）按文本实时重查，查无则放弃；侧栏树节点 UserRole+1 附带标题文本 |
 | OUT-5 | 无「启动时恢复上次会话」能力 | **P2** | ✅ v3.38：QSettings `startupAction` 四选项（欢迎页/恢复上次文件/恢复上次文件与侧栏位置/打开指定文件夹）+ 设置页「启动时」选项组 + `lastFile`/`lastSidebarDir` 记录（打开/切换/另存/退出四路写入） |
 | OUT-6 | 大纲拖拽调序分屏下只重排激活视图 | P4 | ✅ v3.38：reorder_sections dual 时对源码/预览双视图同时下发（对齐 jump_to_heading 模式） |
+| OUT-7 | 大纲高亮不随光标移动；激活项背景色异常变化 | **P2** | ❌ 未实现（待拍板）：根因假设——`_sync_outline_active` 仅由视口滚动驱动（`getActiveHeading()` 取视口顶部刚越过的标题块序号，mainwindow.py:7641 / editor.html:9208），光标在可视区内移动不触发重算 → 高亮不同步；激活项背景由 `set_outline_active_theme`（sidebar.py:2602）按主题强调动态色（accent_soft+accent）绘制，换肤/焦点变化时背景即变。修复方向：光标位置变化也驱动高亮（光标所属标题块 → `set_outline_active`），并固定激活项背景绘制来源 |
 | DIFF-1 | 版本对比无词级高亮、无双栏形态（用户已拍板一次做齐） | P3 | ✅ v3.38：按《历史版本对比双栏与词级高亮方案-v3.38》全做——replace 配对行字符级 difflib 词级 span（>300 字符护栏）、build_rows 公共行流（两模式同源）、QSplitter 双栏 + 列头 + 同步滚动（防递归）、「单栏（默认）\| 双栏」切换 + QSettings `diff/layout` 记忆、首切双栏放宽窗口 1100 |
 | DIFF-2 | 历史版本无法任选两快照互比 | P3 | ✅ v3.38：快照列表 ExtendedSelection（单击预览不变）+「对比所选两项」按钮（恰选两项启用，按 mtime 旧→新） |
 
