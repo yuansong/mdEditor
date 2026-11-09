@@ -14,6 +14,7 @@
 import json
 import logging
 import os
+import re
 import tempfile
 
 from PySide6.QtCore import QTimer, QUrl, QMarginsF
@@ -49,11 +50,20 @@ def _unify_page_background(html):
     return html
 
 
+# v3.49.13（PDF-STYLE）技术手册默认导出样式 —— 设计令牌（仅作用于 PDF 导出物）
+# · 字体系：中文衬线（宋体系）正文 / 等宽代码；低饱和中性灰配色，无蓝色强调。
+# · 「跟随默认」= 这套衬线栈；用户在导出对话框显式选字体时仍以用户选择为准。
+# · Latin 字符优先 Times New Roman（参考图英文衬线观感），中文回退宋体系；
+#   等宽代码单独走 --pdf-mono（Consolas 系），见 PDF_STYLE_CSS。
+PDF_SERIF_STACK = ('"Times New Roman", "SimSun", "Songti SC", "Noto Serif CJK SC", '
+                   '"Source Han Serif SC", serif')
+
+
 # v3.47.1（PDF-SET）：整本书 PDF 也支持用户设定的字体 / 字号（覆盖默认 16px）
 def _apply_pdf_font_css(html, font_family, font_size_pt):
     fam = (font_family or "").strip()
     if not fam:
-        fam = '"Microsoft YaHei", "PingFang SC", sans-serif'
+        fam = PDF_SERIF_STACK
     style = (
         "<style id='mded-pdf-font'>"
         "body,.page,#editor{font-family:%s!important;"
@@ -72,24 +82,24 @@ def _apply_pdf_font_css(html, font_family, font_size_pt):
 PAPER_SIZES = [("A4", "A4"), ("A3", "A3"), ("A5", "A5"), ("B4", "B4"),
                ("B5", "B5"), ("Letter", "Letter"), ("Legal", "Legal")]
 
-# v3.48.38（PDF-DEF）：PDF 导出最佳默认参数（美观大方、贴合中文阅读习惯）。
-# · 纸张 A4 纵向、四边 20mm 等距 —— 标准且舒展；
-# · 行间距 1.6（= 行高倍数 line-height，覆盖模板基准 1.8 为更紧凑精炼的中文正文）；
+# v3.49.13（PDF-STYLE）：PDF 导出默认参数固化为「技术手册」风格（参照用户参考图）。
+# · 纸张 A4 纵向、四边 22mm 等距 —— 书页式留白；
+# · 行间距 1.55（覆盖模板基准 1.8，紧凑精炼的中文正文）；
 #   注入时强制下限 1.0，避免任意极小值导致中文行重叠（见 _apply_pdf_layout_css）。
-# · 字体留空 = 跟随界面字体（Microsoft YaHei / PingFang SC，中文优先）；字号 11pt 舒适。
-# · 缩放 100%（不放大缩小，页边距恒定）。
+# · 字体留空 = 默认衬线栈 PDF_SERIF_STACK（宋体系，见 pdf_style_css 令牌）；
+#   字号 10.5pt（五号字，技术手册常用正文号）。缩放 100%（不放大缩小）。
 PDF_DEFAULT_OPTS = {
     "paper_size": "A4",
     "orientation": "portrait",
-    "margin_top_mm": 20.0,
-    "margin_right_mm": 20.0,
-    "margin_bottom_mm": 20.0,
-    "margin_left_mm": 20.0,
+    "margin_top_mm": 22.0,
+    "margin_right_mm": 22.0,
+    "margin_bottom_mm": 22.0,
+    "margin_left_mm": 22.0,
     "margin_uniform": True,
     "scale_pct": 100,
-    "line_spacing": 1.6,
+    "line_spacing": 1.55,
     "font_family": "",
-    "font_size_pt": 11.0,
+    "font_size_pt": 10.5,
 }
 
 _PAPER_ENUM = {
@@ -146,7 +156,8 @@ def pdf_opts(opts=None):
 
 def opts_from_settings(settings):
     """从 QSettings 读取已保存的导出默认值（旧键 pdf/margin 作为四边回退）。"""
-    legacy = _as_float(settings.value("pdf/margin", 20.0), 20.0)
+    legacy = _as_float(settings.value("pdf/margin", PDF_DEFAULT_OPTS["margin_top_mm"]),
+                       PDF_DEFAULT_OPTS["margin_top_mm"])
     return pdf_opts({
         "paper_size": settings.value("pdf/paperSize", "A4"),
         "orientation": settings.value("pdf/orientation", "portrait"),
@@ -157,8 +168,8 @@ def opts_from_settings(settings):
         "margin_uniform": settings.value("pdf/marginUniform", True),
         "scale_pct": settings.value("pdf/scalePct", 100),
         "line_spacing": settings.value("pdf/lineSpacing", PDF_DEFAULT_OPTS["line_spacing"]),
-        "font_family": settings.value("pdf/fontFamily", ""),
-        "font_size_pt": settings.value("pdf/fontSize", 11.0),
+        "font_family": settings.value("pdf/fontFamily", PDF_DEFAULT_OPTS["font_family"]),
+        "font_size_pt": settings.value("pdf/fontSize", PDF_DEFAULT_OPTS["font_size_pt"]),
     })
 
 
@@ -226,6 +237,100 @@ def _apply_pdf_layout_css(html, opts=None):
     return html + style
 
 
+PDF_STYLE_CSS = """<style id="mded-pdf-style">
+/* v3.49.13（PDF-STYLE / PDF-BLUE / PDF-A3 / PDF-SOFTBR）技术手册默认导出样式。
+   仅作用于 PDF 导出物：不改 state.raw / 不改块级结构 / 不覆盖用户在导出
+   对话框里显式设定的字体、字号、行距、页边距与缩放。参考图的页眉文字与
+   斜向水印属文档/隐私内容，按规范不照抄。 */
+:root{
+  --pdf-ink:#2f2e2b;          /* 正文墨色 */
+  --pdf-ink-soft:#5f5c56;     /* 次级文字 */
+  --pdf-rule:#d9dde1;         /* 细边框 / 分隔线（中性冷灰） */
+  --pdf-code-bg:#f4f6f8;      /* 代码块浅灰底（参照参考图） */
+  --pdf-code-ink:#33312d;     /* 代码墨色（低饱和，不用红） */
+  --pdf-mono:Consolas,"Cascadia Code","Courier New",monospace;
+  --pdf-link:#5b8fb9;         /* 淡蓝色链接（用户要求） */
+  --pdf-heading:#5b8fb9;      /* 淡蓝色章节标题（参照参考图「高级特性」） */
+  --pdf-radius:5px;
+}
+html,body{color:var(--pdf-ink);}
+.page,#editor{background:#ffffff!important;color:var(--pdf-ink);}
+.blk{color:var(--pdf-ink);}
+/* 标题与链接用淡蓝色；字体仍由 _apply_pdf_font_css 的 !important 决定，
+   此处不设 font-family，避免把用户在导出对话框里选的字体顶掉。 */
+.blk h1,.blk h2{color:var(--pdf-heading);font-weight:700;
+  border-bottom:1px solid var(--pdf-rule);padding-bottom:.28em;}
+.blk h3,.blk h4,.blk h5,.blk h6{color:var(--pdf-heading);font-weight:700;}
+.blk p,.blk li,.blk td,.blk th{color:var(--pdf-ink);}
+.blk blockquote{border-left:3px solid #c9c4b8;color:var(--pdf-ink-soft);background:#f8f8f6;}
+.blk pre.fence{background:var(--pdf-code-bg)!important;
+  border:1px solid var(--pdf-rule)!important;
+  border-radius:var(--pdf-radius)!important;box-shadow:none!important;}
+.blk pre.fence code{color:var(--pdf-code-ink)!important;font-family:var(--pdf-mono);}
+code{color:var(--pdf-code-ink);background:var(--pdf-code-bg);
+  border:1px solid #e4e7ea;border-radius:3px;font-family:var(--pdf-mono);}
+a{color:var(--pdf-link)!important;text-decoration:underline;text-underline-offset:2px;}
+.blk table,.blk th,.blk td{border-color:var(--pdf-rule);}
+.blk th{background:#f1f3f5;color:#3a3833;font-weight:700;}
+.blk hr{border:none;border-top:1px solid var(--pdf-rule);}
+.blk img{box-shadow:none;border-radius:3px;}
+.fnref a,.wikilink{color:var(--pdf-link)!important;}
+.md-html-end{display:none;}
+.md-esc-slash{display:none!important;}   /* PDF-ESC：反斜杠转义符不可见 */
+@media print{
+  html,body{color:var(--pdf-ink);}
+  .page,#editor{background:#ffffff!important;}
+  /* v3.49.13（PDF-A3）：导出模板把 .page 写死 max-width:830px + padding，
+     app-style 的 @media print 只覆盖 #editor（导出根容器是
+     <article class="page">），导致 A3 纸张变大了但正文区仍锁在 A4 宽度
+     ——「A3 好像没生效」。这里一并解锁宽度与内边距，页面尺寸完全交给
+     QPageLayout（pdf_page_layout）决定，A3/B4/Letter 均能正确撑满。 */
+  #editor,.page{max-width:none!important;width:auto!important;
+    padding:0!important;margin:0!important;box-shadow:none!important;border:none!important;}
+  /* v3.49.13（PDF-SOFTBR）：段内软换行不显示为硬换行（见
+     _collapse_pdf_softbreaks：无明确换行标记的 <br> 已折叠为空格）。 */
+  .blk p,.blk li,.blk blockquote{white-space:normal!important;}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+}
+</style>
+"""
+
+
+# v3.49.13（PDF-SOFTBR）：段内 <br> 折叠为空格（仅 PDF 导出物）。
+# blockHTML 把段落内每个物理行用 <br> 连接，源文里没有明确换行标记时，
+# 这些软换行不应在 PDF 里显示为硬换行（Markdown 软换行语义 = 空格）。
+# 行尾两个空格是 Markdown 明确硬换行标记（"  <br>"），予以保留。
+_PDF_BR_RE = re.compile(r"<br\s*/?>", re.I)
+_PDF_PARA_RE = re.compile(r"(<p\b[^>]*>)([\s\S]*?)(</p>)", re.I)
+_HARD_BR_SENTINEL = "\x00MDED_HARD_BR\x00"
+
+
+def _collapse_pdf_softbreaks(html):
+    """把 <p> 内无明确换行标记的 <br> 折叠为空格；保留「行尾双空格 + <br>」硬换行。
+
+    只作用于 PDF 导出 HTML（state.raw / 编辑器显示态 / HTML·EPUB·DOCX 导出均不变）。
+    """
+    def _para(m):
+        inner = m.group(2)
+        inner = inner.replace("  <br>", _HARD_BR_SENTINEL)
+        inner = inner.replace("  <br/>", _HARD_BR_SENTINEL)
+        inner = inner.replace("  <br />", _HARD_BR_SENTINEL)
+        inner = _PDF_BR_RE.sub(" ", inner)
+        inner = inner.replace(_HARD_BR_SENTINEL, "  <br>")
+        return m.group(1) + inner + m.group(3)
+    return _PDF_PARA_RE.sub(_para, html)
+
+
+def apply_pdf_style_css(html):
+    """v3.49.13（PDF-STYLE / PDF-BLUE / PDF-A3 / PDF-SOFTBR）：
+    折叠段内软换行 + 注入技术手册默认样式。单文档 / 整书两条链路共用，
+    每次导出自动生效；只加视觉令牌与打印期排版，不动 state.raw / 块级结构。"""
+    html = _collapse_pdf_softbreaks(html)
+    if "</head>" in html:
+        return html.replace("</head>", PDF_STYLE_CSS + "</head>", 1)
+    return html + PDF_STYLE_CSS
+
+
 class BookPdfExporter:
     """有界并发的整本书 PDF 渲染器。
 
@@ -264,6 +369,7 @@ class BookPdfExporter:
     def start(self, chapters, summary_dir, out_path):
         self._out_path = out_path
         self.summary_dir = summary_dir
+        self._t0 = time.time()   # v3.49.14（PDF-PERF）：计时起点
         self.chapters = []
         for i, ch in enumerate(chapters):
             try:
@@ -386,6 +492,8 @@ class BookPdfExporter:
                 html, self.opts.get("font_family", ""), _sz)
         # v3.48.34（PDF-LAYOUT）：缩放 / 行距（打印期 CSS）
         html = _apply_pdf_layout_css(html, self.opts)
+        # v3.49.13（PDF-STYLE）：技术手册默认导出样式（与单文档同一套令牌）
+        html = apply_pdf_style_css(html)
         fd, tmp = tempfile.mkstemp(suffix=".pdf")
         os.close(fd)
         s["printer_path"] = tmp
@@ -454,6 +562,12 @@ class BookPdfExporter:
             self._finalize()
 
     # --------------------------- 收尾 ---------------------------
+    def _elapsed_msg(self):
+        """v3.49.14（PDF-PERF）：返回导出总耗时文案（计时未启动时返回空串）。"""
+        if self._t0 is None:
+            return ""
+        return "（耗时 %.1f 秒）" % (time.time() - self._t0)
+
     def _finalize_timeout(self):
         # 超时：以已有结果尽力合并（可能不完整）
         self._finalize(partial=True)
@@ -501,6 +615,7 @@ class BookPdfExporter:
                 msg += "，%d 条链接转为可点击（页内跳转 / 相对 .html）" % m
             if partial:
                 msg += "（超时，仅合并已渲染的 %d/%d 章）" % (len(ordered), self._total)
+            msg += self._elapsed_msg()
             if self.on_done:
                 self.on_done(self._out_path, msg)
         except Exception as e:
@@ -517,7 +632,7 @@ class BookPdfExporter:
         if self._timer:
             self._timer.stop()
         if self.on_done:
-            self.on_done(None, msg)
+            self.on_done(None, msg + self._elapsed_msg())   # v3.49.14（PDF-PERF）
         self._cleanup()
 
     def _cleanup(self):

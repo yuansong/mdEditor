@@ -36,13 +36,15 @@ echo "==> [linux] 准备 venv"
 if [ ! -x "${VENV}/bin/python" ]; then
     "$PYTHON_BIN" -m venv "$VENV"
 fi
-# shellcheck disable=SC1091
-source "${VENV}/bin/activate"
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+# v3.49.13（LINUX-CI）：不 source activate —— 在 `set -euo pipefail` 下，
+# venv 的 activate 脚本会引用未定义变量（PS1 / _OLD_VIRTUAL_* 等）触发
+# "unbound variable" 直接退出；直接使用 venv 解释器绝对路径等价且无副作用。
+PY="${VENV}/bin/python"
+"$PY" -m pip install --upgrade pip
+"$PY" -m pip install -r requirements.txt
 
 echo "==> [linux] PyInstaller 构建 onedir"
-python build.py
+"$PY" build.py
 
 APP_DIR="${ROOT}/dist/${APP_NAME}"
 if [ ! -f "${APP_DIR}/${APP_NAME}" ]; then
@@ -85,10 +87,31 @@ esac
 APPIMAGETOOL="${ROOT}/.cache/appimagetool-${AITOOL_ARCH}.AppImage"
 if [ ! -x "$APPIMAGETOOL" ]; then
     mkdir -p "${ROOT}/.cache"
-    echo "==> [linux] 下载 appimagetool (${AITOOL_ARCH})"
-    curl -fL "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${AITOOL_ARCH}.AppImage" \
-        -o "$APPIMAGETOOL"
-    chmod +x "$APPIMAGETOOL"
+    # v3.49.13（LINUX-CI）：AppImageKit 仓库已归档，continuous 产物迁至
+    # AppImage/appimagetool；主源 + 兜底源 + 重试 + ELF 魔数校验，
+    # 避免把 GitHub 错误页（HTML）当工具执行导致构建中段失败。
+    AI_URLS=(
+        "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${AITOOL_ARCH}.AppImage"
+        "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${AITOOL_ARCH}.AppImage"
+    )
+    AI_OK=0
+    for AI_URL in "${AI_URLS[@]}"; do
+        echo "==> [linux] 下载 appimagetool：${AI_URL}"
+        if curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 \
+                -o "${APPIMAGETOOL}.tmp" "${AI_URL}" \
+           && [ -s "${APPIMAGETOOL}.tmp" ] \
+           && head -c 4 "${APPIMAGETOOL}.tmp" | grep -aq 'ELF'; then
+            mv "${APPIMAGETOOL}.tmp" "$APPIMAGETOOL"
+            chmod +x "$APPIMAGETOOL"
+            AI_OK=1
+            break
+        fi
+        rm -f "${APPIMAGETOOL}.tmp"
+    done
+    if [ "$AI_OK" -ne 1 ]; then
+        echo "!! appimagetool 下载失败或产物非 ELF，无法生成 AppImage" >&2
+        exit 1
+    fi
 fi
 # appimagetool 需要 fuse 才能自解压；无 fuse 时加 --appimage-extract 兜底由下方处理
 APPIMAGE="${INSTALLER_DIR}/${APP_NAME}-Linux-${AITOOL_ARCH}.AppImage"
@@ -143,7 +166,10 @@ Description: mdEditor — Typora 风格所见即所得 Markdown 编辑器
  多文档标签、块级所见即所得、KaTeX 公式、Mermaid 图表、六套主题、
  导出 HTML/PDF/Word，支持书籍与双链。
 EOF
-    DEB="${INSTALLER_DIR}/${APP_NAME,,}-${VERSION}-${DEB_ARCH}.deb"
+    # v3.49.13（LINUX-CI）：Debian 标准命名 <pkg>_<version>_<arch>.deb，
+    # 与 .github/workflows/build-linux.yml 的 installer/mdeditor_*.deb 上传路径一致
+    # （旧版用连字符，CI 永远匹配不到 .deb 产物）。
+    DEB="${INSTALLER_DIR}/${APP_NAME,,}_${VERSION}_${DEB_ARCH}.deb"
     dpkg-deb --build --root-owner-group "$DEB_ROOT" "$DEB"
     echo "==> [linux] .deb 完成：$DEB"
 fi

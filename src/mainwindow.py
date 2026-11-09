@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 import zipfile
 import sys
@@ -17,7 +18,8 @@ import sys
 import openutil  # 跨平台打开文件 / 文件夹（封装 os.startfile / open / xdg-open）
 
 from PySide6.QtCore import (QBuffer, QByteArray, QEvent, QIODevice, QTimer, QUrl,
-                            QSize, Qt, QSettings, QMimeData, QObject)
+                            QSize, Qt, QSettings, QMimeData, QObject,
+                            QMetaObject, Q_ARG, Slot)
 from PySide6.QtGui import (QAction, QActionGroup, QBrush, QColor, QGuiApplication,
                            QIcon, QImage, QKeySequence, QPainter, QPen, QPixmap)
 from PySide6.QtWidgets import (
@@ -404,7 +406,7 @@ class PdfExportDialog(QDialog):
         f3.addRow("行间距", self._line)
 
         self._font = QComboBox()
-        self._font.addItem(T("（跟随界面字体）", "(Follow UI Font)"), "")
+        self._font.addItem(T("（默认：宋体系衬线）", "(Default: Serif)"), "")
         for f in self.FONTS[1:]:
             self._font.addItem(f, f)
         idx = self._font.findData(o["font_family"])
@@ -630,6 +632,7 @@ class MainWindow(QMainWindow):
         self._docs = []          # [{"path": str|None, "content": str|None, "dirty": bool}]
         self._cur = -1
         self._switching = False
+        self._restoring = False   # v3.49.14（START-PERF）：会话恢复期间抑制逐标签切换
         self._pending_switch = -1
         # v3.38（TAB-3）：已关闭标签栈（Ctrl+Alt+T 逐个回溯，浏览器语义）
         self._closed_stack = []
@@ -698,8 +701,13 @@ class MainWindow(QMainWindow):
             self._sidebar._initial_restored = True
         # session 档在 _restore_session 内部已完成侧栏定位并标记 _initial_restored
 
-        # v3.45.7（BOOK-READ-1）：启动若上次在阅读书籍，自动恢复书籍 + 阅读进度
-        if _sa != "blank":
+        # v3.49.13（BOOK-AUTOOFF）：默认不再自动恢复上次打开的书籍。
+        # 书籍恢复会执行 read_book + 构建整棵目录树 + 打开章节 + 重试定位滚动，
+        # 属于启动路径上的重操作，拖慢首屏可交互时间；默认停在初始界面，
+        # 书籍一律由用户手动打开（打开书籍 / 新建书籍 / 章节链接等路径均不变）。
+        # 保留显式 opt-in：仅当 QSettings startupRestoreBook=true 时才恢复（默认关）。
+        _rb = self._settings.value("startupRestoreBook", False)
+        if _rb is True or str(_rb).strip().lower() in ("1", "true", "yes", "on"):
             self._restore_book()
 
         self._timer = QTimer(self)
@@ -3482,6 +3490,8 @@ class MainWindow(QMainWindow):
             return
         if self._switching:
             return
+        if self._restoring:
+            return
         if idx == self._cur:
             return
         # v3.45.8（REQ3#9）：跳转历史起点播种（首次导航前以当前文档为起点）
@@ -4955,7 +4965,9 @@ class MainWindow(QMainWindow):
         from bookexport import BookPdfExporter
         editor_html = os.path.join(os.path.dirname(os.path.abspath(__file__)), "editor.html")
         self._book_pdf_exp = BookPdfExporter(
-            self, EditorPage, editor_html, max_slots=3, opts=opts,
+            self, EditorPage, editor_html,
+            max_slots=min(max(3, (os.cpu_count() or 4) // 2), 4),
+            opts=opts,
             on_done=lambda ok_path, msg: self._book_pdf_done(ok_path, msg),
             on_progress=lambda d, t: self.show_status(
                 "整本书 PDF：已渲染 %d / %d 章" % (d, t)))
@@ -4968,7 +4980,7 @@ class MainWindow(QMainWindow):
             return
         self.show_status(T("已导出整本书 PDF · ", "Whole-book PDF exported · ") + ok_path
                         + ("（" + msg + "）" if msg else ""))
-        self._export_done("PDF", ok_path)
+        self._export_done("PDF", ok_path, msg)   # v3.49.14（PDF-PERF）：弹窗展示耗时
 
     def _book_combined_md(self, chapters):
         """把多章 markdown 拼接为一个文档（章标题作为分隔标题），用于无 pandoc 回退。"""
@@ -5198,11 +5210,15 @@ class MainWindow(QMainWindow):
             QMessageBox.Yes | QMessageBox.No)
         return ret == QMessageBox.Yes
 
-    def _export_done(self, label, path):
-        """v3.32（P1-2①）：导出完成的收尾动作——打开该文件 / 打开所在文件夹。"""
+    def _export_done(self, label, path, msg=""):
+        """v3.32（P1-2①）：导出完成的收尾动作——打开该文件 / 打开所在文件夹。
+        v3.49.14（PDF-PERF）：msg 携带导出耗时等补充信息，展示在提示框中。"""
         box = QMessageBox(self)
         box.setWindowTitle(T("导出完成", "Export Complete"))
-        box.setText(T(f"已导出 {label}：\n{path}", f"Exported {label}:\n{path}"))
+        _text = T(f"已导出 {label}：\n{path}", f"Exported {label}:\n{path}")
+        if msg:
+            _text += "\n\n" + msg
+        box.setText(_text)
         b_open = box.addButton(T("打开该文件", "Open File"), QMessageBox.YesRole)
         b_dir = box.addButton(T("打开所在文件夹", "Open Containing Folder"), QMessageBox.ActionRole)
         box.addButton(T("完成", "Done"), QMessageBox.NoRole)
@@ -5434,7 +5450,11 @@ class MainWindow(QMainWindow):
         """构建本书全部章节 + 各章标题锚点清单，注入 window.__bookLinks
         供浮动栏「本书链接」选择器（章节 / 锚点两级）使用。
         数据结构（与 mdutil.slugify 同源，导出阶段复用）：
-            [{title, path, headings:[{level, text, slug, line}]}, ...]"""
+            [{title, path, headings:[{level, text, slug, line}]}, ...]
+
+        v3.49.14（BOOK-OPEN-PERF）：open_book 关键路径不再同步读每章文件。
+        先立即注入仅含章节（标题/路径）的轻量清单，后台线程读取各章标题锚点后
+        经 QMetaObject 跨线程回注主线程执行 JS，避免大本书打开卡顿。"""
         if not self._book:
             try:
                 self._js_active("window.__bookLinks = [];")
@@ -5442,6 +5462,27 @@ class MainWindow(QMainWindow):
                 pass
             return
         chapters = self._book_chapters_with_depth(self._book)
+        # 轻量清单：仅章节标题/路径，立即注入，解除 open_book 同步阻塞
+        light = []
+        for ch in chapters:
+            ap = ch.get("abs_path")
+            if not ap or not os.path.exists(ap):
+                continue
+            light.append({"title": ch.get("title") or os.path.basename(ap),
+                          "path": ap, "headings": []})
+        self._book_links = light
+        try:
+            self._js_active("window.__bookLinks = "
+                            + json.dumps(light, ensure_ascii=False) + ";")
+        except Exception:
+            pass
+        # 后台线程读取各章标题锚点后回注（不阻塞 UI）
+        t = threading.Thread(
+            target=self._refresh_book_links_worker, args=(chapters,), daemon=True)
+        t.start()
+
+    def _refresh_book_links_worker(self, chapters):
+        """后台线程：读取各章标题锚点，跨线程回注主线程（v3.49.14）。"""
         out = []
         for ch in chapters:
             ap = ch.get("abs_path")
@@ -5456,10 +5497,20 @@ class MainWindow(QMainWindow):
             except OSError:
                 pass
             out.append({"title": title, "path": ap, "headings": headings})
-        self._book_links = out
+        js = json.dumps(out, ensure_ascii=False)
+        # 跨线程回注：QueuedConnection 保证在主线程执行 JS
+        QMetaObject.invokeMethod(
+            self, "_inject_book_links_js", Qt.QueuedConnection, Q_ARG(str, js))
+
+    @Slot(str)
+    def _inject_book_links_js(self, js):
+        """主线程槽：保存完整清单并注入 window.__bookLinks（v3.49.14）。"""
         try:
-            self._js_active("window.__bookLinks = "
-                            + json.dumps(out, ensure_ascii=False) + ";")
+            self._book_links = json.loads(js)
+        except Exception:
+            pass
+        try:
+            self._js_active("window.__bookLinks = " + js + ";")
         except Exception:
             pass
 
@@ -5796,6 +5847,9 @@ class MainWindow(QMainWindow):
         if opts:
             # v3.48.34（PDF-LAYOUT）：缩放 / 行间距（打印期 CSS，body zoom）
             html = self._apply_pdf_layout_css(html, opts)
+        # v3.49.13（PDF-STYLE）：技术手册默认导出样式，后续每次导出自动生效
+        from bookexport import apply_pdf_style_css
+        html = apply_pdf_style_css(html)
         base = QUrl.fromLocalFile(
             (os.path.dirname(self.file_path) if self.file_path else os.path.expanduser("~")) + "/")
         v.loadFinished.connect(self._print_pdf)
@@ -5847,7 +5901,9 @@ class MainWindow(QMainWindow):
     def _apply_pdf_font_css(html, font_family, font_size_pt):
         fam = (font_family or "").strip()
         if not fam:
-            fam = '"Microsoft YaHei", "PingFang SC", sans-serif'
+            # v3.49.13（PDF-STYLE）：默认「技术手册」中文衬线（宋体系）正文
+            from bookexport import PDF_SERIF_STACK
+            fam = PDF_SERIF_STACK
         style = (
             "<style id='mded-pdf-font'>"
             "body,.page,#editor{font-family:%s!important;"
@@ -7317,19 +7373,32 @@ class MainWindow(QMainWindow):
         """v3.44（SESSION）：恢复上次完整会话（多标签 + 当前标签 + 侧栏位置）。
 
         返回 True 表示成功恢复至少 1 个有效文档，False 表示无可恢复内容。
+
+        v3.49.14（START-PERF）：仅活动标签立即同步读取全文；其余标签 content 置
+        None，切到时由 _on_switch_capture 懒读取，显著加快含大量会话文档的启动恢复
+        （恢复期间置 _restoring 抑制逐标签切换，最后仅对活动标签做一次真实切换）。
         """
         try:
+            self._restoring = True
             paths = self._settings.value("sessionDocs", []) or []
             if isinstance(paths, str):
                 paths = [paths]
             paths = [p for p in paths if p and os.path.isfile(p)]
             if not paths:
                 return False
-            for p in paths:
-                self._add_doc(path=p, text=self._read_file(p))
             cur = int(self._settings.value("sessionCur", 0) or 0)
             cur = max(0, min(cur, len(paths) - 1))
-            if cur != self._cur:
+            for i, p in enumerate(paths):
+                # 仅活动文档同步读全文；其余置 None，切到时再读
+                text = self._read_file(p) if i == cur else None
+                self._add_doc(path=p, text=text)
+            # 结束恢复态，再触发活动标签的真实切换（其余仍懒加载）
+            self._restoring = False
+            if self._tabbar.currentIndex() == cur:
+                # 活动标签恰为最后添加的标签：setCurrentIndex 不再发信号，
+                # 需主动触发一次切换以加载内容（恢复态期间被抑制）
+                self._on_tab_clicked(cur)
+            elif cur != self._cur:
                 self._tabbar.setCurrentIndex(cur)
             # 侧栏位置恢复（优先于文件目录）
             _sd = str(self._settings.value("lastSidebarDir", "") or "")
@@ -7339,6 +7408,8 @@ class MainWindow(QMainWindow):
             return True
         except Exception:      # noqa: BLE001
             return False
+        finally:
+            self._restoring = False
 
     def save_session(self):
         """v3.44（SESSION）：记录当前多标签会话（路径列表 + 当前索引），供下次恢复。"""

@@ -197,10 +197,61 @@ def _resolve_paths(node, base):
         _resolve_paths(ch, base)
 
 
+def read_book_title(book_dir):
+    """v3.49.13（BOOK-TITLE）：从 mdBook 项目的 book.toml 读取 [book].title。
+
+    mdBook 书籍名称的权威来源是 book.toml；SUMMARY.md 的首个一级标题通常
+    只是模板默认值（# Summary / # 目录），不适合作为书名展示在书籍树顶层。
+    book.toml 不存在、无 [book].title 或解析失败时返回 None，由调用方降级。
+    纯函数，不修改任何文件，也不触及章节正文（满足 3000 页约束）。
+    """
+    p = os.path.join(book_dir, "book.toml")
+    if not os.path.isfile(p):
+        return None
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            text = f.read()
+    except (OSError, UnicodeDecodeError):
+        return None
+    # 优先标准库 TOML 解析（正确处理转义引号 / 单引号 / 多行字符串）
+    try:
+        import tomllib
+        data = tomllib.loads(text)
+        t = (data.get("book") or {}).get("title")
+        if isinstance(t, str) and t.strip():
+            return t.strip()
+    except Exception:      # noqa: BLE001
+        pass
+    # 兜底：逐行解析 [book] 段内的 title = "..." / '...'
+    # （tomllib 不可用时，或用户手写非标准片段时仍能取到书名）
+    in_book = False
+    for raw in text.splitlines():
+        s = raw.strip()
+        if s.startswith("[") and s.endswith("]"):
+            in_book = (s.lower() == "[book]")
+            continue
+        if not in_book or not s or s.startswith("#"):
+            continue
+        m = re.match(r'^title\s*=\s*"([^"]*)"\s*$', s)
+        if not m:
+            m = re.match(r"^title\s*=\s*'([^']*)'\s*$", s)
+        if m and m.group(1).strip():
+            return m.group(1).strip()
+    return None
+
+
+def _is_generic_book_title(t):
+    """SUMMARY.md 首个一级标题若为 mdBook 模板默认名，则不作为书籍名称展示。"""
+    if not t:
+        return True
+    s = str(t).strip().strip("#").strip().lower()
+    return s in ("summary", "目录", "table of contents", "contents", "toc")
+
+
 def read_book(path):
     """读取并解析一本书籍，返回书籍信息字典；非书籍返回 None。
 
-    返回：{"book_dir","summary_path","summary_dir","root","title"}。
+    返回：{"book_dir","summary_path","summary_dir","root","title","mdbook_title"}。
     root 中每个 chapter 节点含 abs_path（按 SUMMARY 所在目录解析）。
     不读取任何章节正文（满足 3000 页大文件约束）。"""
     book_dir = detect_book_dir(path)
@@ -223,12 +274,20 @@ def read_book(path):
         book_dir = os.path.dirname(summary_dir)
     else:
         book_dir = summary_dir
+    # v3.49.13（BOOK-TITLE）：书名优先取 book.toml [book].title；
+    # SUMMARY.md 的模板默认标题（# Summary / # 目录）不再作为书名展示。
+    # 注意：root["title"] 原值保持不变 —— 拖拽重排写回 SUMMARY.md 时首行
+    # 仍与用户原文一致，不因显示书名改变而污染文件。
+    mdbook_title = read_book_title(book_dir)
+    _st = root.get("title")
+    summary_title = None if _is_generic_book_title(_st) else _st
     return {
         "book_dir": book_dir,
         "summary_path": summary,
         "summary_dir": summary_dir,
         "root": root,
-        "title": root.get("title") or os.path.basename(book_dir),
+        "title": mdbook_title or summary_title or os.path.basename(book_dir),
+        "mdbook_title": mdbook_title,
     }
 
 

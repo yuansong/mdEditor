@@ -798,6 +798,8 @@ class Sidebar(QWidget):
         bp_lay.addWidget(self.book_empty, 1)
         self.book_tree.setVisible(False)
         self._book_title = None
+        # v3.49.13（BOOK-TITLE）：SUMMARY.md 原始标题（写回用），与显示书名分离
+        self._book_summary_title = None
 
         # ---- v3.48.13（BACKLINK-4）：反向链接页 ----
         # 数据源 = MainWindow.refresh_backlinks()（增量缓存扫描笔记库），
@@ -1792,12 +1794,17 @@ class Sidebar(QWidget):
         if not book_info:
             self._book_root = None
             self._book_title = None
+            self._book_summary_title = None
             self._book_summary_dir = None
             self.book_tree.setVisible(False)
             self.book_empty.setVisible(True)
             return
         self._book_root = book_info["root"]
+        # v3.49.13（BOOK-TITLE）：顶层显示书名（book.toml [book].title 优先）；
+        # _book_summary_title 保留 SUMMARY.md 首行原值，供拖拽重排写回时原样保留，
+        # 避免把显示书名误写进用户文件。
         self._book_title = book_info.get("title")
+        self._book_summary_title = (book_info.get("root") or {}).get("title")
         self._book_summary_dir = book_info.get("summary_dir")
         self._book_dir = book_info.get("book_dir")
         self._book_summary_path = book_info.get("summary_path")
@@ -1926,7 +1933,7 @@ class Sidebar(QWidget):
         """拖拽重排落下后：从控件顺序重建 root 并通知主窗口写回 SUMMARY。"""
         if self._book_root is None:
             return
-        new_root = self.book_tree._tree_to_root(self._book_title)
+        new_root = self.book_tree._tree_to_root(self._book_summary_title)
         self._book_root = new_root
         self.bookStructureChanged.emit(new_root)
 
@@ -2502,6 +2509,7 @@ class Sidebar(QWidget):
             cur_idx = cur.data(0, Qt.UserRole)
         self._outline_active_idx = -1      # v3.49.1（OUT-SYNC）：重建后清空「当前内容」高亮
         self._outline_active_item = None
+        self._outline_active_key = None    # v3.49.13（OUT-7）：状态键一并失效，强制重绘
         # 注：_outline_active_bg（主题强调浅底）不在此重置 —— 其仅随主题变化，
         # 与大纲内容无关；重建后保留该色可使高亮立即以正确底色重绘，无需等待换肤。
         self.outline.blockSignals(True)
@@ -2566,33 +2574,64 @@ class Sidebar(QWidget):
                     break
 
     # ================= v3.49.1（OUT-SYNC）大纲「当前内容」高亮 =================
-    def set_outline_active(self, idx):
-        """高亮大纲中「当前正在显示」的标题（随文档滚动同步）。
+    # ---- v3.49.13（OUT-7）大纲激活态设计令牌 --------------------------------
+    # 状态矩阵（所有色值取自 styles.palette 的 accent / accent_soft，不散落裸值）：
+    #   selected（用户点击，QSS 控制）   : accent_soft 实底 + accent 文字
+    #   active  （光标所在，role 控制）  : accent @ 12% 半透明底 + accent 文字 + 加粗
+    #   active + selected                : 交还 QSS selected，仅保留加粗
+    #   hover   （QSS 控制）             : list_hover 底
+    # 关键约束：清除旧项必须用 setData(..., None) 把 hover / selected 的绘制交还
+    # QSS；旧实现写 QBrush(Qt.transparent) 仍是「有效画刷」，会吞掉 QSS 的
+    # ::item:hover / ::item:selected 背景与文字色 —— 即「激活项背景色异常」根因。
+    _OUTLINE_ACTIVE_ALPHA = 30          # accent 底色 alpha（0-255，≈12%）
 
-        idx = 标题块序号；与点击选中（::selected）区分：本高亮用半透明强调底色 +
-        强调色文字，二者可共存（同一项既被点击又被读到时以本高亮优先显示）。"""
+    def _outline_clear_item(self, item):
+        """清空背景/前景/字重角色，把 hover / selected 的绘制交还 QSS。"""
+        if item is None:
+            return
+        item.setData(0, Qt.BackgroundRole, None)
+        item.setData(0, Qt.ForegroundRole, None)
+        item.setData(0, Qt.FontRole, None)
+
+    def _outline_paint_active(self, item):
+        """按当前主题令牌绘制激活态；与当前选中项重合时让位给 QSS selected。"""
+        if item is None:
+            return
+        fg = getattr(self, "_outline_active_fg", None)
+        if fg is None:
+            fg = self.outline.palette().color(QPalette.Highlight)
+        if item is self.outline.currentItem():
+            item.setData(0, Qt.BackgroundRole, None)
+            item.setData(0, Qt.ForegroundRole, None)
+        else:
+            bg = QColor(fg.red(), fg.green(), fg.blue(), self._OUTLINE_ACTIVE_ALPHA)
+            item.setData(0, Qt.BackgroundRole, QBrush(bg))
+            item.setData(0, Qt.ForegroundRole, QBrush(fg))
+        f = item.font(0)
+        f.setBold(True)
+        item.setData(0, Qt.FontRole, f)
+
+    def set_outline_active(self, idx):
+        """高亮「光标 / 当前阅读位置」所在标题（v3.49.13 OUT-7）。
+
+        idx = 标题块序号。激活态用 accent 的 12% 半透明底 + 加粗，与 QSS 的
+        ::item:selected（accent_soft 实底）明确区分；二者重合时交还 QSS，仅保留
+        加粗。状态键含 currentItem 身份，仅在状态变化时重绘，避免 200ms 轮询
+        反复 scrollToItem 造成大纲抖动。
+        """
         if idx is None or idx < 0:
             idx = -1
-        if idx == getattr(self, "_outline_active_idx", -1):
+        cur = self.outline.currentItem()
+        key = (idx, id(cur))
+        if key == getattr(self, "_outline_active_key", None):
             return
-        prev = getattr(self, "_outline_active_item", None)
-        if prev is not None:
-            prev.setBackground(0, QBrush(Qt.transparent))
-            prev.setForeground(0, QBrush(self.outline.palette().color(QPalette.Text)))
-            self._outline_active_item = None
+        self._outline_active_key = key
+        self._outline_clear_item(getattr(self, "_outline_active_item", None))
+        self._outline_active_item = None
         self._outline_active_idx = idx
         item = self._outline_items.get(idx) if idx >= 0 else None
         if item is not None:
-            pal = self.outline.palette()
-            hl = pal.color(QPalette.Highlight)
-            # v3.49.x（OUT-SYNC）：激活项背景 / 文字优先用「随主题强调色」动态色，
-            # 未初始化（理论上 apply_theme 已兜底）时回退到原半透明强调底 + 系统 Highlight
-            ab = getattr(self, "_outline_active_bg", None)
-            af = getattr(self, "_outline_active_fg", None)
-            bg = ab if ab is not None else QColor(hl.red(), hl.green(), hl.blue(), 52)
-            fg = af if af is not None else hl
-            item.setBackground(0, QBrush(bg))
-            item.setForeground(0, QBrush(fg))
+            self._outline_paint_active(item)
             vr = self.outline.visualItemRect(item)
             if vr.isEmpty() or not self.outline.viewport().rect().contains(vr):
                 self.outline.scrollToItem(item, QAbstractItemView.EnsureVisible)
@@ -2619,11 +2658,8 @@ class Sidebar(QWidget):
             fg = QColor("#0052d9")
         self._outline_active_bg = bg
         self._outline_active_fg = fg
-        # 重绘当前激活项（若存在），保证换肤后高亮背景立刻联动
-        item = getattr(self, "_outline_active_item", None)
-        if item is not None:
-            item.setBackground(0, QBrush(self._outline_active_bg))
-            item.setForeground(0, QBrush(self._outline_active_fg))
+        # v3.49.13（OUT-7）：按新主题令牌重绘激活项（含 active+selected 让位）
+        self._outline_paint_active(getattr(self, "_outline_active_item", None))
 
     # ================= v3.43.0（OUT-LOOK）大纲过滤 / 工具钮 =================
     def set_outline_filter(self, level):

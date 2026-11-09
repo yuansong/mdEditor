@@ -71,7 +71,16 @@ eq(core.blockHTML('**b** *i*'), '<p><strong>b</strong> <em>i</em></p>', 'html: b
 eq(core.blockHTML('~~del~~ `c`'), '<p><del>del</del> <code>c</code></p>', 'html: del+code');
 eq(core.blockHTML('[x](https://a.b)'), '<p><a href="https://a.b" title="https://a.b" target="_blank" rel="noopener">x</a></p>', 'html: link');
 eq(core.blockHTML('![alt](img.png)'), '<p><img src="img.png" alt="alt"></p>', 'html: image');
-eq(core.blockHTML('<b>&x</b>'), '<p>&lt;b&gt;&amp;x&lt;/b&gt;</p>', 'html: escaping');
+// v3.49.13（PDF-HTMLALL）：常见内联 HTML 真实渲染，& 仍转义；危险/孤立标签仍字面化
+eq(core.blockHTML('<b>&x</b>'), '<p><b data-md-html="&lt;b&gt;">&amp;x</b></p>', 'html: escaping + inline html');
+eq(core.blockHTML('<a href="x.html">t</a>'),
+   '<p><a href="x.html" data-md-html="&lt;a href=&quot;x.html&quot;&gt;">t</a></p>', 'html: inline <a href> link');
+eq(core.blockHTML('<a href="x"><code>SELECT</code></a>'),
+   '<p><a href="x" data-md-html="&lt;a href=&quot;x&quot;&gt;"><code data-md-html="&lt;code&gt;">SELECT</code></a></p>', 'html: inline nested code');
+eq(core.blockHTML('<a href="x" onclick="evil()">z</a>'),
+   '<p>&lt;a href=&quot;x&quot; onclick=&quot;evil()&quot;&gt;z&lt;/a&gt;</p>', 'html: unsafe attrs literal');
+eq(core.blockHTML('用 <b> 标签写粗体'), '<p>用 &lt;b&gt; 标签写粗体</p>', 'html: lone open tag literal');
+eq(core.blockHTML('<div>&x</div>'), '<div>&x</div>', 'html: block-level html passthrough');
 // v3.45（BOOKLINK-A）：[[Target#anchor|alias]] 解析 + 渲染 data-anchor
 eq(core.blockHTML('[[章#锚点|显示文本]]'),
    '<p><a class="wikilink" title="章#锚点" data-target="章" data-anchor="锚点">显示文本</a></p>', 'html: wikilink with anchor');

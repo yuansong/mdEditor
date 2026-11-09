@@ -198,6 +198,12 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; text-underline-offset: 3px; }
 img { max-width: 100%; border-radius: 8px; margin: 0.3em 0; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06); }
 del { color: var(--text-2); }
+/* v3.49.13（PDF-HTMLANCHOR）：闭合标签源码标记 —— 零宽、不参与布局与打印 */
+.md-html-end { display: none; }
+/* v3.49.13（PDF-ESC）：反斜杠转义只隐藏 '\' 本身 —— display:none 不影响
+   textContent（仍是 '\X' 两字符），与 parseInline 的 plain 长度一致，
+   渲染态光标映射不漂移；DOM→MD 序列化由 data-md-esc 原样回写。 */
+.md-esc-slash { display: none; }
 .blk ul, .blk ol { margin: 0.55em 0; padding-left: 1.6em; }
 .blk li { margin: 0.18em 0; }
 .blk li::marker { color: #98a2b3; }
@@ -1404,25 +1410,72 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       if (ch === '[') { depth++; continue; }
       if (ch !== ']') continue;
       if (depth > 0) { depth--; continue; }
-      if (s[j + 1] !== '(') return null;
+      if (s[j + 1] !== '(') break;
       var k = s.indexOf(')', j + 2);
-      if (k === -1 || k > to) return null;
-      /* v3.49.12（LINK-COMMENT）：支持链接地址后附加双/单引号包裹的注释，
-         形如 [text](url#anchor "注释")。标准 markdown 链接标题语法：
-         先剥离尾部可选的 "注释" / '注释'，保留干净的 url（含 #锚点）用于跳转，
-         注释单独存入返回结构；剩余 url 若仍含空白则视为非法链接丢弃（保留原行为）。 */
+      if (k === -1 || k > to) break;
+      /* v3.49.12（LINK-COMMENT）/ v3.49.13（LINK-EMCOMMENT）：支持链接地址后
+         附加注释。分隔符优先级：双引号 > 单引号 > *星号* > _下划线_；
+         形如 [text](url#anchor "注释") 或 [text](url#anchor *注释*)。
+         先剥离尾部注释，保留干净的 url（含 #锚点）用于跳转，注释与分隔符
+         单独存入返回结构；剩余 url 若仍含空白则视为非法链接丢弃（保留原行为）。
+         cdelim 用于序列化时按原分隔符回写，避免改写用户源码。 */
       var raw = s.slice(j + 2, k);
       var comment = '';
+      var cdelim = '"';
       var _cm = raw.match(/\s+"([^"]*)"\s*$/);
-      if (!_cm) _cm = raw.match(/\s+'([^']*)'\s*$/);
+      if (!_cm) { _cm = raw.match(/\s+'([^']*)'\s*$/); if (_cm) cdelim = "'"; }
+      if (!_cm) { _cm = raw.match(/\s+\*([^*]*)\*\s*$/); if (_cm) cdelim = '*'; }
+      if (!_cm) { _cm = raw.match(/\s+_([^_]*)_\s*$/); if (_cm) cdelim = '_'; }
       if (_cm) {
         comment = _cm[1];
         raw = raw.slice(0, _cm.index).replace(/\s+$/, '');
       }
-      if (!raw || /\s/.test(raw)) return null;
-      return { bracket: j, end: k + 1, url: raw, comment: comment };
+      if (!raw || /\s/.test(raw)) break;
+      return { bracket: j, end: k + 1, url: raw, comment: comment, cdelim: cdelim };
     }
-    return null;
+    return _matchLinkLoose(s, i, to);
+  }
+
+  /* LINK-LOOSE：容错「结束标记 / 闭合引号 / 括号缺失」的一类链接。
+     仅当标准 [text](url "注释") 路径失败时触发；必须存在
+     「空白 + 注释起始符(" ' * _)」结构才认定为链接，避免误伤普通文本与其他链接。
+     原标识符、参数顺序、标题文本一律保留（含 url 段原有空白）；缺失的 ] /
+     闭合分隔符 / ) 只在渲染态按现有链接语法补齐，DOM→MD 序列化回写为
+     标准形式（即「最小必要修正」，不改写文本内容）。 */
+  function _matchLinkLoose(s, i, to) {
+    var p = s.indexOf('(', i + 1);
+    if (p === -1 || p >= to) return null;
+    var _t = s.slice(i + 1, p);
+    if (!_t || _t.indexOf('\n') !== -1) return null;
+    /* 有 ] 时必须是紧贴 ( 的闭合方括号（...](...）；
+       ] 后还有空格的（[abc] (x "y)）属普通文本，不认定为链接。
+       无 ] 则为结束标记缺失的 RAW 形态，同样按容错处理。 */
+    var hasBr = false;
+    if (_t.indexOf(']') !== -1) {
+      if (_t.charAt(_t.length - 1) !== ']') return null;
+      _t = _t.slice(0, -1);
+      hasBr = true;
+    }
+    if (!_t) return null;
+    var k = s.indexOf(')', p + 1);
+    if (k === -1 || k > to) k = to;
+    var raw = s.slice(p + 1, k);
+    var m = raw.match(/\s+(["'*_])([\s\S]*)$/);
+    if (!m) return null;
+    var url = raw.slice(0, m.index).replace(/\s+$/, '');
+    if (!url) return null;
+    var cd = m[1];
+    var cm = m[2].replace(/\s+$/, '');
+    if (cm.charAt(cm.length - 1) === cd) cm = cm.slice(0, -1).replace(/\s+$/, '');
+    /* 注释内部再出现同型分隔符 → 不是「单个缺失闭合符的注释」，放弃容错，
+       避免把畸形文本误吞成链接（不影响其他链接）。 */
+    if (cm.indexOf(cd) !== -1) return null;
+    var ts = i + 1;
+    while (ts < p && s.charAt(ts) === '[') ts++;
+    var ce = hasBr ? p - 1 : p;
+    if (ts >= ce) return null;
+    return { bracket: p, end: (k < to ? k + 1 : to), url: url, comment: cm,
+             cdelim: cd, loose: true, cs: ts, ce: ce, rs: i };
   }
 
   /* v3.38（NEST-4 / PARSE-1）游程感知闭合搜索：对称标记的闭合候选必须是
@@ -1431,6 +1484,25 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
      **==[***x***](u)==** 的外层 ** 会闭到内层 *** 的前两位 —— == / [ / ](u) / *
      全部降级为字面文本（用户可见裸标记）。更长（内层 ***）、更短、或与开符
      同一游程（k < from）的一律跳过。 */
+  /* v3.49.14（CITEREF）：检测 [[label]] 之后是否紧跟 (url "title")，识别为引文链接。
+     url 原样保留（含空格，如 "biblio html#DATE97"），不按普通链接合法性拒绝；
+     注释按 matchLink 同口径剥离（" ' * _ 四种分隔符）。返回
+     {url, comment, cdelim, end} 或 null。 */
+  function _tryCiteref(s, p, to) {
+    if (p >= to || s[p] !== '(') return null;
+    var k = s.indexOf(')', p + 1);
+    if (k === -1 || k > to) return null;
+    var raw = s.slice(p + 1, k);
+    var comment = '', cdelim = '"';
+    var _cm = raw.match(/\s+"([^"]*)"\s*$/);
+    if (!_cm) { _cm = raw.match(/\s+'([^']*)'\s*$/); if (_cm) cdelim = "'"; }
+    if (!_cm) { _cm = raw.match(/\s+\*([^*]*)\*\s*$/); if (_cm) cdelim = '*'; }
+    if (!_cm) { _cm = raw.match(/\s+_([^_]*)_\s*$/); if (_cm) cdelim = '_'; }
+    if (_cm) { comment = _cm[1]; raw = raw.slice(0, _cm.index).replace(/\s+$/, ''); }
+    if (!raw) return null;
+    return { url: raw, comment: comment, cdelim: cdelim, end: k + 1 };
+  }
+
   function findRunClose(s, from, to, c, need) {
     var j = from;
     while (j < to) {
@@ -1456,6 +1528,13 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     }
     while (i < to) {
       var c = s[i];
+      /* v3.49.13（PDF-ESC）：反斜杠转义 —— '\' 后接 ASCII 标点时，这两字符
+         整体留在 text 节点里，不参与后续任何格式标记判定（\* 不该触发 em、
+         \_ 不该触发 em、\[ 不该触发链接）。显示/导出由 renderNodes 的
+         escText() 隐藏反斜杠本身，data-md-esc 保证回写不丢用户源码。 */
+      if (c === '\\' && i + 1 < to && /[\\`*_{}\[\]()#+\-.!>~^$=|<]/.test(s[i + 1])) {
+        i += 2; continue;
+      }
       // code span
       if (c === '`') {
         var run = 0; while (s[i + run] === '`') run++;
@@ -1534,6 +1613,64 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
                        ce: _uEn, open: _uOp, close: _uCl,
                        ch: parseInline(s, i + _uOp.length, _uEn) });
           i = _uEn + _uCl.length; textStart = i; continue;
+        }
+      }
+      /* v3.49.13（PDF-HTMLALL）：常见内联 HTML 全文透传 —— HTML 手册 / 网页
+         转 MD 的正文常带 <a href="...">、<code class="literal">、<span class>、
+         <b>/<em>、<br>、<img> 等行内标签。旧版只放行带 id/name 的 span/a
+         锚点与成对 sup/sub，其余一律 esc() 字面化 → PDF / 预览里出现
+         &lt;a href=...&gt; 等源码（用户反馈「不常见链接仍显示源码」）。
+         这里放通「行内」标签全集（不含块级 div/p/table/ul 与危险标签
+         script/style/iframe/object/embed/form/input/meta/base/link/svg/math/
+         template），并保留四道约束：
+         ① 拒绝事件属性 on* / javascript: / vbscript: / data:text/html /
+            srcdoc / formaction；② 非 void 开标签必须在同一块内存在配对
+            闭合标签，孤立开标签（如用户手写「用 <b> 标签」）维持字面化；
+         ③ 闭合标签必须在同一块内已有配对开标签，避免孤立 </a> 破坏 DOM；
+         ④ void 标签（br/img/wbr/area）无需闭合。
+         data-md-html 承载原始标签串，DOM→MD 序列化时原样回写，不丢源码。
+         另见 parseInline 开头的 \< 转义：用户可用 \<b\> 显示字面标签。 */
+      if (c === '<') {
+        var _hm = /^<(\/?)([A-Za-z][A-Za-z0-9]*)\b([^<>]*)>/.exec(s.slice(i, to));
+        if (_hm) {
+          var _tag = _hm[2].toLowerCase();
+          var _attrs = _hm[3] || '';
+          var _isClose = !!_hm[1];
+          var _allowed = /^(a|area|span|sup|sub|code|tt|kbd|samp|var|cite|abbr|dfn|q|b|strong|i|em|u|ins|s|del|strike|mark|small|big|font|bdi|bdo|ruby|rt|rp|time|wbr|br|img)$/i.test(_hm[2]);
+          var _isVoid = /^(br|img|wbr|area)$/i.test(_hm[2]);
+          var _safe = !/\bon[a-z]+\s*=/i.test(_attrs) &&
+                      !/javascript\s*:/i.test(_attrs) &&
+                      !/vbscript\s*:/i.test(_attrs) &&
+                      !/data\s*:\s*text\/html/i.test(_attrs) &&
+                      !/\bsrcdoc\s*=/i.test(_attrs) &&
+                      !/\b(formaction|action)\s*=/i.test(_attrs);
+          var _pairOK;
+          if (_isClose) {
+            /* 闭合标签只认「已成功放行的同类开标签 html 节点」，不能看原始
+               字符串 —— 否则被安全过滤拒绝的开标签（如带 onclick 的 <a>）
+               其 </a> 仍会被误放行，输出孤立真实闭合标签破坏 DOM。 */
+            var _openSeen = false;
+            for (var _ni = nodes.length - 1; _ni >= 0; _ni--) {
+              var _nn = nodes[_ni];
+              if (_nn.type === 'html' && !_nn.closing) {
+                var _nt = /^<([A-Za-z][A-Za-z0-9]*)\b/.exec(_nn.html || '');
+                if (_nt && _nt[1].toLowerCase() === _tag) { _openSeen = true; break; }
+              }
+            }
+            _pairOK = _openSeen;
+          } else if (_isVoid) {
+            _pairOK = true;
+          } else {
+            _pairOK = s.slice(i + _hm[0].length, to).toLowerCase()
+                        .indexOf('</' + _tag + '>') !== -1;
+          }
+          if (_allowed && _safe && _pairOK) {
+            var _hraw = _hm[0];
+            flush(i);
+            nodes.push({ type: 'html', s: s, rs: i, re: i + _hraw.length,
+                         html: _hraw, closing: _isClose, pair: !_isVoid, isVoid: _isVoid });
+            i += _hraw.length; textStart = i; continue;
+          }
         }
       }
       // 上标 ^xx^ / 下标 ~xx~（~~xx~~ 删除线已在上方优先匹配）
@@ -1646,7 +1783,12 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         var ml = matchLink(s, i, to);
         if (ml) {
           flush(i);
-          nodes.push({ type: 'link', s: s, rs: i, re: ml.end, url: ml.url, comment: ml.comment || '', cs: i + 1, ce: ml.bracket, ch: parseInline(s, i + 1, ml.bracket) });
+          /* LINK-LOOSE：容错链接的文本段起点/终点由 matchLink 给出，
+             标准链接（loose 为假）时三者与旧行为完全一致。 */
+          var _lcs = ml.loose ? ml.cs : i + 1;
+          var _lce = ml.loose ? ml.ce : ml.bracket;
+          var _lrs = ml.loose ? ml.rs : i;
+          nodes.push({ type: 'link', s: s, rs: _lrs, re: ml.end, url: ml.url, comment: ml.comment || '', cdelim: ml.cdelim || '"', cs: _lcs, ce: _lce, ch: parseInline(s, _lcs, _lce) });
           i = ml.end; textStart = i; continue;
         }
       }
@@ -1672,6 +1814,20 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     return String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;')
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
+  /* v3.49.13（PDF-ESC）：文本节点渲染 —— '\' + ASCII 标点 的转义序列只显示
+     被转义的字符，反斜杠本身装进 display:none 的 .md-esc-slash（textContent
+     仍含 '\'，plain 长度与 parseInline 一致 → 光标映射不漂移）。
+     data-md-esc 让 DOM→MD 序列化原样回写 '\X'，绝不改写用户源码。 */
+  function escText(t) {
+    var out = '', last = 0, re = /\\([\\`*_{}\[\]()#+\-.!>~^$=|<])/g, m;
+    while ((m = re.exec(t)) !== null) {
+      out += esc(t.slice(last, m.index));
+      out += '<span class="md-esc" data-md-esc="' + esc(m[0]) + '">' +
+             '<span class="md-esc-slash">\\</span>' + esc(m[1]) + '</span>';
+      last = m.index + m[0].length;
+    }
+    return out + esc(t.slice(last));
+  }
   function slugify(text) {
     /* 锚点命名规范（与 Python 导出同源）：trim -> 折叠空白 -> 小写 ->
        仅保留字母/数字/空格（CJK 原样保留）-> 空格转 '-' -> 去首尾/连续 '-'。
@@ -1692,7 +1848,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     for (var k = 0; k < nodes.length; k++) {
       var n = nodes[k];
       switch (n.type) {
-        case 'text': out += esc(n.s.slice(n.rs, n.re)); break;
+        case 'text': out += escText(n.s.slice(n.rs, n.re)); break;
         case 'code': out += '<code>' + esc(n.s.slice(n.cs, n.ce)) + '</code>'; break;
         case 'strong': out += '<strong>' + renderNodes(n.ch) + '</strong>'; break;
         case 'strongem': out += '<strong><em>' + renderNodes(n.ch) + '</em></strong>'; break;
@@ -1709,13 +1865,28 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
           var _wlAddr = n.target + (n.anchor ? ('#' + n.anchor) : '');
           out += '<a class="wikilink" title="' + esc(_wlAddr) + '" data-target="' + esc(n.target) + '"' + (n.anchor ? ' data-anchor="' + esc(n.anchor) + '"' : '') + '>' + renderNodes(n.ch) + '</a>'; break;
         }
+        case 'citeref': {
+          /* v3.49.14（CITEREF）：引文链接渲染为普通 <a href>，链接文本 [label]
+             （带方括号）；注释写入 data-comment / data-comment-delim，确保保存
+             回写不丢标题（DOM→MD 序列化还原为 [[label]](url "title")）。 */
+          var _crcm = n.comment || '';
+          var _crcd = n.cdelim || '"';
+          out += '<a class="citeref" href="' + esc(n.url) + '"' +
+                 (_crcm ? (' title="' + esc(_crcm) + '" data-comment="' + esc(_crcm) +
+                           '" data-comment-delim="' + esc(_crcd) + '"')
+                        : (' title="' + esc(n.url) + '"')) +
+                 '>' + '[' + renderNodes(n.ch) + ']' + '</a>';
+          break;
+        }
         case 'link': {
           /* v3.49.12（LINK-COMMENT）：href 用干净 url（含 #锚点）保证正常跳转；
              注释写入 title（悬停提示）与 data-comment（供序列化回写源码，避免与 url 混淆）。
              无注释时沿用旧行为 title=url。 */
           var _cm = n.comment || '';
+          var _cd = n.cdelim || '"';
           out += '<a href="' + esc(n.url) + '"' +
-                 (_cm ? (' title="' + esc(_cm) + '" data-comment="' + esc(_cm) + '"')
+                 (_cm ? (' title="' + esc(_cm) + '" data-comment="' + esc(_cm) +
+                         '" data-comment-delim="' + esc(_cd) + '"')
                       : (' title="' + esc(n.url) + '"')) +
                  ' target="_blank" rel="noopener">' + renderNodes(n.ch) + '</a>';
           break;
@@ -1726,6 +1897,24 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
           var _ris = resolveImgSrc(n.url);
           out += '<img src="' + esc(_ris) + '" alt="' + esc(n.s.slice(n.ls, n.le)) + '"' +
                  (_ris !== n.url ? ' data-md="' + esc(n.url) + '"' : '') + '>';
+          break;
+        }
+        case 'html': {
+          /* v3.49.13（PDF-HTMLALL）：开标签注入 data-md-html 后原样输出，
+             使 href / class / id 成为真实属性；成对标签的闭合标签输出真实
+             </tag>（否则 <a>/<b> 不闭合会把后续内容全吞进链接 / 粗体），
+             void 标签（br/img/wbr/area）无闭合。旧版零宽标记分支仅用于
+             兼容历史 DOM（以 '</' 开头的 data-md-html）。序列化由
+             inlineTagPair / htmlToMd 按原标签名补回闭合标签。 */
+          var _ht = n.html || '';
+          if (n.closing) {
+            if (n.pair) out += _ht;
+            else out += '<span class="md-html-end" data-md-html="' + esc(_ht) + '"></span>';
+          } else {
+            out += _ht.replace(/(\s*\/?>)$/, function (_m0, _m1) {
+              return ' data-md-html="' + esc(_ht) + '"' + _m1;
+            });
+          }
           break;
         }
         case 'inlinemath': out += '<span class="inlinemath" data-tex="' + esc(n.s.slice(n.cs, n.ce)) + '"></span>'; break;
@@ -1744,6 +1933,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       case 'image': return 1;
       case 'inlinemath': return 1;
       case 'fnref': return 0;
+      case 'html': return 0;   /* 行内锚点零宽，不影响光标映射 */
       default: return nodesLen(n.ch);
     }
   }
@@ -1767,6 +1957,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       case 'image': return Math.min(n.ls + idx, n.le);
       case 'inlinemath': return Math.min(n.cs + idx, n.ce);
       case 'fnref': return n.rs;
+      case 'html': return n.rs;
       default: return plainToRawOffset(n.ch, idx);
     }
   }
@@ -5619,6 +5810,20 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
    * ========================================================= */
   /* 行内格式元素 → [开标记, 闭标记]；null = 非行内格式元素（按普通容器递归） */
   function inlineTagPair(n) {
+    /* v3.49.13（PDF-HTMLANCHOR）：内联 HTML 白名单节点 —— data-md-html 承载
+       原始标签串；开标签作为「前缀 + 递归子节点 + 空后缀」回写，闭合标签的
+       零宽标记则原样吐出标签本身，两者组合可完整还原 <span id="X"></span>。 */
+    if (n.hasAttribute && n.hasAttribute('data-md-html')) {
+      var _dh = n.getAttribute('data-md-html') || '';
+      /* v3.49.13（PDF-HTMLALL）：所有成对内联 HTML 标签按原标签名补回闭合
+         标签（开标签是真实 DOM 元素，闭合标签不再有零宽标记节点）；
+         void 标签（br/img/wbr/area）不补。历史零宽标记（以 '</' 开头）
+         原样吐出标签本身。 */
+      var _pm = /^<([A-Za-z][A-Za-z0-9]*)\b/i.exec(_dh);
+      if (_pm && !/^(br|img|wbr|area)$/i.test(_pm[1]))
+        return [_dh, '</' + _pm[1] + '>'];
+      return [_dh, ''];
+    }
     switch (n.tagName) {
       case 'STRONG': case 'B': return ['**', '**'];
       case 'EM': case 'I': return ['*', '*'];
@@ -5629,10 +5834,12 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       case 'SUP': return ['^', '^'];
       case 'SUB': return ['~', '~'];
       case 'A': {
-        /* v3.49.12（LINK-COMMENT）：若链接带 data-comment 注释，回写为 (url "comment") */
+        /* v3.49.12（LINK-COMMENT）/ v3.49.13：按 data-comment-delim 回写原分隔符
+           （"注释" / '注释' / *注释* / _注释_），不改写用户源码。 */
         var _href = n.getAttribute('href') || '';
         var _cm = n.getAttribute('data-comment') || '';
-        return ['[', '](' + _href + (_cm ? (' "' + _cm + '"') : '') + ')'];
+        var _cd = n.getAttribute('data-comment-delim') || '"';
+        return ['[', '](' + _href + (_cm ? (' ' + _cd + _cm + _cd) : '') + ')'];
       }
       default: return null;
     }
@@ -5640,6 +5847,10 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   /* 自带完整标记的行内片段（图片 / 行内公式 / 脚注引用）→ 字符串；
      null = 不是这类片段（交给 inlineTagPair / 递归处理） */
   function inlineAtomOf(n) {
+    /* v3.49.13（PDF-ESC）：转义序列整体回写原串（不递归子节点，避免把
+       display:none 的 '\' 与转义字符重复输出 / 二次转义）。 */
+    if (n.hasAttribute && n.hasAttribute('data-md-esc'))
+      return n.getAttribute('data-md-esc') || '';
     if (n.classList && n.classList.contains('fnref')) {
       /* 脚注引用（零长渲染产物）：不回写即丢失标记 */
       var fa = n.querySelector('a[data-fn]');
@@ -7031,6 +7242,24 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         var tg = n.tagName;
         if (tg === 'BR') { acc += '\n'; continue; }
         if (n.classList && n.classList.contains('qblk')) continue;   /* 引用内嵌富块不重复展开 */
+        /* v3.49.13（PDF-ESC）：转义序列整体回写原串，不递归（否则 '\' 会被
+           esc() 二次转义成 '\\'，用户源码被改写）。 */
+        if (n.hasAttribute && n.hasAttribute('data-md-esc')) {
+          acc += txt(n.getAttribute('data-md-esc'));
+          continue;
+        }
+        /* v3.49.13（PDF-HTMLANCHOR / PDF-SUP）：内联 HTML 白名单节点原样回写
+           标签串，再递归拼接子节点；成对标签（sup/sub）补回闭合标签，
+           span/a 锚点的闭合标签仍由零宽标记在此输出 </span> 等。 */
+        if (n.hasAttribute && n.hasAttribute('data-md-html')) {
+          var _dh2 = txt(n.getAttribute('data-md-html'));
+          acc += _dh2;
+          acc += inlineMd(n);
+          var _pm2 = /^<([A-Za-z][A-Za-z0-9]*)\b/i.exec(_dh2);
+          if (_pm2 && !/^(br|img|wbr|area)$/i.test(_pm2[1]))
+            acc += '</' + _pm2[1] + '>';
+          continue;
+        }
         if (n.hasAttribute && n.hasAttribute('data-tex')) {          /* 行内公式 */
           acc += '$' + txt(n.getAttribute('data-tex')) + '$'; continue;
         }
@@ -7042,9 +7271,10 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         else if (tg === 'A') {
           var href = n.getAttribute('href') || '';
           if (href && !/^javascript:/i.test(href)) {
-            /* v3.49.12（LINK-COMMENT）：回写注释 */
+            /* v3.49.12（LINK-COMMENT）/ v3.49.13：按原分隔符回写注释 */
             var _cm = n.getAttribute('data-comment') || '';
-            acc += '[' + inner.trim() + '](' + href + (_cm ? (' "' + _cm + '"') : '') + ')';
+            var _cd = n.getAttribute('data-comment-delim') || '"';
+            acc += '[' + inner.trim() + '](' + href + (_cm ? (' ' + _cd + _cm + _cd) : '') + ')';
           } else acc += inner;
         } else if (tg === 'IMG') {
           var src = n.getAttribute('src') || '';
@@ -9198,6 +9428,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   };
   /* 源代码模式下按块序号跳转：滚动到对应行 */
   window.gotoHeadingSrc = function (i, txt) {
+    window.__o7JumpUntil = Date.now() + 1200;  /* v3.49.13（OUT-7）：跳转后 1.2s 内以视口为准 */
     if (!srcEl) return;
     /* v3.38（OUT-4）：与 gotoHeading 同款缓存校验（文本不符按实时重查） */
     if (txt) {
@@ -9235,6 +9466,37 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
      —— 大纲「当前正在显示的内容」高亮用。源码模式走 srcEl 文本探针，
      渲染 / 预览模式走 ED 块顶探测；视口上方无标题时返回 -1。 */
   window.getActiveHeading = function () {
+    /* v3.49.13（OUT-7）：光标优先 —— 修复「大纲高亮不随光标移动」。
+       判据（自上而下）：
+       ① 编辑区持有焦点、选区/光标所在块仍在视口内、且不在大纲跳转抑制窗口内
+          → 取该块向上最近的标题块序号；
+       ② 其余（源码态、双栏预览态、光标滚出视口、无焦点、跳转后 1.2s）
+          → 沿用 v3.49.1 的视口顶部标题探测，保证点击大纲跳转 / 纯滚动阅读零回归。
+       激活态与选中态的视觉区分由 sidebar.set_outline_active 负责。 */
+    try {
+      var _jumpGuard = Date.now() < (window.__o7JumpUntil || 0);
+      var _ae = document.activeElement;
+      var _focusInEd = !!(ED && _ae && ED.contains(_ae));
+      var _sel = getSelection();
+      var _node = (_sel && _sel.rangeCount) ? _sel.getRangeAt(0).startContainer : _ae;
+      var _el = _node ? (_node.nodeType === 1 ? _node : _node.parentElement) : null;
+      var _blk = (_el && _el.closest) ? _el.closest('#editor .blk') : null;
+      if (!_jumpGuard && _focusInEd && _blk && ED && ED.children) {
+        var _bi = -1;
+        for (var _z = 0; _z < ED.children.length; _z++) {
+          if (ED.children[_z] === _blk) { _bi = _z; break; }
+        }
+        var _cr = _blk.getBoundingClientRect ? _blk.getBoundingClientRect() : null;
+        var _inView = _cr && _cr.bottom > 0 && _cr.top < (window.innerHeight || 1e9);
+        if (_bi >= 0 && _inView) {
+          for (var _q = Math.min(_bi, state.raw.length - 1); _q >= 0; _q--) {
+            var _cb = blockInfo(state.raw[_q]);
+            if (_cb && /^h[1-6]$/.test(_cb.type)) return _q;
+          }
+          return -1;   /* 光标落在第一个标题之前：无激活项 */
+        }
+      }
+    } catch (eO7) { /* 光标探测失败一律回退到视口逻辑 */ }
     var src = document.querySelector('#editor .t-src');
     if (src) {                       // 源码模式：按文本偏移定位标题
       var tn = src.firstChild;
@@ -9520,6 +9782,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     return out;
   };
   window.gotoHeading = function (i, txt) {
+    window.__o7JumpUntil = Date.now() + 1200;  /* v3.49.13（OUT-7）：跳转后 1.2s 内以视口为准 */
     /* v3.38（OUT-4）：大纲树缓存的是 poll 上报时刻的块序号 —— 1s 窗口内增删过块
        则整体偏移。跳转前校验目标块仍是标题且文本与大纲一致，不符按文本实时重查 */
     if (txt) {
@@ -12814,6 +13077,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         ctx.kind = (nd.cs === nd.rs && nd.ce === nd.re) ? 'auto' : 'plain';
         ctx.addr = nd.url;
         ctx.comment = nd.comment || '';
+        ctx.cdelim = nd.cdelim || '"';
         ctx.text = raw.slice(nd.cs, nd.ce);
       }
       return ctx;
@@ -12856,6 +13120,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         ctx.kind = (nd.cs === nd.rs && nd.ce === nd.re) ? 'auto' : 'plain';
         ctx.addr = nd.url;
         ctx.comment = nd.comment || '';
+        ctx.cdelim = nd.cdelim || '"';
         ctx.text = srcText.slice(nd.cs, nd.ce);
       }
       return ctx;
@@ -12911,8 +13176,9 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       if (!alias && ctx.text && ctx.text !== head) alias = ctx.text;
       out = '[[' + head + (alias ? ('|' + alias) : '') + ']]';
     } else {
-      /* v3.49.12（LINK-COMMENT）：编辑链接时若原链接带注释，回写时补回 "comment" */
-      out = '[' + (ctx.text || '') + '](' + addr + (ctx.comment ? (' "' + ctx.comment + '"') : '') + ')';
+      /* v3.49.12（LINK-COMMENT）/ v3.49.13：编辑链接时按原分隔符补回注释 */
+      var _cd = ctx.cdelim || '"';
+      out = '[' + (ctx.text || '') + '](' + addr + (ctx.comment ? (' ' + _cd + ctx.comment + _cd) : '') + ')';
     }
     if (ctx.src) {
       srcText = srcText.slice(0, ctx.rs) + out + srcText.slice(ctx.re);

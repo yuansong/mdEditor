@@ -124,7 +124,12 @@ def _add_data_list():
 
 
 def _icon_arg():
-    """图标：macOS 优先 .icns（无则退回 .ico，仍可构建）；其它平台用 .ico。"""
+    """图标：macOS 优先 .icns（无则退回 .ico）；Windows 用 .ico；Linux 不用图标参数。
+
+    v3.49.13（LINUX-CI）：PyInstaller 在 Linux 上生成的是 ELF，不消费 .ico；
+    传入 --icon 反而在部分版本触发图标格式转换异常，导致 AppImage 构建中断。
+    AppImage 的图标由 build_linux.sh 生成 .png + .desktop 单独提供。
+    """
     sysname = platform.system()
     if sysname == "Darwin":
         icns = os.path.join(SRC, "mdeditor.icns")
@@ -134,7 +139,7 @@ def _icon_arg():
         if os.path.exists(ico):
             print("[info] 未找到 mdeditor.icns，macOS 将退回 .ico（Finder 图标可能不显示，运行不受影响）")
             return ["--icon", ico]
-    else:
+    elif sysname == "Windows":
         ico = os.path.join(SRC, "mdeditor.ico")
         if os.path.exists(ico):
             return ["--icon", ico]
