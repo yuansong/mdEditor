@@ -669,6 +669,7 @@ class Sidebar(QWidget):
         self.file_header.installEventFilter(self)
         self._cur_dir = None      # None = 「此电脑」层（显示所有盘符）
         self._cur_file = None
+        self._defer_file_refresh = False  # v3.49.14（START-LAZY）：启动恢复期间延迟首扫
 
         self.file_list = QListWidget(self)
         self.file_list.setVerticalScrollMode(QListWidget.ScrollPerPixel)
@@ -2238,12 +2239,33 @@ class Sidebar(QWidget):
         """文件列表根目录跟随当前文档；顶部显示当前文件名。空白项模式下忽略。"""
         if self._file_mode == "blank":
             return
+        # 计算目标目录 / 文件
         if path and os.path.isfile(path):
-            self._cur_file = path
-            self._cur_dir = os.path.dirname(path) or self._cur_dir
+            new_file = path
+            new_dir = os.path.dirname(path) or self._cur_dir
         elif path and os.path.isdir(path):
-            self._cur_dir = path
-            self._cur_file = None
+            new_file = None
+            new_dir = path
+        else:
+            new_file = self._cur_file
+            new_dir = self._cur_dir
+        # v3.49.14（START-LAZY）：同目录且列表已构建 → 仅刷新高亮，跳过全量 listdir
+        # （切标签、保存后重命名等反复进入同目录，无需重建整列，降低无谓开销）
+        if new_dir == self._cur_dir and self.file_list.count() > 0:
+            self._cur_dir = new_dir
+            self._cur_file = new_file
+            self._reset_file_filter()
+            self._update_file_header()
+            if new_file:
+                self.highlight_file(new_file)
+            return
+        # v3.49.14（START-LAZY）：启动恢复阶段将重扫延迟到首帧之后，避免阻塞启动绘制
+        if self._defer_file_refresh:
+            self._defer_file_refresh = False
+            QTimer.singleShot(0, lambda p=path: self.set_root(p))
+            return
+        self._cur_file = new_file
+        self._cur_dir = new_dir
         self._reset_file_filter()
         self._refresh_files()
         self._update_file_header()

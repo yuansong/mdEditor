@@ -774,16 +774,16 @@ class MainWindow(QMainWindow):
         self._tabbar.customContextMenuRequested.connect(self._on_tab_menu)
         # v3.38（TAB-5）：中键点击标签即关闭 / 双击空白处新建标签（N++ / 浏览器对标）
         self._tabbar.installEventFilter(self)
-        tab_wrap = QWidget(self)
-        tab_wrap.setObjectName("tabstrip")
-        tl = QHBoxLayout(tab_wrap)
+        self._tab_wrap = QWidget(self)
+        self._tab_wrap.setObjectName("tabstrip")
+        tl = QHBoxLayout(self._tab_wrap)
         # v3.39.14（HEAD-1）：页面头对齐——左右 10px 与侧栏基准线一致；行高 42px
         # 与侧栏「文件/大纲」头行同高，页签垂直居中
         tl.setContentsMargins(12, 3, 12, 3)
         tl.addWidget(self._tabbar)
         # v3.38（TAB-9）：标签溢出下拉（N++ / VS Code 对标）—— 列出全部标签带
         # • 未保存 / 📌 固定标记，点击切换；仅在总宽超出可视宽度时启用
-        self._btn_tb_more = QToolButton(tab_wrap)
+        self._btn_tb_more = QToolButton(self._tab_wrap)
         self._btn_tb_more.setObjectName("tbMore")
         self._btn_tb_more.setText("»")
         self._btn_tb_more.setAutoRaise(True)
@@ -793,14 +793,14 @@ class MainWindow(QMainWindow):
         self._btn_tb_more.setEnabled(False)
         tl.addWidget(self._btn_tb_more)
         tl.addStretch(1)
-        tab_wrap.setFixedHeight(40)  # HEAD-2：与侧栏头行同高（40px，紧凑适中）
+        self._tab_wrap.setFixedHeight(40)  # HEAD-2：与侧栏头行同高（40px，紧凑适中）
 
         right = QWidget(self)
         right.setObjectName("contentArea")   # v3.44.3（DESIGN01）：编辑区显式底色
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
         rl.setSpacing(0)
-        rl.addWidget(tab_wrap)
+        rl.addWidget(self._tab_wrap)
         rl.addWidget(self._stack, 1)
 
         self._sidebar = Sidebar(self)
@@ -6539,6 +6539,9 @@ class MainWindow(QMainWindow):
             qk.setChecked(self._focus)
             qk.blockSignals(False)
         self._js_active(f"window.setMode({{focus: {str(self._focus).lower()}}})")
+        # v3.49.14（FOCUS-TAB）：专注模式隐藏标签栏（退出恢复），对齐 Typora 单视图
+        if getattr(self, "_tab_wrap", None) is not None:
+            self._tab_wrap.setVisible(not self._focus)
         self.show_status(T("专注模式：开", "Focus mode: On") if self._focus else "专注模式：关")
 
     def toggle_paper_mode(self):
@@ -7387,6 +7390,17 @@ class MainWindow(QMainWindow):
             if not paths:
                 return False
             cur = int(self._settings.value("sessionCur", 0) or 0)
+            # v3.49.14（START-LAZY）：会话文档过多时仅恢复最近 N 个，避免启动创建
+            # 大量标签 widget + 全量 listdir 拖慢首屏（其余文档仍可由文件列表打开）
+            MAX_RESTORE_TABS = 40
+            if len(paths) > MAX_RESTORE_TABS:
+                dropped = len(paths) - MAX_RESTORE_TABS
+                if cur >= MAX_RESTORE_TABS:
+                    cur = MAX_RESTORE_TABS - 1
+                paths = paths[:MAX_RESTORE_TABS]
+                self.show_status(T(
+                    f"会话文档过多，仅恢复最近 {MAX_RESTORE_TABS} 个（省略 {dropped} 个）",
+                    f"Too many session docs; restored the latest {MAX_RESTORE_TABS} (skipped {dropped})"))
             cur = max(0, min(cur, len(paths) - 1))
             for i, p in enumerate(paths):
                 # 仅活动文档同步读全文；其余置 None，切到时再读
@@ -7934,7 +7948,61 @@ class MainWindow(QMainWindow):
             menu.addAction(T("粘贴", "Paste"), lambda: page.triggerAction(QWebEnginePage.Paste))
         menu.addSeparator()
         menu.addAction(T("全选", "Select All"), lambda: page.triggerAction(QWebEnginePage.SelectAll))
-        menu.exec(view.mapToGlobal(pos))
+        menu.setMinimumWidth(160)
+
+        # v3.49.14（CTX-MAXH）：异步取选区矩形 → 就近定位到选区下沿；下方空间不足
+        # 翻到上方；两侧都放不下则取较宽一侧并限高滚动。非阻塞 runJavaScript（避免
+        # 嵌套事件循环死锁），用 token 防止连续右键时旧回调误弹过期菜单。
+        self._ctx_token = getattr(self, "_ctx_token", 0) + 1
+        tok = self._ctx_token
+        self._ctx_menu = menu
+
+        def _popup(rect):
+            if tok != self._ctx_token:
+                return  # 已被新的右键取代
+            g = view.mapToGlobal(QPoint(0, 0))
+            if rect and isinstance(rect, dict):
+                ax = g.x() + int(rect.get("left", pos.x()))
+                ay = g.y() + int(rect.get("bottom", pos.y()))
+            else:
+                ax = g.x() + pos.x()
+                ay = g.y() + pos.y()
+            mh = menu.sizeHint().height()
+            screen = self.screen()
+            if screen is not None:
+                sg = screen.geometry()
+                top_limit = sg.y()
+                bottom_limit = sg.y() + sg.height()
+            else:
+                top_limit = g.y()
+                bottom_limit = g.y() + view.height()
+            avail_below = bottom_limit - ay - 8
+            if mh <= avail_below:
+                menu.setMaximumHeight(bottom_limit - ay - 8)
+                menu.exec(QPoint(ax, ay))
+            else:
+                top_y = ay - 8
+                avail_above = top_y - top_limit
+                if mh <= avail_above:
+                    menu.setMaximumHeight(avail_above)
+                    menu.exec(QPoint(ax, top_y - mh))
+                elif avail_above >= avail_below:
+                    menu.setMaximumHeight(max(120, avail_above))
+                    menu.exec(QPoint(ax, top_limit + 8))
+                else:
+                    menu.setMaximumHeight(max(120, avail_below))
+                    menu.exec(QPoint(ax, ay))
+            if self._ctx_menu is menu:
+                self._ctx_menu = None
+            menu.deleteLater()
+
+        page.runJavaScript(
+            "(function(){var s=window.getSelection();"
+            "if(!s||s.rangeCount===0)return null;"
+            "var r=s.getRangeAt(0).getBoundingClientRect();"
+            "return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,"
+            "width:r.width,height:r.height};})()",
+            _popup)
 
     # ================= 退出 =================
     def closeEvent(self, e):

@@ -115,15 +115,25 @@ body[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background-color: rgba
 .blk { position: relative; transition: background 0.18s ease, opacity 0.3s ease; }
 #editor > .blk:first-child { margin-top: 0.2em; }
 
-/* ---------- 当前编辑块指示（Typora 式淡背景，渐入渐出） ---------- */
+/* ---------- 整篇连续编辑区（v3.49.15）：去除逐块卡片底色 / 圆角 / 负边距，
+   使全篇呈现为单一连续编辑表面，不再以独立卡片区分各块 ---------- */
 .blk.raw-edit:not(.t-fence):not(.t-src):not(.t-yaml):not(.t-table) {
-  background: rgba(0, 82, 217, 0.032);
-  margin-left: -14px;
-  margin-right: -14px;
-  padding-left: 14px;
-  padding-right: 14px;
-  border-radius: 8px;
+  background: transparent;
+  margin-left: 0;
+  margin-right: 0;
+  padding-left: 0;
+  padding-right: 0;
+  border-radius: 0;
 }
+
+/* v3.49.17（CTX-UNIFY）：块手柄 / 悬浮块菜单停用 —— 其中的标题 / 段落 /
+   列表 / 引用 / 代码块转换迁入右键上下文菜单（buildCtxMenu）；块操作
+   （复制块 / 上移 / 下移 / 删除块）v3.49.18 起从右键菜单移除，块删除
+   改用键盘删除键。!important 兜住历史代码对 BH.style.display 的一切赋值。 */
+#blkhandle { display: none !important; }
+/* v3.49.17（ONE-HOST）：#editor 成为唯一 contenteditable 根宿主，整篇即
+   一个连续编辑大块；原生跨块选区不再被逐块编辑宿主边界截断。 */
+#editor[contenteditable="true"] { outline: none; }
 
 /* ---------- rendered blocks ---------- */
 .blk p { margin: 0.6em 0; }
@@ -422,7 +432,7 @@ body[data-theme="dark"] .blk tbody tr:hover td { background: transparent; }
 /* v3.30.6：暗色主题同样豁免（亮色版见 :root 区注释） */
 body[data-theme="dark"] .blk tbody tr:hover td.sel,
 body[data-theme="dark"] .blk tbody tr:hover th.sel { background: var(--sel); }
-body[data-theme="dark"] .blk.raw-edit:not(.t-fence):not(.t-src):not(.t-yaml):not(.t-table) { background: rgba(84, 140, 255, 0.07); }
+body[data-theme="dark"] .blk.raw-edit:not(.t-fence):not(.t-src):not(.t-yaml):not(.t-table) { background: transparent; }
 body[data-theme="dark"] mark { background: #8a7a1e; color: #fff; }
 /* v3.31（#18）：命中高亮深色系配色 */
 body[data-theme="dark"] #editor ::highlight(find-hit),
@@ -2535,6 +2545,71 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
    * Editor state & DOM
    * ========================================================= */
   var ED = document.getElementById('editor');
+  /* =========================================================
+   * v3.49.17（ONE-HOST）：整篇单一连续编辑宿主
+   * ---------------------------------------------------------
+   * 旧模型：每个 .blk 的内部元素各自 contenteditable="plaintext-only"，
+   * 形成 N 个彼此隔离的编辑宿主 —— 原生选区不能跨块（实测 Selection.modify
+   * 连续 extend 220 次仍只停在首块 3 个字），用户感知「文章被拆成多个块」。
+   * 新模型：#editor 自身置 contenteditable="true" 成为唯一根宿主，各块内部
+   * 元素保留 plaintext-only 作为逻辑编辑单元。实测 extend / setBaseAndExtent
+   * 均可跨首尾块覆盖整篇（67 字），Ctrl+A 之外的一切原生选区行为随之连续。
+   * 代价：① input / keydown / paste 等事件的 e.target 被 Chromium 改指到根
+   * 宿主 ED（DIV#editor），既有 30+ 处 e.target.closest('#editor
+   * [contenteditable]') 处理器会失效；② document.activeElement 恒为 ED。
+   * 对策：① 捕获期 oneHostShim 按选区锚点把 e.target 重写回逻辑编辑单元，
+   * 所有冒泡期处理器原样工作（实测 getMarkdown 正常同步）；② activeEditableEl()
+   * 在焦点落在根宿主时按选区反查逻辑编辑单元，供焦点相关调用兜底。
+   * 源码 / 分屏预览模式由 syncOneHost() 摘除宿主，保持只读与原有行为。
+   * ========================================================= */
+  var ONE_HOST = true;
+  function caretEditableEl() {
+    var s = getSelection();
+    var n = s && (s.anchorNode || (s.rangeCount ? s.getRangeAt(0).startContainer : null));
+    if (!n) return null;
+    var el = n.nodeType === 1 ? n : n.parentElement;
+    if (!el || !ED.contains || !ED.contains(el)) return null;
+    return (el.closest ? el.closest('#editor [contenteditable]') : null) || null;
+  }
+  /* 焦点在输入框 / 弹层时原样返回；只有焦点落在根宿主 ED 时，才按选区
+     锚点反查真正的逻辑编辑单元（p / li / td / blockquote / .raw-edit …）。 */
+  function activeEditableEl() {
+    var ae = document.activeElement;
+    if (ae && ae !== ED) return ae;
+    return caretEditableEl();
+  }
+  /* 捕获期注册（必须早于同节点其它捕获监听），保证冒泡期看到重写后的 target */
+  function oneHostShim(e) {
+    if (!ONE_HOST || !ED.getAttribute || ED.getAttribute('contenteditable') !== 'true') return;
+    if (!e.target || e.target !== ED) return;
+    var t = caretEditableEl();
+    if (t) {
+      try { Object.defineProperty(e, 'target', { value: t, configurable: true }); }
+      catch (_sh) {}
+    }
+  }
+  ['input', 'beforeinput', 'keydown', 'keyup', 'paste', 'copy', 'cut',
+   'compositionstart', 'compositionupdate', 'compositionend', 'drop'].forEach(function (_hk) {
+    ED.addEventListener(_hk, oneHostShim, true);
+  });
+  /* 源码 / 分屏预览态摘除根宿主：避免编辑层被外层宿主抢焦点、预览变可写 */
+  function syncOneHost() {
+    /* node 内核测试桩无真实 DOM 属性 API —— 直接跳过，不影响纯函数测试 */
+    if (!ONE_HOST || !ED.getAttribute || !ED.removeAttribute) return;
+    if (!srcEl && !window.__previewLock) {
+      if (ED.getAttribute('contenteditable') !== 'true') {
+        ED.setAttribute('contenteditable', 'true');
+        ED.setAttribute('spellcheck', 'false');
+      }
+    } else {
+      ED.removeAttribute('contenteditable');
+      ED.removeAttribute('spellcheck');
+    }
+  }
+  window.__oneHostActive = function () {
+    return !!(ONE_HOST && ED.getAttribute && ED.getAttribute('contenteditable') === 'true');
+  };
+  syncOneHost();
   var state = { raw: [''], editIdx: -1, dirty: false, lazyBuild: false,
     /* v3.48.20（IMPERCEPT-L1）：IME 组合输入标志 + rebuild 延后标志。
        composing 由 ED 委托的 compositionstart/end 维护；rebuild 期间若
@@ -3964,6 +4039,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   };
 
   function rebuild() {
+    syncOneHost();   /* v3.49.17（ONE-HOST）：写作态挂根宿主 / 源码·预览态摘除 */
     /* v3.31.2（#6）：源码态（源码模式 / 双栏左栏）下 rebuild 不得重建渲染块 ——
        src-wrap 层会被整体替换、界面回到渲染态，而 srcEl 仍指向游离节点，
        getMarkdown 与所见脱节（首次进双栏左栏显示渲染态的根因）。
@@ -7862,6 +7938,9 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     }
   }
   ED.addEventListener('mousedown', function (e) {
+    /* v3.49.17（ONE-HOST）：单一宿主下原生跨块选区已可用，叠加层接管反而会
+       removeAllRanges 清空真实选区 —— 整段跨块叠层机制让位给浏览器原生。 */
+    if (ONE_HOST) return;
     if (editorLocked()) return;
     if (e.button !== 0) return;
     _xselHasSel = false;
@@ -7871,6 +7950,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     catch (err) { _xselStartRng = null; }
   });
   ED.addEventListener('mousemove', function (e) {
+    if (ONE_HOST) return;   /* v3.49.17（ONE-HOST）：原生跨块拖选，不再自绘叠层 */
     if (editorLocked()) return;
     if (!_xselStartRng || e.buttons !== 1) return;
     var endRng = null;
@@ -7895,6 +7975,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     _xselDraw();
   });
   window.addEventListener('mouseup', function (e) {
+    if (ONE_HOST) return;   /* v3.49.17（ONE-HOST） */
     if (editorLocked()) return;
     if (!_xselStartRng) return;
     if (_xselActive) {
@@ -7920,6 +8001,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   window.addEventListener('scroll', _xselRedrawIfAny, true);
   if (ED.addEventListener) ED.addEventListener('scroll', _xselRedrawIfAny, true);
   document.addEventListener('copy', function (e) {
+    if (ONE_HOST) return;   /* v3.49.17（ONE-HOST）：原生选区复制，无需叠层文本兜底 */
     if (_xselHasSel && _xselText) {
       try {
         if (e.clipboardData && e.clipboardData.setData) {
@@ -9141,8 +9223,26 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         showSpecialBlockMenuAt(bi, e.clientX, e.clientY);
         return;
       }
-      /* 非空白块：保留系统右键菜单（复制粘贴等） */
-      if ((state.raw[bi] || '').trim() !== '' && !blk.classList.contains('raw-edit')) return;
+      /* v3.49.17（CTX-UNIFY）：非空文本块右键 → 统一上下文菜单。
+         v3.49.18（HOVER-RESTORE）/ v3.49.19（CTX-FMT-STRIP）：悬浮格式化栏
+         （FB）承接全部行内格式；选中文本时本菜单只提供「复制」+ 块转换，
+         未选中时只提供块转换；均不再提供复制块 / 上移 / 下移 / 删除块
+         （块删除改用键盘删除键）。块手柄悬浮菜单（BH）保持停用。空块仍走
+         下方斜杠插入菜单；表格 / 代码块 / 脚注 / 特殊块 / 链接等专属菜单
+         已在上方各自处理，不受影响。 */
+      if ((state.raw[bi] || '').trim() !== '') {
+        var _ss = getSelection();
+        var _hasSel = !!(_ss && _ss.rangeCount && !_ss.isCollapsed &&
+                         String(_ss.toString()).trim() !== '' &&
+                         _ss.anchorNode && ED.contains(_ss.anchorNode));
+        e.preventDefault(); e.stopPropagation();
+        hidePops();
+        handleIdx = bi;
+        buildCtxMenu(blk, bi, _hasSel);
+        activePop = 'block';
+        placePop(BM, e.clientX, e.clientY);
+        return;
+      }
     }
     e.preventDefault();
     hidePops();
@@ -9406,6 +9506,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       commitEditSilent();
       state.editIdx = -1;
     }
+    syncOneHost();   /* v3.49.17（ONE-HOST）：预览侧摘除根宿主，保证只读 */
   };
   window.setPreviewContent = function (md) {
     md = String(md == null ? '' : md);
@@ -9422,6 +9523,8 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
        防止 focus + 键盘输入污染预览显示（raw 不受影响、退出预览即重建） */
     var _ceL = ED.querySelectorAll('[contenteditable]');
     for (var _ci = 0; _ci < _ceL.length; _ci++) _ceL[_ci].removeAttribute('contenteditable');
+    /* v3.49.17（ONE-HOST）：预览侧根宿主一并摘除 */
+    ED.removeAttribute('contenteditable'); ED.removeAttribute('spellcheck');
     updateStats();
     window.scrollTo(y, x2);
     return 'ok';
@@ -10190,6 +10293,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       srcEl.addEventListener('scroll', function () {
         if (srcHl) srcHl.scrollLeft = srcEl.scrollLeft;
       });
+      syncOneHost();   /* v3.49.17（ONE-HOST）：源码态摘除根宿主 */
       updateSrcGutter();
       renderSrcHl();
       /* v3.45.5（SRC-KEEP）：切源码态不丢视图位置与光标 —— 把写作态光标
@@ -10252,6 +10356,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         window.scrollTo(0, Math.max(0, _y2));
       }
     }
+    syncOneHost();   /* v3.49.17（ONE-HOST）：退出源码态后重新挂根宿主 */
   };
   window.setMode = function (m) {
     if (!m) return;
@@ -10946,7 +11051,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     /* v3.29d（T4）：焦点在输入框（链接 URL / 图注 / 重命名 / 源码框等）时，
        行内格式快捷键直接忽略 —— 旧逻辑会 ensureEdit() 把最后一块切进编辑态，
        关闭弹层后出现意外的源码态块 */
-    var aeF = document.activeElement;
+    var aeF = activeEditableEl();   /* v3.49.17（ONE-HOST）：弹层输入框原样返回 */
     if (aeF && (aeF.tagName === 'INPUT' || aeF.tagName === 'TEXTAREA') &&
         (name === 'bold' || name === 'italic' || name === 'code' || name === 'strike')) return;
     /* v3.30.10：光标在单元格内时，块级插入快捷键路由到「单元格内插入」——
@@ -11122,7 +11227,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
      不必被迫 ensureEdit() 切进源码态（此前会显示 `# 文字`，像切到源码视图） */
   function activeBlockIdx() {
     if (state.editIdx >= 0) return state.editIdx;
-    var ae = document.activeElement;
+    var ae = activeEditableEl();   /* v3.49.17（ONE-HOST） */
     var bel = ae && ae.closest ? ae.closest('#editor .blk') : null;
     var bi = bel ? blockIndexOf(bel) : -1;
     if (bi >= 0) return bi;
@@ -11421,11 +11526,28 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
   function placePop(pop, x, y) {
     pop.classList.remove('hiding');   /* v3.30.19（U3）：清退场残态 */
     pop.classList.add('show');
+    var margin = 8;
     var w = pop.offsetWidth, h = pop.offsetHeight;
-    var nx = Math.max(6, Math.min(x, window.innerWidth - w - 8));
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var nx = Math.max(margin, Math.min(x, vw - w - margin));
     var ny = y;
-    if (ny + h > window.innerHeight - 8) ny = Math.max(6, y - h - 30);
-    if (ny < 6) ny = 6;   /* v3.30.18（F3）：上缘钳位（top−44 越出窗口上缘时） */
+    if (ny + h > vh - margin) ny = Math.max(margin, y - h - 30);  /* 下方放不下 → 翻到上方 */
+    if (ny < margin) {
+      /* v3.49.14（POP-MAXH）：翻到上方仍越顶（极高菜单 / 极小窗口）→ 贴顶 + 动态限高滚动 */
+      ny = margin;
+      var avail = vh - 2 * margin;
+      if (h > avail) {
+        pop.style.maxHeight = avail + 'px';
+        pop.style.overflowY = 'auto';
+      } else {
+        pop.style.maxHeight = '';
+        pop.style.overflowY = '';
+      }
+    } else {
+      /* 放得下：清除上次的动态限高，沿用各自 CSS 上限（wikimenu 280 / tblbar 320 等） */
+      pop.style.maxHeight = '';
+      pop.style.overflowY = '';
+    }
     pop.style.left = nx + 'px';
     pop.style.top = ny + 'px';
   }
@@ -11495,6 +11617,51 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       cnt.textContent = tailTxt;
       FB.appendChild(cnt);
     }
+  }
+  /* v3.49.17（CTX-UNIFY）：统一右键上下文菜单构建器。
+     ① 有选区 → 行内格式组（data-act 加 fx: 前缀与块动作区分）+「复制」；
+     ② 任何非空文本块 → 块转换组（标题 / 段落 / 列表 / 代码块 / 引用）。
+      v3.49.18（MENU-SPLIT）：悬浮格式化栏（FB）已恢复；右键不再提供复制块 /
+      上移 / 下移 / 删除块（块删除改用键盘删除键）。v3.49.19（CTX-FMT-STRIP）：
+      选中文本时移除全部行内格式项，只留「复制」+ 结构转换。BM 分发器路由不变。 */
+  function buildCtxMenu(blk, bi, hasSel) {
+    var html = '';
+    if (hasSel) {
+      /* v3.49.19（CTX-FMT-STRIP）：选中文本时，右键菜单不再重复提供
+         仅用于改变选中文本样式的格式化项 —— 粗体 / 斜体 / 下划线 / 删除线 /
+         高亮 / 行内代码 / 链接 / 清除格式 / 标题居中（对齐）等统一由
+         悬浮格式化栏（FB）承接；本分支只保留「复制」，不新增任何替代项。
+         下方「标题 / 段落 / 列表 / 代码块 / 引用」结构转换项按原有逻辑生成，
+         BM click 分发器逐字未动。hasSel=false 不进入本分支；表格 / 代码块 /
+         图片 / 分割线 / 脚注 / 链接等专属菜单也不经此函数。 */
+      var info = currentSelectionInfo();
+      if (info) {
+        var tailTxt = '';
+        var _cnt = info.plainLen;
+        var _head = selCrossesBlocks() ? 0 : selHeadingCount();
+        if (_head > 0) tailTxt = '标题 ' + _head;
+        if (_cnt > 0) tailTxt += (tailTxt ? '，' : '') + '已选 ' + _cnt + ' 字';
+        if (tailTxt) html += '<div class="cap">' + tailTxt + '</div>';
+        /* 复制：原生选区复制；BM mousedown 已 preventDefault，选区保持不塌陷 */
+        html += '<div class="mi" data-act="ctxcopy"><span style="width:18px;text-align:center">⧉</span>' +
+                T_js('复制', 'Copy') + '</div>';
+        html += '<div class="sep"></div>';
+      }
+    }
+    /* ---- 块转换（v3.49.18：块操作四项已移除，右键菜单不再承担块复制 /
+       移动 / 删除；不新增替代菜单项，其余结构与入口保持不变） ---- */
+    var cur = blockInfo(state.raw[bi] || '').type;
+    html += '<div class="cap">' + T_js('当前块：') + T_js(typeLabel(cur)) + '</div>';
+    if (cur !== 'fence') {
+      html += '<div class="mi has-sub" data-act="to-h"><span style="width:18px;text-align:center">H</span>' + T_js('标题') + '</div>';
+      html += '<div class="mi" data-act="to:p"><span style="width:18px;text-align:center">¶</span>' + T_js('段落') + '</div>';
+      html += '<div class="mi has-sub" data-act="to-list"><span style="width:18px;text-align:center">•</span>' + T_js('列表') + '</div>';
+      html += '<div class="mi" data-act="to:fence"><span style="width:18px;text-align:center">‹›</span>' + T_js('代码块') + '</div>';
+      if (cur !== 'quote')
+        html += '<div class="mi" data-act="to:quote"><span style="width:18px;text-align:center">❝</span>' + T_js('引用') + '</div>';
+    }
+    BM.classList.remove('wide');
+    BM.innerHTML = html;
   }
   /* =========================================================
    v3.30.18（LIST-1 根修）：行感知的块内纯文本序列化。
@@ -11879,7 +12046,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     return { idx: idx, rc: cellRC(tbl, cell), cell: cell };
   }
   function caretCellCtx() {
-    var ae = document.activeElement;
+    var ae = activeEditableEl();   /* v3.49.17（ONE-HOST） */
     var el = ae && ae.closest ? ae.closest('#editor .b-table td, #editor .b-table th') : null;
     return el ? cellRichCtx(el) : null;
   }
@@ -12628,7 +12795,9 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
       /* 回到渲染态并恢复原选区（相对渲染文本的偏移不变，格式标记不可见），
          连续多次加粗 / 高亮也保持所见即所得 */
       if (focusWysiwyg(fbIdx, false)) {
-        var fe = document.activeElement;
+        /* v3.49.17（ONE-HOST）：根宿主下 activeElement 恒为 #editor，
+           改按选区锚点反查逻辑编辑单元，否则格式后选区无法还原。 */
+        var fe = activeEditableEl();
         if (!fe || !fe.getBoundingClientRect) fe = ED.children[fbIdx];
         var fbRg = fe ? rangeFromTextOff(fe, fbA, fbB) : null;
         if (fbRg) {
@@ -13441,6 +13610,9 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     var _h1s = /^h[1-6]$/.test(_fbi.type) ? ((_fbi.tagForm && _fbi.align === 'center') ? 2 : 1) : 0;
     buildFloatbar(fbDelOnly(info), info.plainLen, !!cellFormatCtx(), _h1s,
                   selCrossesBlocks() ? 0 : selHeadingCount());   // 代码/图表/公式上下文：仅保留删除按钮；跨块降级见 FMTB-4
+    /* v3.49.18（HOVER-RESTORE）：恢复 v3.49.13 基线的悬浮展示与交互 ——
+       选中文字即弹出格式化栏，buildFloatbar 的按钮集 / 点击链路 / lastFB
+       快照全部原样保留；与右键上下文菜单各司其职，互不替代。 */
     FB.classList.add('show');
     placePop(FB, info.rect.left, info.rect.top - 44);
   }
@@ -14549,7 +14721,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
      优先取焦点所在块（表格单元格 / 代码区 / 渲染态内容都算），
      特殊块按内容识别（图表 / 公式 / 图片 / 表格 / 分割线） */
   function curBlockTypeLabel() {
-    var ae = document.activeElement;
+    var ae = activeEditableEl();   /* v3.49.17（ONE-HOST） */
     var bel = ae && ae.closest ? ae.closest('#editor .blk') : null;
     var bi = bel ? blockIndexOf(bel) : state.editIdx;
     if (bi < 0 || bi >= state.raw.length) return '';
@@ -15159,8 +15331,15 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     var t = e.target.closest ? e.target.closest('.mi') : null;
     /* v3.45.5（LINK-EDIT）：链接菜单项不依赖 handleIdx —— 源码态无有效块索引 */
     var _lkAct = !!(t && /^link(edit|copy|open)$/.test(t.getAttribute('data-act') || ''));
+    /* v3.49.17（CTX-UNIFY）：统一右键菜单在弹出时已显式写入 handleIdx，
+       无需 v3.49.16 的选区菜单状态位，避免菜单切换后状态残留误路由。 */
     if (!t || (handleIdx < 0 && !_lkAct)) { hidePops(); return; }
     var act = t.getAttribute('data-act');
+    /* ctxcopy → 原生复制；to-h / to-list → 二级子菜单；其余块转换 / 块操作
+       继续走 applyBlockAct。fx: 前缀路由保留为兼容分支（v3.49.19 起右键菜单
+       不再生成行内格式项，行内格式统一由悬浮栏 applyFloatAction 承接）。 */
+    if (act === 'ctxcopy') { try { document.execCommand('copy'); } catch (e) {} hidePops(); return; }
+    if (act.indexOf('fx:') === 0) { applyFloatAction(act.slice(3)); return; }
     /* v3.38（IMG-12）：「转存本地（请先保存文档）」置灰条 —— 点击只说明原因，不执行 */
     if (act === 'imgstorewait') {
       hidePops();
@@ -15185,39 +15364,24 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     }
     applyBlockAct(act);
   });
+  /* v3.49.17（CTX-UNIFY）：块手柄 ⠿ 悬浮菜单停用 —— 悬停不再浮现手柄，
+     也不再弹出含标题 / 段落 / 列表 / 引用 / 代码块的悬浮块菜单。
+     handleIdx 仍按悬停块更新，供 Ctrl+/ 与状态栏共用；v3.49.18 起
+     行内格式由恢复后的悬浮格式化栏（FB）承接，块转换留在右键菜单。 */
   document.addEventListener('mousemove', function (e) {
     if (editorLocked() || activePop === 'slash') return;
     if (activePop === 'block') return;
-    /* 悬停在块手柄或任何浮层上时保持现状，防止手柄在移过去的路上被隐藏 */
     if (e.target.closest && (e.target.closest('#blkhandle') || e.target.closest('.pop'))) return;
     var el = e.target.closest ? e.target.closest('#editor .blk') : null;
-    if (!el) {
-      /* 吸附区：手柄周围 16px 内（含块与手柄之间的间隙）不隐藏，保证能顺利点到手柄 */
-      if (BH.style.display === 'flex') {
-        var br = BH.getBoundingClientRect();
-        if (e.clientX >= br.left - 16 && e.clientX <= br.right + 16 &&
-            e.clientY >= br.top - 16 && e.clientY <= br.bottom + 16) return;
-      }
-      BH.style.display = 'none';
-      return;
-    }
-    handleIdx = blockIndexOf(el);
-    if (handleIdx < 0) { BH.style.display = 'none'; return; }
-    var r = el.getBoundingClientRect();
-    /* v3.30.10（HP-3）：手柄 tooltip 显示块类型 —— 悬停即见「标题 3 / 引用 /
-       图表」等，无需点开菜单确认；与状态栏「当前块」互为冗余确认通道 */
-    var hSpec = specialBlockKind(handleIdx);
-    BH.title = T_js(hSpec ? typeLabel(hSpec)
-      : typeLabel(blockInfo(state.raw[handleIdx] || '').type));
-    BH.style.display = 'flex';
-    BH.style.left = Math.max(4, r.left - 28) + 'px';
-    BH.style.top = (r.top + 3) + 'px';
+    if (!el) { BH.style.display = 'none'; return; }
+    var hi = blockIndexOf(el);
+    if (hi < 0) { BH.style.display = 'none'; return; }
+    handleIdx = hi;
+    BH.style.display = 'none';
   });
   BH.addEventListener('mousedown', function (e) {
-    e.preventDefault();
-    e.stopPropagation();  // 防止 document 级 mousedown 触发 commitEdit 干扰菜单
-    if (activePop === 'block') { hidePops(); return; }
-    showBlockMenu();
+    e.preventDefault(); e.stopPropagation();
+    BH.style.display = 'none';
   });
 
   /* ---------- 4) 表格快速编辑（v3.13：单元格直接编辑 + 拖选 + 行列删除） ---------- */
@@ -15822,6 +15986,8 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
      tooltip 明示「块菜单（Ctrl+/）」；prefers-reduced-motion 用户不播动画 */
   var bhPulseTimer = null;
   function pulseBlkHandle(idx) {
+    /* v3.49.17（CTX-UNIFY）：悬浮块手柄已停用，选中特殊块不再脉冲提示 ⠿。 */
+    if (ONE_HOST) return;
     var el = ED.children[idx];
     if (!el || !BH) return;
     var r = el.getBoundingClientRect();
@@ -16838,6 +17004,14 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     var i = tblSel.idx;
     if (i < 0 || i >= state.raw.length) return;
     if (state.editIdx === i) commitEditSilent();
+    /* v3.49.18（TBL-COPYALL）：拷贝整张表格源码到剪贴板 —— 管道表 =
+       Markdown 源码，HTML 表 = 原始 HTML 块；与「拷贝内容」（只拷选中
+       单元格的 TAB 文本）区分。须置于 htable 模型分派之前，两种表同源可用。 */
+    if (op === 'copyall') {
+      copyTextToClipboard(state.raw[i] || '');
+      hidePops();
+      return;
+    }
     /* v3.22 新增：合并 / 拆分单元格 / 拆表 / 重置尺寸 */
     if (op === 'merge') { tblMerge(i); return; }
     /* v3.29：4 方向合并已移除 —— 合并统一为「多选拼矩形 → 合并单元格」 */
@@ -16999,6 +17173,15 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     if (name === 'ar') return '<svg ' + s + '><path d="M2.5 4h11"/><path d="M6.5 8h7"/><path d="M2.5 12h11"/></svg>';
     /* v3.49.1（TBL-COPY）：拷贝内容 = 两矩形堆叠的复制图标 */
     if (name === 'copy') return '<svg ' + s + '><rect x="2" y="2.5" width="9" height="9" rx="1.3"/><rect x="5" y="5.5" width="9" height="9" rx="1.3"/></svg>';
+    /* v3.49.19（TBL-COPYTABLE）：拷贝整个表格 = 沿用「两矩形堆叠」的复制语义
+       与同一套 viewBox / 线宽 / 圆角，叠加表格网格线 —— 与「拷贝内容」的纯
+       矩形复制图标明确区分；stroke=currentColor 随菜单文字 / 启用态同步，
+       与拷贝状态保持一致。管道表与 HTML 表恒可用，不依赖单元格选区。 */
+    if (name === 'copytable') return '<svg ' + s + '>' +
+      '<rect x="1.8" y="2.2" width="9" height="9" rx="1.3"/>' +
+      '<path d="M1.8 5.2h9"/><path d="M5 2.2v9"/>' +
+      '<rect x="5.2" y="5.6" width="9" height="9" rx="1.3"/>' +
+      '<path d="M5.2 8.6h9"/><path d="M8.4 5.6v9"/></svg>';
     if (name === 'clr') return '<svg ' + s + '><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M5 6.5h6"/><path d="M5 9.5h4"/></svg>';
     /* v3.29c：行 / 列整体移动（实心条 = 被移动的行 / 列，箭头 = 移动方向） */
     if (name === 'mvRowUp') return '<svg ' + s + '><rect x="2" y="9.5" width="12" height="4" rx="1.2"/><path d="M8 6.5V2.6"/><path d="M6.2 4.4L8 2.6l1.8 1.8"/></svg>';
@@ -17128,9 +17311,15 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         TB.appendChild(row);
       });
     }
-    /* —— 拷贝内容 / 清空内容（v3.49.x：移至菜单最上方置顶，其余项顺序不变；
-           拷贝仅管道表格显示，清空恒显示，二者在顶部相邻）—— */
+    /* —— 拷贝内容 / 拷贝整个表格 / 清空内容（v3.49.18：顶部三项相邻；
+           拷贝内容仅管道表格显示，另两项恒显示；v3.49.19：整表拷贝改用
+           copytable 专属图标，与「拷贝内容」的 copy 图标区分）—— */
     if (!isH) mi(svgIcon('copy'), '拷贝内容', 'copy');
+    /* v3.49.18（TBL-COPYALL）/ v3.49.19（TBL-COPYTABLE）：拷贝整张表格
+       的源码；与「拷贝内容」只拷选中单元格的 TAB 文本区分，管道表与 HTML
+       表均可用。专用 copytable 图标（网格 + 复制叠层）明确区分于普通内容
+       拷贝，并沿用 currentColor 随菜单状态同步。 */
+    mi(svgIcon('copytable'), '拷贝整个表格', 'copyall');
     mi(svgIcon('clr'), '清空内容', 'clear');
     /* —— 行（高频，横排） —— */
     iconRow('行', [
@@ -19398,6 +19587,22 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
         deleteBlockAt(di);
       }
     }
+    /* v3.49.18（KB-DEL-TBL）：表格「整块选中」（缩放框 / objSel.kind='table'）
+       时 Delete / Backspace 删除整张表 —— 与图片 / 分割线 / 图表 / 公式的
+       既有键盘删块语义一致。右键菜单移除「删除块」后，键盘是唯一入口。
+       光标落在单元格内编辑（caretCellCtx）或输入框内时绝不触发，避免误删整表。 */
+    if (objSel && objSel.kind === 'table' &&
+        (e.key === 'Delete' || e.key === 'Backspace') &&
+        !editorLocked() && !caretCellCtx()) {
+      var aeT = document.activeElement;
+      var inFieldT = aeT && (aeT.tagName === 'INPUT' || aeT.tagName === 'TEXTAREA');
+      if (!inFieldT) {
+        e.preventDefault(); e.stopPropagation();
+        var ti = objSel.idx;
+        hideObjSel();
+        deleteBlockAt(ti);
+      }
+    }
   });
 
   buildFloatbar();
@@ -19580,7 +19785,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     var idx = -1;
     if (objSel && typeof objSel.idx === 'number') idx = objSel.idx;
     if (idx < 0 || idx >= state.raw.length) {
-      var ae = document.activeElement;
+      var ae = activeEditableEl();   /* v3.49.17（ONE-HOST） */
       var bl = ae && ae.closest ? ae.closest('#editor .blk') : null;
       idx = bl ? blockIndexOf(bl) : -1;
     }
@@ -19678,6 +19883,7 @@ body[data-theme="panda"] .blk.slashph::after { color: #6b7683; }
     '合并单元格':'Merge Cells','拆分单元格（选择行 × 列）':'Split Cells (select rows × cols)','还原单元格（拆回原格）':'Restore Cell (split back)',
     '上移该行':'Move Row Up','下移该行':'Move Row Down','左移该列':'Move Column Left','右移该列':'Move Column Right',
     '左对齐':'Align Left','居中':'Center','右对齐':'Align Right','清空内容':'Clear Content',
+    '拷贝整个表格':'Copy Table',
     ' 个脚注编号':' footnote numbers',
     ' 条未引用的脚注定义':' unreferenced footnote definitions',
     '] 已插入，定义已追加到文末':"'] inserted; definition appended at end",
